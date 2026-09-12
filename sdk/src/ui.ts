@@ -126,6 +126,13 @@ export interface ReadoutNode extends Keyed {
   copy?: boolean;
 }
 
+/**
+ * 输入类节点（`field` / `editor` / `search`）的文本**由宿主持有**。
+ *
+ * 用户每敲一个字，宿主先更新自己的文本框，再把 `onChange` 送给 JS；JS 下一次 `render()` 里的
+ * `value` 只在**与宿主此刻持有的文本不同**时才覆写回去。因此打字不经 JS 往返，中文输入法的
+ * 拼音组合态也不会被一次异步回写打断；扩展想"改掉用户输入"（清空、粘贴）照常改 `value` 即可。
+ */
 export interface FieldNode extends Keyed {
   kind: "field";
   value: string;
@@ -336,6 +343,18 @@ export interface KeycapNode extends Keyed {
   text: string;
 }
 
+/**
+ * 一张图：只能是宿主颁发的句柄（截图、剪贴板里的图、用户拖进来的图），宿主画成缩略图。
+ * 它是给用户核对"截到的是哪一块"用的，不是相册——`large` 也只有内容宽 × 160pt。
+ */
+export interface ImageNode extends Keyed {
+  kind: "image";
+  file: FileHandle;
+  /** VoiceOver 读的说明。必填。 */
+  label: string;
+  size?: "small" | "medium" | "large";
+}
+
 export type UINode =
   | StackNode
   | ScrollNode
@@ -366,7 +385,8 @@ export type UINode =
   | QRCodeNode
   | SwatchNode
   | DropZoneNode
-  | KeycapNode;
+  | KeycapNode
+  | ImageNode;
 
 export type UINodeKind = UINode["kind"];
 
@@ -414,4 +434,5 @@ export const ui = {
   swatch: make<SwatchNode>("swatch"),
   dropzone: make<DropZoneNode>("dropzone"),
   keycap: make<KeycapNode>("keycap"),
+  image: make<ImageNode>("image"),
 } as const;

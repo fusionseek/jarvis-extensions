@@ -1,4 +1,4 @@
-// jarvis-extension bundle · send-to-phone@1.0.0 · sdk 1.0.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · send-to-phone@1.0.0 · sdk 1.1.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -13,6 +13,9 @@
 
   // sdk/src/bridge.ts
   var bridgeProtocolVersion = 1;
+  function eventName(propName) {
+    return propName.length > 2 && propName.startsWith("on") ? propName[2].toLowerCase() + propName.slice(3) : propName;
+  }
   function serialize(root, register) {
     const walk = (node) => {
       const props = {};
@@ -25,7 +28,7 @@
           continue;
         }
         if (typeof value === "function") {
-          on[name] = register(value);
+          on[eventName(name)] = register(value);
           continue;
         }
         if (name === "actions" && Array.isArray(value)) {
@@ -53,6 +56,15 @@
       return out;
     };
     return walk(root);
+  }
+  function countNodes(node) {
+    let count = 1;
+    for (const child of node.children ?? []) count += countNodes(child);
+    for (const name of ["hoverCard", "emptyState"]) {
+      const nested = node.props[name];
+      if (nested && typeof nested === "object" && "kind" in nested) count += countNodes(nested);
+    }
+    return count;
   }
 
   // sdk/src/ui.ts
@@ -90,14 +102,14 @@
     qrcode: make("qrcode"),
     swatch: make("swatch"),
     dropzone: make("dropzone"),
-    keycap: make("keycap")
+    keycap: make("keycap"),
+    image: make("image")
   };
 
   // sdk/src/index.ts
-  var sdkVersion = "1.0.0";
+  var sdkVersion = "1.1.0";
   var Runtime = class {
-    constructor(host) {
-      this.host = host;
+    constructor() {
       this.definition = null;
       this.nextRequestId = 1;
       this.generation = 0;
@@ -105,18 +117,36 @@
       this.handlers = /* @__PURE__ */ new Map();
       this.subscriptions = /* @__PURE__ */ new Map();
       this.updateQueued = false;
-      this.active = false;
+      this.pageActive = false;
+      this.commandSummaries = [];
+      this.hostRef = null;
+      this.registered = false;
+    }
+    host() {
+      if (this.hostRef) return this.hostRef;
+      const host = globalThis.__jarvisHost;
+      if (!host) {
+        throw new Error("\u627E\u4E0D\u5230 __jarvisHost\uFF1A\u8FD9\u6BB5\u4EE3\u7801\u53EA\u80FD\u5728 Jarvis \u7684\u6269\u5C55\u8FD0\u884C\u65F6\u91CC\u6267\u884C\uFF08\u5355\u6D4B\u8BF7\u5148 createTestHost()\uFF09\u3002");
+      }
+      this.hostRef = host;
+      return host;
+    }
+    /** 把 `dispatch` 挂到全局。幂等；`defineExtension` 与任何一次能力调用都会确保它挂上了。 */
+    ensureRegistered() {
+      if (this.registered) return;
       globalThis.__jarvisRuntime = { dispatch: (json) => this.dispatch(json) };
+      this.registered = true;
     }
     define(definition) {
       if (this.definition) {
         throw new Error("defineExtension() \u53EA\u80FD\u8C03\u7528\u4E00\u6B21\uFF1A\u5BBF\u4E3B\u53EA\u8BA4\u4E00\u4E2A\u5165\u53E3\u3002");
       }
       this.definition = definition;
+      this.ensureRegistered();
     }
-    /** 让宿主再调一次 render。同一拍里的多次请求合并成一次提交。 */
+    /** 让宿主再调一次 render。同一拍里的多次请求合并成一次提交；页面没开着时是空操作。 */
     requestUpdate() {
-      if (this.updateQueued || !this.active) return;
+      if (this.updateQueued || !this.pageActive) return;
       this.updateQueued = true;
       Promise.resolve().then(() => {
         this.updateQueued = false;
@@ -124,16 +154,17 @@
       });
     }
     invoke(namespace, method, params) {
+      this.ensureRegistered();
       const id = this.nextRequestId++;
       const request = { protocol: bridgeProtocolVersion, id, namespace, method, params };
       return new Promise((resolve, reject) => {
         this.pending.set(id, { resolve, reject });
-        this.host.invoke(JSON.stringify(request));
+        this.host().invoke(JSON.stringify(request));
       });
     }
     invokeSync(namespace, method, params) {
       const request = { protocol: bridgeProtocolVersion, id: 0, namespace, method, params };
-      const result = JSON.parse(this.host.invokeSync(JSON.stringify(request)));
+      const result = JSON.parse(this.host().invokeSync(JSON.stringify(request)));
       if (result.ok) return result.value;
       throw new JarvisError(result.error);
     }
@@ -147,44 +178,59 @@
       };
     }
     log(level, message, data) {
-      this.host.log(level, message, data === void 0 ? null : JSON.stringify(data));
+      this.host().log(level, message, data === void 0 ? null : JSON.stringify(data));
+    }
+    /** 页面：自定义的，或按命令清单画的默认页。 */
+    renderPage() {
+      const page = this.definition?.page;
+      if (page) return page.render();
+      return ui.scroll({
+        children: [
+          ui.section({
+            title: "\u547D\u4EE4 \xB7 COMMANDS",
+            children: this.commandSummaries.length ? this.commandSummaries.map(
+              (command) => ui.row({
+                key: command.id,
+                symbol: command.presentation === "silent" ? "bolt" : "rectangle.and.text.magnifyingglass",
+                title: command.title,
+                subtitle: command.hotkey ? `\u5FEB\u6377\u952E ${command.hotkey}` : command.description ?? "\u6CA1\u6709\u5FEB\u6377\u952E\uFF0C\u5728\u8FD9\u91CC\u8FD0\u884C",
+                onPress: () => void jarvis.commands.run(command.id)
+              })
+            ) : [ui.empty({ symbol: "bolt.slash", title: "\u8FD9\u4E2A\u6269\u5C55\u6CA1\u6709\u547D\u4EE4", hint: "\u5B83\u7684 manifest \u91CC\u65E2\u6CA1\u6709\u9875\u9762\u4E5F\u6CA1\u6709\u547D\u4EE4\u3002" })]
+          })
+        ]
+      });
     }
     commit() {
-      const definition = this.definition;
-      if (!definition || !this.active) return;
+      if (!this.definition || !this.pageActive) return;
       this.handlers.clear();
-      let count = 0;
       const register = (fn) => {
         const handlerId = `h${this.handlers.size + 1}`;
         this.handlers.set(handlerId, fn);
         return handlerId;
       };
-      const root = definition.render();
-      const counted = serialize(root, register);
-      const walk = (node) => {
-        count += 1;
-        for (const child of node.children ?? []) walk(child);
-      };
-      walk(counted);
+      const root = serialize(this.renderPage(), register);
+      const count = countNodes(root);
       if (count > maximumNodesPerRender) {
         throw new Error(`\u4E00\u6B21 render \u63D0\u4EA4\u4E86 ${count} \u4E2A\u8282\u70B9\uFF0C\u4E0A\u9650 ${maximumNodesPerRender}\u3002`);
       }
       this.generation += 1;
-      this.host.commit(JSON.stringify({ protocol: bridgeProtocolVersion, generation: this.generation, root: counted }));
+      this.host().commit(JSON.stringify({ protocol: bridgeProtocolVersion, generation: this.generation, root }));
     }
     dispatch(json) {
       const event = JSON.parse(json);
       const definition = this.definition;
       switch (event.type) {
         case "activate": {
-          this.active = true;
-          void Promise.resolve(definition?.activate?.(event.context)).then(() => this.commit());
+          this.pageActive = true;
+          this.commandSummaries = event.context.commands ?? [];
+          void Promise.resolve(definition?.page?.activate?.(event.context)).then(() => this.commit());
           return;
         }
         case "deactivate": {
-          this.active = false;
+          this.pageActive = false;
           this.handlers.clear();
-          void definition?.deactivate?.();
+          void definition?.page?.deactivate?.();
           return;
         }
         case "settle": {
@@ -200,6 +246,18 @@
           if (!handler) return;
           handler(event.payload);
           this.requestUpdate();
+          return;
+        }
+        case "command": {
+          const handler = definition?.commands?.[event.context.id];
+          if (!handler) {
+            this.log("error", `manifest \u58F0\u660E\u4E86\u547D\u4EE4\u300C${event.context.id}\u300D\uFF0C\u4F46 defineExtension \u91CC\u6CA1\u6709\u5B83\u7684\u5904\u7406\u51FD\u6570\u3002`, void 0);
+            return;
+          }
+          void Promise.resolve(handler(event.context)).then(
+            () => this.requestUpdate(),
+            (error) => this.log("error", `\u547D\u4EE4\u300C${event.context.id}\u300D\u629B\u51FA\u4E86\u5F02\u5E38`, error instanceof Error ? error.message : String(error))
+          );
           return;
         }
         case "subscription": {
@@ -222,14 +280,7 @@
       }
     }
   };
-  function requireHost() {
-    const host = globalThis.__jarvisHost;
-    if (!host) {
-      throw new Error("\u627E\u4E0D\u5230 __jarvisHost\uFF1A\u8FD9\u6BB5\u4EE3\u7801\u53EA\u80FD\u5728 Jarvis \u7684\u6269\u5C55\u8FD0\u884C\u65F6\u91CC\u6267\u884C\u3002");
-    }
-    return host;
-  }
-  var runtime = new Runtime(requireHost());
+  var runtime = new Runtime();
   function defineExtension(definition) {
     runtime.define(definition);
   }
@@ -241,12 +292,15 @@
   }
   var call = {
     panel: namespaced("panel"),
+    commands: namespaced("commands"),
     storage: namespaced("storage"),
     preferences: namespaced("preferences"),
     permissions: namespaced("permissions"),
     clipboard: namespaced("clipboard"),
     quickTransfer: namespaced("quickTransfer"),
     screenshot: namespaced("screenshot"),
+    ocr: namespaced("ocr"),
+    speech: namespaced("speech"),
     notifications: namespaced("notifications"),
     inbox: namespaced("inbox"),
     memo: namespaced("memo"),
@@ -264,8 +318,12 @@
   };
   var jarvis = {
     sdk: { version: sdkVersion },
-    host: sync.host("info"),
-    environment: sync.host("environment"),
+    get host() {
+      return sync.host("info");
+    },
+    get environment() {
+      return sync.host("environment");
+    },
     ui: {
       update: () => runtime.requestUpdate()
     },
@@ -281,7 +339,11 @@
           }
         };
       },
-      collapse: () => call.panel("collapse")
+      collapse: () => call.panel("collapse"),
+      present: () => call.panel("present")
+    },
+    commands: {
+      run: (id) => call.commands("run", { id })
     },
     storage: {
       get: (key) => call.storage("get", { key }),
@@ -323,6 +385,10 @@
       },
       regex: {
         test: (pattern, text2, flags) => sync.text("regex.test", { pattern, text: text2, flags })
+      },
+      language: {
+        detect: (text2, options) => sync.text("language.detect", { text: text2, ...options }),
+        displayName: (code) => sync.text("language.displayName", { code })
       }
     },
     time: {
@@ -335,6 +401,7 @@
     },
     clipboard: {
       read: () => call.clipboard("read"),
+      readImage: () => call.clipboard("readImage"),
       write: (text2) => call.clipboard("write", { text: text2 }),
       history: (options) => call.clipboard("history", options),
       entryText: (id) => call.clipboard("entryText", { id }),
@@ -351,6 +418,13 @@
     },
     screenshot: {
       capture: (options) => call.screenshot("capture", options)
+    },
+    ocr: {
+      recognize: (file, options) => call.ocr("recognize", { file, ...options })
+    },
+    speech: {
+      speak: (text2, options) => call.speech("speak", { text: text2, ...options }),
+      stop: () => call.speech("stop")
     },
     notifications: {
       post: (content) => call.notifications("post", content)
@@ -586,30 +660,32 @@
     return ui.section({ title: "\u53D1\u9001 \xB7 SEND", children });
   }
   defineExtension({
-    async activate(context) {
-      granted = new Set(context.granted);
-      prefs = {
-        trimWhitespace: Boolean(context.preferences["trimWhitespace"] ?? true),
-        confirmBeforeSend: Boolean(context.preferences["confirmBeforeSend"] ?? false)
-      };
-      await refreshStatus();
-      if (has("quickTransfer.status")) {
-        unsubscribe = jarvis.quickTransfer.observe((next) => {
-          status = next;
-          jarvis.ui.update();
+    page: {
+      async activate(context) {
+        granted = new Set(context.granted);
+        prefs = {
+          trimWhitespace: Boolean(context.preferences["trimWhitespace"] ?? true),
+          confirmBeforeSend: Boolean(context.preferences["confirmBeforeSend"] ?? false)
+        };
+        await refreshStatus();
+        if (has("quickTransfer.status")) {
+          unsubscribe = jarvis.quickTransfer.observe((next) => {
+            status = next;
+            jarvis.ui.update();
+          });
+        }
+        jarvis.preferences.onChange((changes) => {
+          if ("trimWhitespace" in changes) prefs.trimWhitespace = Boolean(changes["trimWhitespace"]);
+          if ("confirmBeforeSend" in changes) prefs.confirmBeforeSend = Boolean(changes["confirmBeforeSend"]);
         });
+      },
+      render() {
+        return ui.scroll({ children: [contentSection(), transferSection(), actionSection()] });
+      },
+      deactivate() {
+        unsubscribe?.();
+        unsubscribe = null;
       }
-      jarvis.preferences.onChange((changes) => {
-        if ("trimWhitespace" in changes) prefs.trimWhitespace = Boolean(changes["trimWhitespace"]);
-        if ("confirmBeforeSend" in changes) prefs.confirmBeforeSend = Boolean(changes["confirmBeforeSend"]);
-      });
-    },
-    render() {
-      return ui.scroll({ children: [contentSection(), transferSection(), actionSection()] });
-    },
-    deactivate() {
-      unsubscribe?.();
-      unsubscribe = null;
     },
     async onInboxAction(cardId, actionId) {
       if (cardId === "sent" && actionId === "again") {

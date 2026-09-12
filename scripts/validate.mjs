@@ -87,10 +87,26 @@ export function checkExtension(dir) {
   if (manifest.inbox !== false) {
     if (manifest.inbox.cards && !has("inbox.post")) problem(dir, "inbox.cards 为 true 必须声明 inbox.post");
     if (manifest.inbox.notifications && !has("notifications.post")) problem(dir, "inbox.notifications 为 true 必须声明 notifications.post");
-    if (!manifest.inbox.cards && manifest.inbox.notifications) problem(dir, "inbox.notifications 不能在 cards 为 false 时为 true：横幅点开必须有一张卡可回去");
+    if (!manifest.inbox.cards && !manifest.inbox.notifications) problem(dir, "inbox 两项都是 false 时直接写 inbox: false");
+    if (!manifest.inbox.cards && has("inbox.post")) problem(dir, "声明了 inbox.post 却把 inbox.cards 关着");
   } else {
     if (has("inbox.post")) problem(dir, "声明了 inbox.post 却写了 inbox: false");
     if (has("notifications.post")) problem(dir, "声明了 notifications.post 却写了 inbox: false");
+  }
+  // 命令与快捷键
+  const commands = manifest.commands ?? [];
+  const commandIds = commands.map((c) => c.id);
+  const dupCommands = commandIds.filter((id, i) => commandIds.indexOf(id) !== i);
+  if (dupCommands.length) problem(dir, `commands 里重复的 id：${[...new Set(dupCommands)].join("、")}`);
+  const hotkeys = commands.filter((c) => c.hotkey).map((c) => c.hotkey.default);
+  const dupHotkeys = hotkeys.filter((k, i) => hotkeys.indexOf(k) !== i);
+  if (dupHotkeys.length) problem(dir, `两条命令用了同一个快捷键：${[...new Set(dupHotkeys)].join("、")}`);
+  if (hotkeys.length > 0 && !has("hotkeys.register")) problem(dir, "有命令声明了快捷键，必须同时声明 hotkeys.register 能力");
+  if (hotkeys.length === 0 && has("hotkeys.register")) problem(dir, "声明了 hotkeys.register 却没有任何命令带快捷键");
+  for (const c of commands) {
+    if (c.presentation === "silent" && !has("notifications.post") && !has("clipboard.write") && !has("inbox.post")) {
+      problem(dir, `命令「${c.id}」是 silent 的，却没有任何把结果交给用户的能力（notifications.post / clipboard.write / inbox.post）`);
+    }
   }
   if (manifest.background) {
     const hasBackgroundWork = has("inbox.post") || ids.some((id) => OBSERVE_CAPABILITIES.has(id));
@@ -106,6 +122,10 @@ export function checkExtension(dir) {
       }
       if (p.type === "number" && (p.default < p.minimum || p.default > p.maximum)) {
         problem(dir, `preference「${p.key}」的 default 越界`);
+      }
+      if (p.type === "multiselect") {
+        const values = new Set(p.options.map((o) => o.value));
+        for (const v of p.default) if (!values.has(v)) problem(dir, `preference「${p.key}」的 default 里「${v}」不在 options 里`);
       }
     }
   }

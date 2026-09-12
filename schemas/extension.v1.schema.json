@@ -74,6 +74,14 @@
     "network": {
       "$ref": "#/$defs/network"
     },
+    "commands": {
+      "type": "array",
+      "description": "第二部分的另一半：页面之外的入口。快捷键、页面按钮、快捷环、Inbox 卡片触发，落到 defineExtension({ commands }) 里同 id 的处理函数。",
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/command"
+      }
+    },
     "settings": {
       "description": "第三部分：要不要出现在设置页。false = 不出现；对象 = 出现，并按 preferences 渲染。",
       "oneOf": [
@@ -193,8 +201,59 @@
         "tasks.read",
         "network.https",
         "files.pick",
-        "system.openURL"
+        "system.openURL",
+        "ocr.recognize",
+        "speech.speak",
+        "hotkeys.register"
       ]
+    },
+    "command": {
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "presentation"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+          "minLength": 2,
+          "maxLength": 40
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "hotkey": {
+          "type": "object",
+          "description": "全局快捷键的默认值。有它就必须声明 hotkeys.register 能力。",
+          "required": [
+            "default"
+          ],
+          "properties": {
+            "default": {
+              "type": "string",
+              "description": "修饰键按 ⌃⌥⇧⌘ 顺序 + 一个主键；至少含 ⌃、⌥、⌘ 之一。例：⌥⌘T、⌃⇧F5。",
+              "pattern": "^(?=.*[⌃⌥⌘])⌃?⌥?⇧?⌘?(?:[A-Z0-9]|F[1-9]|F1[0-2]|[-=\\[\\];',./])$"
+            }
+          },
+          "additionalProperties": false
+        },
+        "presentation": {
+          "enum": [
+            "panel",
+            "silent"
+          ],
+          "description": "panel = 跑完展开面板到这个扩展的页面；silent = 不碰面板。"
+        }
+      },
+      "additionalProperties": false
     },
     "capabilityRequest": {
       "type": "object",
@@ -272,6 +331,8 @@
             "text",
             "number",
             "select",
+            "multiselect",
+            "secret",
             "directory"
           ]
         },
@@ -401,6 +462,63 @@
               "type": "object",
               "properties": {
                 "type": {
+                  "const": "multiselect"
+                },
+                "default": {
+                  "type": "array",
+                  "maxItems": 8,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "options": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 8,
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "value",
+                      "title"
+                    ],
+                    "properties": {
+                      "value": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9_-]{1,32}$"
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "default",
+                "options"
+              ]
+            },
+            {
+              "type": "object",
+              "description": "机密：宿主存 Keychain、设置页遮罩显示、只在扩展内可读、不进日志。没有默认值。",
+              "properties": {
+                "type": {
+                  "const": "secret"
+                },
+                "placeholder": {
+                  "type": "string",
+                  "maxLength": 40
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
                   "const": "directory"
                 }
               }
@@ -423,7 +541,7 @@
         },
         "notifications": {
           "type": "boolean",
-          "description": "投递卡片时可以同时弹系统横幅。为 true 时必须同时声明 notifications.post 能力。"
+          "description": "可以弹系统横幅（带卡或不带卡；不带卡时点横幅展开面板到这个扩展的页面）。为 true 时必须同时声明 notifications.post 能力。"
         }
       },
       "additionalProperties": false

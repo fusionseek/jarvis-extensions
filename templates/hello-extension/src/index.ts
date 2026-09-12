@@ -19,15 +19,16 @@ function summary(): { characters: number; words: number; lines: number } {
 }
 
 defineExtension({
-  async activate() {
-    // 跨越一次面板收回记住上次的文本：面板 15 秒会自动收回，重新进入是新的一次 activate。
-    text = (await jarvis.storage.get<string>("text")) ?? "";
-    jarvis.ui.update();
-  },
+  page: {
+    async activate() {
+      // 跨越一次面板收回记住上次的文本：面板 15 秒会自动收回，重新进入是新的一次 activate。
+      text = (await jarvis.storage.get<string>("text")) ?? "";
+      jarvis.ui.update();
+    },
 
-  render() {
-    const s = summary();
-    return ui.scroll({
+    render() {
+      const s = summary();
+      return ui.scroll({
       children: [
         ui.section({
           title: "输入 · INPUT",
@@ -80,5 +81,6 @@ defineExtension({
         }),
       ],
     });
+    },
   },
 });

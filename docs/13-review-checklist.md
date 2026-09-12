@@ -14,6 +14,9 @@
 - [ ] CI · `version` 相对主干递增（新扩展从 `0.1.0` 或 `1.0.0` 起）
 - [ ] CI · 跨字段规则：`network.https` ⇔ `network.hosts`；`inbox.cards` ⇒ `inbox.post`；`inbox.notifications` ⇒ `notifications.post`；`background` ⇒ 有后台要做的事
 - [ ] CI · `capabilities` 里没有重复 id
+- [ ] CI · 命令：id 唯一、快捷键格式合法且不重复、带快捷键 ⇔ 声明 `hotkeys.register`、`silent` 命令至少有一种交结果的能力
+- [ ] `defineExtension({ commands })` 里每条 manifest 命令都有处理函数（开发者模式日志里没有「没有它的处理函数」）
+- [ ] `secret` 偏好没有被写进 `storage`、日志或白名单之外的请求
 - [ ] 每一项 `reason` 写的是**拿它做什么**，不是"为了更好的体验"
 - [ ] 声明的能力与代码里调用的一致：多声明的问一句，少声明的运行时会报 `capability.undeclared`
 - [ ] `toolbox.name` ≤ 6 个汉字（宫格与 header 两处都不截）；`subtitle` 一句话说清它替我做什么

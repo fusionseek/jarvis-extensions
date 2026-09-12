@@ -167,6 +167,8 @@ sequenceDiagram
 | 加载 | 进入时 `evaluateScript(bundle)`；`background: false` 的扩展离开页面即 `deactivate` 并**销毁上下文** | 不常驻的扩展不该在后台占着任何东西 |
 | 常驻 | `background: true` 且被授予 `inbox.post` 或有 `observe` 订阅的扩展，离开页面后保留上下文 | 它要在后台投卡片；没有这两样却声明 `background` 的 manifest 审核不通过 |
 | 崩溃 | 未捕获异常 / 终止 → 扩展页面进**错误屏**（一张 `danger` 语义卡 + 「重新加载」+ 「查看日志」），Inbox 与设置照常 | 一个扩展坏了不能把面板变空白 |
+| JIT | 宿主开着 hardened runtime，进程内的 JavaScriptCore 要 JIT 得加 `com.apple.security.cs.allow-jit`；期 B 的 P-0 量过再决定 | 这个工作负载只有逻辑没有热循环，解释器多半也够；不凭感觉加权限 |
+| 输入框 | `field` / `editor` / `search` 的文本由宿主持有；`onChange` 送 JS，`value` 只在与宿主不一致时覆写 | 打字不经 JS 往返；中文输入法的组合态不会被一次异步回写打断 |
 
 线缆协议（`sdk/src/bridge.ts`）：
 
@@ -180,6 +182,43 @@ sequenceDiagram
 
 线缆协议有自己的版本号（`bridgeProtocolVersion`），与 SDK 主版本同步；不一致时宿主拒绝加载，
 扩展页面写明「这个扩展需要 SDK 2，当前 Jarvis 只支持 SDK 1」，扩展库卡片上同理。
+
+### 静态面与动态面
+
+manifest 声明的东西分两类，判据是**扩展的 JS 需不需要在跑**：
+
+| 面 | 内容 | 谁持有 |
+| --- | --- | --- |
+| 静态面 | 工具箱那一行、全局快捷键、设置页的面板与偏好、Inbox 里落着的卡 | **宿主**按 manifest 与库里的记录画与注册，扩展的 JS 可以完全没加载 |
+| 动态面 | 页面（`render()` 出来的树）、命令的执行、订阅回调 | 扩展的 `JSContext` |
+
+因此快捷键在应用启动时就能用：宿主按 `extension_installs` 里启用的扩展注册全部 `commands[].hotkey`，
+按下时才建上下文、跑那一条命令、`background: false` 的跑完即销毁。一个从没打开过页面的扩展，
+它的快捷键照样响——这与 Inbox 动作的按需唤醒是同一条路。
+
+### 命令的生命周期
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant H as 宿主
+    participant R as JSContext
+    U->>H: 按 ⌥⌘T（或页面按钮 / 快捷环 / Inbox 卡）
+    H->>H: 查 manifest：命令 id、presentation；热键算一次用户动作
+    H->>R: 没在跑就加载 bundle
+    H->>R: dispatch command { id, trigger, granted, preferences }
+    R->>H: 命令里调能力（截图 / OCR / 网络 …），每一次过闸门
+    alt presentation = panel
+        H->>H: 命令返回（或扩展调 panel.present()）后展开面板到该扩展
+        H->>R: dispatch activate（页面没开着时）→ render → commit
+    else presentation = silent
+        H->>H: 不碰面板；命令用剪贴板 / 横幅交结果
+        H->>R: background=false 则销毁上下文
+    end
+```
+
+页面里的按钮触发命令走 `jarvis.commands.run(id)`，与快捷键同一条路（`trigger = "page"`），
+因此一条命令只有一份实现，不会出现"按钮能用、快捷键坏了"。
 
 ### 能力闸门
 

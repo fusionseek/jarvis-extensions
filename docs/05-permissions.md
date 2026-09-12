@@ -31,7 +31,7 @@
 | 情形 | 弹窗范围 |
 | --- | --- |
 | 更新后的版本**新增**了能力 | 只列新增的那几项，标题写「新版本多要了 N 项能力」 |
-| 扩展调用 `jarvis.permissions.request(ids)` | 只列传进来的、且 manifest 声明过的那几项；必须发生在用户动作 1 秒内 |
+| 扩展调用 `jarvis.permissions.request(ids)` | 只列传进来的、且 manifest 声明过的那几项；必须发生在用户动作（点按或按下扩展的快捷键）1 秒内 |
 | 用户在设置页撤销后扩展再次进入 | 不自动问；扩展调用时得到 `permission.denied`，它可以在用户动作里 `request` |
 
 ### 弹窗长什么样
@@ -71,7 +71,7 @@
 | 头 | 32pt 图标井（`toolbox.symbol`）+ 名 17pt SemiBold + 版本 11pt footnote；第二行 作者 · N 项能力 | 与恢复会话弹窗的目录标题同构 |
 | 能力行 | 44pt 高、行距 0、行间发丝线；左 18pt 符号列、标题 13pt semibold、`reason` 11pt `subtleText`、右端档位标签 + 玻璃开关（`SettingsGlassToggleStyle`） | 借 `HostSoundTakeoverSheet`「逐条确认」的形态：默认全开、每条可单独关。这道逐条不是礼貌，是"把别人的代码放进来"这件事能成立的前提 |
 | 档位标签 | `SettingsStatusBadge`：低风险 `footnoteText` 灰 / 中风险 `accent` 青 / 高风险 `alert` 橙 | 三档只换色不换形；橙是这套体系里既有的"需要你注意" |
-| 高风险行的第三句 | 宿主追加，不由扩展写：`network.https` → 「会访问：api.example.com, …」；`quickTransfer.control` → 「会对局域网开一个端口」；`screenshot.capture` → 「会看到你的屏幕」；`clipboard.history` → 「包括你之前复制过的内容」 | `reason` 是扩展说的话，这一句是宿主说的话；用户要同时听到两边 |
+| 高风险行的第三句 | 宿主追加，不由扩展写：`network.https` → 「会访问：api.example.com, …」；`quickTransfer.control` → 「会对局域网开一个端口」；`screenshot.capture` → 「会看到你的屏幕」；`clipboard.history` → 「包括你之前复制过的内容」；`hotkeys.register` → 「⌥⌘T · ⌥⌘O，可在设置里改」 | `reason` 是扩展说的话，这一句是宿主说的话；用户要同时听到两边 |
 | 脚注 | 11pt footnote：撤销的位置 + 源码地址 | 一个能撤销的授权才敢给 |
 | 按钮 | 34pt 高、圆角 9；「允许并打开」accent 底 16% / 边 45% + 常驻炫彩描边（它是这扇窗里唯一要用户做决定的地方）；「暂不」白 5% / 10% | 与 `ResumeDialog.Button` 逐值相同 |
 | 全部关掉时 | 主按钮文案变成「不授权，仍然打开」 | 用户关掉全部开关仍然可以进去看看；扩展要自己画出受限态 |
@@ -123,8 +123,8 @@ try {
 
 | 档 | 能力 | 判据 |
 | --- | --- | --- |
-| 低 | `tasks.read`、`calendar.read`、`system.openURL`、`files.pick` | 只读汇总数据，或每次都经用户之手（选文件、开浏览器） |
-| 中 | `clipboard.read`、`clipboard.write`、`memo.read`、`memo.write`、`notifications.post`、`inbox.post`、`quickTransfer.status`、`quickTransfer.records` | 读或写用户自己的数据，但不出本机、不看历史 |
+| 低 | `tasks.read`、`calendar.read`、`system.openURL`、`files.pick`、`ocr.recognize`、`speech.speak` | 只读汇总数据，处理扩展已经拿到的图，或每次都经用户之手（选文件、开浏览器） |
+| 中 | `clipboard.read`、`clipboard.write`、`memo.read`、`memo.write`、`notifications.post`、`inbox.post`、`quickTransfer.status`、`quickTransfer.records`、`hotkeys.register` | 读或写用户自己的数据，但不出本机、不看历史；或占一组全局按键 |
 | 高 | `clipboard.history`、`quickTransfer.control`、`quickTransfer.send`、`screenshot.capture`、`network.https` | 看得到历史、出得了本机、开得了端口、看得见屏幕 |
 
 ### 系统权限的借用

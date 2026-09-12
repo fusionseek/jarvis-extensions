@@ -33,9 +33,13 @@ npm run registry
 | # | 部分 | 字段 |
 | --- | --- | --- |
 | 一 | 工具箱里的图标与名字 | `toolbox.symbol` / `name` / `subtitle` |
-| 二 | 点进去的功能，以及它要向用户申请的宿主能力 | `main` + `capabilities[]`（第一次进入弹统一授权弹窗） |
+| 二 | 点进去的功能、页面之外的入口（命令与全局快捷键），以及它要向用户申请的宿主能力 | `main` + `commands[]` + `capabilities[]`（第一次进入弹统一授权弹窗） |
 | 三 | 要不要出现在设置页 | `settings: false \| { preferences }` |
 | 四 | 要不要往 Inbox 投递 | `inbox: false \| { cards, notifications }` |
+
+入口模型是 **命令 + 页面**（与 Raycast 相同）：工具箱那一行打开页面；快捷键、页面按钮、快捷环、
+Inbox 卡片触发命令。参考实现：[`extensions/screenshot-translate`](extensions/screenshot-translate)
+（截屏 OCR + Google 翻译，两条带快捷键的命令加一个页面）。
 
 完整手册：[docs/12-developer-guide.md](docs/12-developer-guide.md)。审核清单：[docs/13-review-checklist.md](docs/13-review-checklist.md)。
 

@@ -69,6 +69,14 @@ for (const dir of extensionDirectories()) {
   };
   if (manifest.repository) entry.repository = manifest.repository;
   if (manifest.network) entry.network = manifest.network;
+  if (manifest.commands?.length) {
+    entry.commands = manifest.commands.map((c) => ({
+      id: c.id,
+      title: c.title,
+      ...(c.hotkey ? { hotkey: c.hotkey.default } : {}),
+      presentation: c.presentation,
+    }));
+  }
   entries.push(entry);
 }
 entries.sort((a, b) => a.id.localeCompare(b.id));

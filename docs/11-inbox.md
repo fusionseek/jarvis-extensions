@@ -88,6 +88,8 @@ Inbox 顶部那一段（"需要你做点什么"）的顺序：
 扩展不能指定声音。通知权限被拒时横幅静默不弹，`post` 照常 resolve——横幅本来就是尽力而为。
 
 `jarvis.notifications.post` 单独调用（不带卡）也可以，同样的限制：60 秒内 ≤ 3 条、副标题恒为扩展名。
+manifest 写 `{ cards: false, notifications: true }` 就是只走这条路——静默命令的回执（「已复制译文」）
+用它，点横幅展开面板到这个扩展的页面。
 
 ## Usage
 

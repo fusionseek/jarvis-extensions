@@ -1,0 +1,101 @@
+{
+  "manifestVersion": 1,
+  "id": "screenshot-translate",
+  "version": "0.1.0",
+  "toolbox": {
+    "symbol": "translate",
+    "name": "截屏翻译",
+    "subtitle": "框一块屏幕，识字并翻译",
+    "keywords": ["ocr", "translate", "google", "文字识别"]
+  },
+  "description": "按一下快捷键框选屏幕上任意一块，Vision 识别文字、合并段落、检测语言，再经 Google 翻译成你选的语言；也可以把剪贴板里的文字或图片直接翻译。免费端点无需 key，填了 API key 就走官方接口。",
+  "author": {
+    "name": "fusionseek",
+    "github": "fusionseek"
+  },
+  "main": "dist/extension.js",
+  "sdk": "^1.1.0",
+  "minimumJarvisVersion": "1.6.0",
+  "capabilities": [
+    { "id": "screenshot.capture", "reason": "框选屏幕上要翻译的那一块" },
+    { "id": "ocr.recognize", "reason": "识别剪贴板里图片上的文字" },
+    { "id": "clipboard.read", "reason": "把剪贴板里的文字或图片拿来翻译" },
+    { "id": "clipboard.write", "reason": "静默命令把译文直接放进剪贴板" },
+    { "id": "network.https", "reason": "把文字发给 Google 翻译" },
+    { "id": "notifications.post", "reason": "静默命令完成时弹一条「已复制译文」" },
+    { "id": "speech.speak", "reason": "朗读原文或译文" },
+    { "id": "hotkeys.register", "reason": "全局快捷键随时触发截屏翻译" }
+  ],
+  "network": {
+    "hosts": ["translate.googleapis.com", "translation.googleapis.com"]
+  },
+  "commands": [
+    { "id": "capture-translate", "title": "截屏翻译", "description": "框选一块，识字并翻译，结果在面板里", "hotkey": { "default": "⌥⌘T" }, "presentation": "panel" },
+    { "id": "capture-copy", "title": "截屏译文入剪贴板", "description": "框选一块，翻译后直接复制，不开面板", "hotkey": { "default": "⌥⌘O" }, "presentation": "silent" },
+    { "id": "translate-clipboard", "title": "翻译剪贴板", "description": "把剪贴板里的文字或图片翻译出来", "presentation": "panel" }
+  ],
+  "settings": {
+    "preferences": [
+      {
+        "key": "targetLanguage",
+        "type": "select",
+        "title": "翻译成",
+        "default": "zh-CN",
+        "options": [
+          { "value": "zh-CN", "title": "简体中文" },
+          { "value": "zh-TW", "title": "繁體中文" },
+          { "value": "en", "title": "English" },
+          { "value": "ja", "title": "日本語" },
+          { "value": "ko", "title": "한국어" },
+          { "value": "fr", "title": "Français" },
+          { "value": "de", "title": "Deutsch" },
+          { "value": "es", "title": "Español" }
+        ]
+      },
+      {
+        "key": "alternateLanguage",
+        "type": "select",
+        "title": "原文已是目标语言时翻成",
+        "description": "截到的本来就是中文时，改翻成这一种",
+        "default": "en",
+        "options": [
+          { "value": "en", "title": "English" },
+          { "value": "zh-CN", "title": "简体中文" },
+          { "value": "ja", "title": "日本語" }
+        ]
+      },
+      {
+        "key": "ocrLanguages",
+        "type": "multiselect",
+        "title": "识别哪些语言",
+        "description": "Vision 的识别语言；选得越多越慢",
+        "default": ["zh-Hans", "en-US"],
+        "options": [
+          { "value": "zh-Hans", "title": "简体中文" },
+          { "value": "zh-Hant", "title": "繁體中文" },
+          { "value": "en-US", "title": "English" },
+          { "value": "ja-JP", "title": "日本語" },
+          { "value": "ko-KR", "title": "한국어" },
+          { "value": "fr-FR", "title": "Français" },
+          { "value": "de-DE", "title": "Deutsch" },
+          { "value": "es-ES", "title": "Español" }
+        ]
+      },
+      {
+        "key": "apiKey",
+        "type": "secret",
+        "title": "Google Cloud API key",
+        "description": "留空走免费端点；填了走官方 Translation API v2",
+        "placeholder": "AIza…"
+      },
+      {
+        "key": "autoCopy",
+        "type": "toggle",
+        "title": "翻译完自动复制译文",
+        "default": false
+      }
+    ]
+  },
+  "inbox": { "cards": false, "notifications": true },
+  "background": false
+}

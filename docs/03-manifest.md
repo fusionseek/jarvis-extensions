@@ -32,7 +32,11 @@
     { "id": "clipboard.read", "reason": "读取要发送的文字或链接" },
     { "id": "quickTransfer.status", "reason": "知道快传开没开、有没有手机连着" },
     { "id": "quickTransfer.control", "reason": "快传没开时替你打开" },
-    { "id": "quickTransfer.send", "reason": "把内容推到手机" }
+    { "id": "quickTransfer.send", "reason": "把内容推到手机" },
+    { "id": "hotkeys.register", "reason": "全局快捷键一键发送" }
+  ],
+  "commands": [
+    { "id": "send-clipboard", "title": "一键发送", "hotkey": { "default": "⌥⌘P" }, "presentation": "silent" }
   ],
   "settings": {
     "preferences": [
@@ -91,11 +95,14 @@
 画在 26pt 青色方片上，与 JSON / URL / 哈希那几块工具逐值相同——**徽标与列表行说的是同一件事**，
 不允许两处用不同符号。
 
-### 第二部分：`main`、`capabilities`、`network`
+### 第二部分：`main`、`commands`、`capabilities`、`network`
 
 | 字段 | 规则 | 为什么 |
 | --- | --- | --- |
 | `main` | `dist/<name>.js`，单文件 | 宿主只 `evaluateScript` 这一个文件；没有模块加载器。ESM/IIFE 都行，但不能 `import` 别的文件 |
+| `commands[]` | ≤ 8 条，每条 `{ id, title, description?, hotkey?, presentation }`；`id` 与扩展 id 同一套规则、扩展内唯一；`title` ≤ 12 字 | 页面之外的入口。快捷键、页面按钮、快捷环、Inbox 卡片触发，落到 `defineExtension({ commands })` 里同 id 的处理函数。**没有页面也可以**：SDK 会画一张列出全部命令的默认页 |
+| `commands[].hotkey.default` | 修饰键按 `⌃⌥⇧⌘` 顺序 + 一个主键（`A`–`Z`、`0`–`9`、`F1`–`F12` 或 `- = [ ] ; ' , . /`），至少含 ⌃、⌥、⌘ 之一；例 `⌥⌘T` | 与 Jarvis 设置页显示的写法一致。它只是默认值，用户可以改；系统探测不到跨应用冲突，因此设置页会写明"按了没反应多半是别的应用占着" |
+| `commands[].presentation` | `panel` / `silent` | `panel`：跑完展开面板到这个扩展的页面；`silent`：不碰面板，命令自己用剪贴板、横幅或 `jarvis.panel.present()` 交结果 |
 | `capabilities[]` | ≤ 12 项，每项 `{ id, reason }`，`reason` 4–60 字 | `reason` 是授权弹窗那一行的第二句，**写给用户看**：说清拿它做什么，不写"为了更好的体验"。同一个 id 不能出现两次（校验脚本查） |
 | `network.hosts` | 声明了 `network.https` 时**必填**，1–8 个主机名（不带协议与路径） | 宿主只放行这几个主机上的 HTTPS；授权弹窗把主机名逐条列给用户看 |
 
@@ -108,6 +115,10 @@
 - `inbox.cards: true` ⇒ 必须声明 `inbox.post`；`inbox.notifications: true` ⇒ 必须声明 `notifications.post`。
 - `background: true` ⇒ 必须声明 `inbox.post` **或** 至少一项带 `observe` 的能力（`clipboard.read`、
   `quickTransfer.status`、`tasks.read`）。没有后台要做的事却常驻，审核不通过。
+- 任一命令带 `hotkey` ⇔ 声明了 `hotkeys.register`。全局快捷键要用户点头，弹窗里那一行写的是「注册全局快捷键 ⌥⌘T」。
+- `presentation: "silent"` 的命令必须至少声明 `clipboard.write`、`notifications.post`、`inbox.post` 之一：
+  一条不开面板又不交结果的命令，用户按了只会以为坏了。
+- 两条命令不能用同一个快捷键。
 
 ### 第三部分：`settings`
 
@@ -120,14 +131,16 @@
 | `text` | 单行输入框 | `default`、`placeholder`、`maxLength`（≤ 200） |
 | `number` | 单行输入框 + 范围校验 | `default`、`minimum`、`maximum`、`step` |
 | `select` | 分段选择器（≤ 4 档）或下拉（5–8 档） | `default`、`options[]`（2–8 项） |
+| `multiselect` | 一排可多选的 chip | `default: string[]`、`options[]`（2–8 项） |
+| `secret` | 遮罩输入框 + 「已设置」徽标 | 无默认；`placeholder`。存 **Keychain**、不进 SQLite、不进日志、`preferences.all()` 里没有它、只能按 key 单独读 |
 | `directory` | 「选择…」chip + 缩写路径 | 无默认；未选时显示「未选择」 |
 
 规则：
 
 - `key` `^[a-z][a-zA-Z0-9]*$`，≤ 32；`title` ≤ 24 字；`description` ≤ 80 字。设置页的行文本区上限 640pt，
   超过这个长度的说明读不下去。
-- **没有 `secret` 类型。** 偏好值明文存在 `extension_preferences` 里；一个 API key 不该待在那里。
-  需要机密的扩展等 v2 的 Keychain 支持，v1 不收。
+- `secret` 是唯一一种不落 `extension_preferences` 的偏好：Keychain 条目按 `<extension id>/<key>` 命名，
+  随卸载删除。扩展把它写进 `storage`、写进日志、发到白名单之外的主机，审核不通过。
 - 值的读取走 `jarvis.preferences.get(key)`；用户在设置页改动后宿主发 `preferencesChanged`。
 - 扩展**不能**在自己的页面里再画一份设置：同一个开关出现在两处，用户就得先判断哪个算数。
 
@@ -140,7 +153,8 @@
 | `false` | 不进 Inbox。`jarvis.inbox.*` 与 `jarvis.notifications.*` 即使声明了能力也拒绝 |
 | `{ cards: true, notifications: false }` | 只投卡片，不弹横幅 |
 | `{ cards: true, notifications: true }` | 投卡片时可以带横幅（`notify: true`） |
-| `{ cards: false, notifications: true }` | **不合法**：横幅点开必须有一张卡可回去 |
+| `{ cards: false, notifications: true }` | 只弹横幅不投卡（静默命令的回执）：点横幅展开面板到这个扩展的页面 |
+| `{ cards: false, notifications: false }` | **不合法**：两项都不要就写 `false` |
 
 卡片的形态与规则见 [11 · Inbox 接入](11-inbox.md)。
 

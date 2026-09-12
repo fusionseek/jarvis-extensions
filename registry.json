@@ -1,11 +1,81 @@
 {
   "registryVersion": 1,
-  "generatedAt": "2026-09-12T04:57:27.086Z",
+  "generatedAt": "2026-09-12T07:24:25.928Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "0000000000000000000000000000000000000000"
+    "commit": "5e46c1a724d6bb299eadf57ddd5323d28f2afd92"
   },
   "extensions": [
+    {
+      "id": "screenshot-translate",
+      "version": "0.1.0",
+      "toolbox": {
+        "symbol": "translate",
+        "name": "截屏翻译",
+        "subtitle": "框一块屏幕，识字并翻译",
+        "keywords": [
+          "ocr",
+          "translate",
+          "google",
+          "文字识别"
+        ]
+      },
+      "description": "按一下快捷键框选屏幕上任意一块，Vision 识别文字、合并段落、检测语言，再经 Google 翻译成你选的语言；也可以把剪贴板里的文字或图片直接翻译。免费端点无需 key，填了 API key 就走官方接口。",
+      "author": {
+        "name": "fusionseek",
+        "github": "fusionseek"
+      },
+      "sdk": "^1.1.0",
+      "minimumJarvisVersion": "1.6.0",
+      "capabilities": [
+        "screenshot.capture",
+        "ocr.recognize",
+        "clipboard.read",
+        "clipboard.write",
+        "network.https",
+        "notifications.post",
+        "speech.speak",
+        "hotkeys.register"
+      ],
+      "settings": true,
+      "inbox": {
+        "cards": false,
+        "notifications": true
+      },
+      "background": false,
+      "path": "extensions/screenshot-translate",
+      "bundle": {
+        "path": "extensions/screenshot-translate/dist/extension.js",
+        "sha256": "30c41e50bdea3af40b6b31c0e33eeffcbd67f9cda29c45657aafe33e2c832cc6",
+        "byteCount": 39364
+      },
+      "updatedAt": "2026-09-12T07:24:25.903Z",
+      "network": {
+        "hosts": [
+          "translate.googleapis.com",
+          "translation.googleapis.com"
+        ]
+      },
+      "commands": [
+        {
+          "id": "capture-translate",
+          "title": "截屏翻译",
+          "hotkey": "⌥⌘T",
+          "presentation": "panel"
+        },
+        {
+          "id": "capture-copy",
+          "title": "截屏译文入剪贴板",
+          "hotkey": "⌥⌘O",
+          "presentation": "silent"
+        },
+        {
+          "id": "translate-clipboard",
+          "title": "翻译剪贴板",
+          "presentation": "panel"
+        }
+      ]
+    },
     {
       "id": "send-to-phone",
       "version": "1.0.0",
@@ -42,10 +112,10 @@
       "path": "extensions/send-to-phone",
       "bundle": {
         "path": "extensions/send-to-phone/dist/extension.js",
-        "sha256": "227a0c8465482ff585d8669a742be3907c996b140994029156d84272eb1a1466",
-        "byteCount": 22720
+        "sha256": "488392d6d9cbb317b98a3511ba12120e7f1743e51370e28f2c7e241b9ed8fa25",
+        "byteCount": 26240
       },
-      "updatedAt": "2026-09-12T04:57:27.085Z"
+      "updatedAt": "2026-09-12T12:59:22+08:00"
     }
   ]
 }

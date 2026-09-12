@@ -1,0 +1,15 @@
+{
+  "name": "jarvis-ext-screenshot-translate",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node ../../scripts/build-extension.mjs .",
+    "watch": "node ../../scripts/build-extension.mjs . --watch",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "validate": "node ../../scripts/validate.mjs ."
+  },
+  "dependencies": {
+    "@fusionseek/jarvis-extension-sdk": "^1.1.0"
+  }
+}

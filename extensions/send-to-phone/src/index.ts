@@ -237,32 +237,34 @@ function actionSection(): UINode {
 }
 
 defineExtension({
-  async activate(context) {
-    granted = new Set(context.granted as CapabilityID[]);
-    prefs = {
-      trimWhitespace: Boolean(context.preferences["trimWhitespace"] ?? true),
-      confirmBeforeSend: Boolean(context.preferences["confirmBeforeSend"] ?? false),
-    };
-    await refreshStatus();
-    if (has("quickTransfer.status")) {
-      unsubscribe = jarvis.quickTransfer.observe((next) => {
-        status = next;
-        jarvis.ui.update();
+  page: {
+    async activate(context) {
+      granted = new Set(context.granted as CapabilityID[]);
+      prefs = {
+        trimWhitespace: Boolean(context.preferences["trimWhitespace"] ?? true),
+        confirmBeforeSend: Boolean(context.preferences["confirmBeforeSend"] ?? false),
+      };
+      await refreshStatus();
+      if (has("quickTransfer.status")) {
+        unsubscribe = jarvis.quickTransfer.observe((next) => {
+          status = next;
+          jarvis.ui.update();
+        });
+      }
+      jarvis.preferences.onChange((changes) => {
+        if ("trimWhitespace" in changes) prefs.trimWhitespace = Boolean(changes["trimWhitespace"]);
+        if ("confirmBeforeSend" in changes) prefs.confirmBeforeSend = Boolean(changes["confirmBeforeSend"]);
       });
-    }
-    jarvis.preferences.onChange((changes) => {
-      if ("trimWhitespace" in changes) prefs.trimWhitespace = Boolean(changes["trimWhitespace"]);
-      if ("confirmBeforeSend" in changes) prefs.confirmBeforeSend = Boolean(changes["confirmBeforeSend"]);
-    });
-  },
+    },
 
-  render() {
-    return ui.scroll({ children: [contentSection(), transferSection(), actionSection()] });
-  },
+    render() {
+      return ui.scroll({ children: [contentSection(), transferSection(), actionSection()] });
+    },
 
-  deactivate() {
-    unsubscribe?.();
-    unsubscribe = null;
+    deactivate() {
+      unsubscribe?.();
+      unsubscribe = null;
+    },
   },
 
   async onInboxAction(cardId, actionId) {

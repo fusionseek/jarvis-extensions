@@ -143,6 +143,36 @@
             "type": "string"
           }
         },
+        "commands": {
+          "type": "array",
+          "description": "命令清单的投影：卡片上写「N 条命令 · ⌥⌘T」用。",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "title",
+              "presentation"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "hotkey": {
+                "type": "string"
+              },
+              "presentation": {
+                "enum": [
+                  "panel",
+                  "silent"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
         "network": {
           "type": "object",
           "required": [

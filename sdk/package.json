@@ -1,7 +1,7 @@
 {
   "name": "@fusionseek/jarvis-extension-sdk",
-  "version": "1.0.0",
-  "description": "Jarvis 扩展 SDK：manifest 类型、声明式 UI 节点、宿主能力接口与 JavaScriptCore 桥。",
+  "version": "1.1.0",
+  "description": "Jarvis 扩展 SDK：manifest 类型、命令与页面、声明式 UI 节点、宿主能力接口、OCR 段落合并与 JavaScriptCore 桥。",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js"
     }
   },
   "files": [

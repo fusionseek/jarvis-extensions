@@ -1,31 +1,45 @@
 /**
  * `@fusionseek/jarvis-extension-sdk` 的入口。
  *
- * 一个扩展只做三件事：`defineExtension` 交出生命周期与 `render`，用 `ui.*` 描述界面，
- * 用全局 `jarvis` 调宿主能力。其余（渲染、悬停光、授权、存储隔离）全在宿主。
+ * 一个扩展只做三件事：`defineExtension` 交出页面与命令，用 `ui.*` 描述界面，
+ * 用全局 `jarvis` 调宿主能力。其余（渲染、悬停光、授权、存储隔离、快捷键注册）全在宿主。
+ *
+ * 入口模型是 **命令 + 页面**：工具箱那一行打开页面；快捷键、页面里的按钮、快捷环、Inbox 卡片
+ * 触发命令。没有自定义页面的扩展，SDK 会画一张列出全部命令的默认页。
  */
-import type { Jarvis, JarvisErrorShape, Unsubscribe } from "./capabilities.js";
+import type { EnvironmentInfo, HostInfo, Jarvis, Unsubscribe } from "./capabilities.js";
 import { JarvisError } from "./capabilities.js";
-import type { ActivationContext, HostEvent, InvokeResult, HostBridge } from "./bridge.js";
-import { bridgeProtocolVersion, serialize } from "./bridge.js";
+import type { ActivationContext, CommandContext, HostEvent, InvokeResult, HostBridge, CommandSummary } from "./bridge.js";
+import { bridgeProtocolVersion, countNodes, serialize } from "./bridge.js";
 import type { UINode } from "./ui.js";
 import { maximumNodesPerRender, ui } from "./ui.js";
+import { ocr } from "./ocr.js";
 
 export * from "./manifest.js";
 export * from "./ui.js";
 export * from "./capabilities.js";
-export type { ActivationContext, HostEvent, SerializedNode } from "./bridge.js";
+export * from "./ocr.js";
+export type { ActivationContext, CommandContext, CommandSummary, CommandTrigger, HostEvent, SerializedNode } from "./bridge.js";
 export { bridgeProtocolVersion } from "./bridge.js";
 
-export const sdkVersion = "1.0.0";
+export const sdkVersion = "1.1.0";
 
-export interface ExtensionDefinition {
-  /** 进入扩展页面（或后台唤醒）时调用一次。拿到已授予的能力与当前偏好。 */
+export interface PageDefinition {
+  /** 进入扩展页面时调用一次。拿到已授予的能力、当前偏好与命令清单。 */
   activate?(context: ActivationContext): void | Promise<void>;
   /** 每次需要重画时调用。必须是同步的、只读自己的状态。 */
   render(): UINode;
   /** 离开扩展页面时调用；`background: true` 的扩展只在被禁用 / 卸载时调用。 */
   deactivate?(): void | Promise<void>;
+}
+
+export type CommandHandler = (context: CommandContext) => void | Promise<void>;
+
+export interface ExtensionDefinition {
+  /** 工具箱那一行打开的页面。省略时 SDK 画一张列出全部命令的默认页。 */
+  page?: PageDefinition;
+  /** manifest `commands[]` 里每条命令的处理函数，按 id 对上。 */
+  commands?: Record<string, CommandHandler>;
   /** Inbox 卡片上的按钮被按了。卡片由宿主收走，这里只做后果。 */
   onInboxAction?(cardId: string, actionId: string): void | Promise<void>;
   /** 用户点了这个扩展发的系统横幅；宿主已经把面板展开到这个扩展。 */
@@ -37,6 +51,10 @@ type Pending = { resolve: (value: unknown) => void; reject: (error: JarvisError)
 /**
  * 运行时。**一个 JSContext 里只有一份**：`defineExtension` 第二次调用会抛错，
  * 因为宿主只认一个入口。
+ *
+ * 宿主全局 `__jarvisHost` 是**延迟绑定**的：模块加载时不碰它，第一次真的要调宿主时才找。
+ * 因此这个 bundle 可以在 node 里被 `import`（配合 `testing.ts` 的替身跑单测），
+ * 只有真的调能力却没有宿主时才报错。
  */
 class Runtime {
   private definition: ExtensionDefinition | null = null;
@@ -46,10 +64,26 @@ class Runtime {
   private handlers = new Map<string, (payload: unknown) => void>();
   private subscriptions = new Map<string, (payload: unknown) => void>();
   private updateQueued = false;
-  private active = false;
+  private pageActive = false;
+  private commandSummaries: CommandSummary[] = [];
+  private hostRef: HostBridge | null = null;
+  private registered = false;
 
-  constructor(private readonly host: HostBridge) {
+  private host(): HostBridge {
+    if (this.hostRef) return this.hostRef;
+    const host = globalThis.__jarvisHost;
+    if (!host) {
+      throw new Error("找不到 __jarvisHost：这段代码只能在 Jarvis 的扩展运行时里执行（单测请先 createTestHost()）。");
+    }
+    this.hostRef = host;
+    return host;
+  }
+
+  /** 把 `dispatch` 挂到全局。幂等；`defineExtension` 与任何一次能力调用都会确保它挂上了。 */
+  private ensureRegistered(): void {
+    if (this.registered) return;
     globalThis.__jarvisRuntime = { dispatch: (json) => this.dispatch(json) };
+    this.registered = true;
   }
 
   define(definition: ExtensionDefinition): void {
@@ -57,11 +91,12 @@ class Runtime {
       throw new Error("defineExtension() 只能调用一次：宿主只认一个入口。");
     }
     this.definition = definition;
+    this.ensureRegistered();
   }
 
-  /** 让宿主再调一次 render。同一拍里的多次请求合并成一次提交。 */
+  /** 让宿主再调一次 render。同一拍里的多次请求合并成一次提交；页面没开着时是空操作。 */
   requestUpdate(): void {
-    if (this.updateQueued || !this.active) return;
+    if (this.updateQueued || !this.pageActive) return;
     this.updateQueued = true;
     Promise.resolve().then(() => {
       this.updateQueued = false;
@@ -70,17 +105,18 @@ class Runtime {
   }
 
   invoke<T>(namespace: string, method: string, params: unknown): Promise<T> {
+    this.ensureRegistered();
     const id = this.nextRequestId++;
     const request = { protocol: bridgeProtocolVersion, id, namespace, method, params };
     return new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
-      this.host.invoke(JSON.stringify(request));
+      this.host().invoke(JSON.stringify(request));
     });
   }
 
   invokeSync<T>(namespace: string, method: string, params: unknown): T {
     const request = { protocol: bridgeProtocolVersion, id: 0, namespace, method, params };
-    const result = JSON.parse(this.host.invokeSync(JSON.stringify(request))) as InvokeResult;
+    const result = JSON.parse(this.host().invokeSync(JSON.stringify(request))) as InvokeResult;
     if (result.ok) return result.value as T;
     throw new JarvisError(result.error);
   }
@@ -96,32 +132,49 @@ class Runtime {
   }
 
   log(level: string, message: string, data: unknown): void {
-    this.host.log(level, message, data === undefined ? null : JSON.stringify(data));
+    this.host().log(level, message, data === undefined ? null : JSON.stringify(data));
+  }
+
+  /** 页面：自定义的，或按命令清单画的默认页。 */
+  private renderPage(): UINode {
+    const page = this.definition?.page;
+    if (page) return page.render();
+    return ui.scroll({
+      children: [
+        ui.section({
+          title: "命令 · COMMANDS",
+          children: this.commandSummaries.length
+            ? this.commandSummaries.map((command) =>
+                ui.row({
+                  key: command.id,
+                  symbol: command.presentation === "silent" ? "bolt" : "rectangle.and.text.magnifyingglass",
+                  title: command.title,
+                  subtitle: command.hotkey ? `快捷键 ${command.hotkey}` : (command.description ?? "没有快捷键，在这里运行"),
+                  onPress: () => void jarvis.commands.run(command.id),
+                }),
+              )
+            : [ui.empty({ symbol: "bolt.slash", title: "这个扩展没有命令", hint: "它的 manifest 里既没有页面也没有命令。" })],
+        }),
+      ],
+    });
   }
 
   private commit(): void {
-    const definition = this.definition;
-    if (!definition || !this.active) return;
+    if (!this.definition || !this.pageActive) return;
     // 上一棵树的句柄整批作废：宿主只会回传最新一棵树上的句柄。
     this.handlers.clear();
-    let count = 0;
     const register = (fn: (payload: unknown) => void): string => {
       const handlerId = `h${this.handlers.size + 1}`;
       this.handlers.set(handlerId, fn);
       return handlerId;
     };
-    const root = definition.render();
-    const counted = serialize(root, register);
-    const walk = (node: { children?: unknown[] }): void => {
-      count += 1;
-      for (const child of node.children ?? []) walk(child as { children?: unknown[] });
-    };
-    walk(counted);
+    const root = serialize(this.renderPage(), register);
+    const count = countNodes(root);
     if (count > maximumNodesPerRender) {
       throw new Error(`一次 render 提交了 ${count} 个节点，上限 ${maximumNodesPerRender}。`);
     }
     this.generation += 1;
-    this.host.commit(JSON.stringify({ protocol: bridgeProtocolVersion, generation: this.generation, root: counted }));
+    this.host().commit(JSON.stringify({ protocol: bridgeProtocolVersion, generation: this.generation, root }));
   }
 
   private dispatch(json: string): void {
@@ -129,14 +182,15 @@ class Runtime {
     const definition = this.definition;
     switch (event.type) {
       case "activate": {
-        this.active = true;
-        void Promise.resolve(definition?.activate?.(event.context)).then(() => this.commit());
+        this.pageActive = true;
+        this.commandSummaries = event.context.commands ?? [];
+        void Promise.resolve(definition?.page?.activate?.(event.context)).then(() => this.commit());
         return;
       }
       case "deactivate": {
-        this.active = false;
+        this.pageActive = false;
         this.handlers.clear();
-        void definition?.deactivate?.();
+        void definition?.page?.deactivate?.();
         return;
       }
       case "settle": {
@@ -153,6 +207,18 @@ class Runtime {
         handler(event.payload);
         // 回调改了状态，默认认为界面要跟着变；没变时宿主 diff 出来是一棵一样的树，代价可忽略。
         this.requestUpdate();
+        return;
+      }
+      case "command": {
+        const handler = definition?.commands?.[event.context.id];
+        if (!handler) {
+          this.log("error", `manifest 声明了命令「${event.context.id}」，但 defineExtension 里没有它的处理函数。`, undefined);
+          return;
+        }
+        void Promise.resolve(handler(event.context)).then(
+          () => this.requestUpdate(),
+          (error: unknown) => this.log("error", `命令「${event.context.id}」抛出了异常`, error instanceof Error ? error.message : String(error)),
+        );
         return;
       }
       case "subscription": {
@@ -176,15 +242,7 @@ class Runtime {
   }
 }
 
-function requireHost(): HostBridge {
-  const host = globalThis.__jarvisHost;
-  if (!host) {
-    throw new Error("找不到 __jarvisHost：这段代码只能在 Jarvis 的扩展运行时里执行。");
-  }
-  return host;
-}
-
-const runtime = new Runtime(requireHost());
+const runtime = new Runtime();
 
 /** 交出扩展定义。整个 bundle 只能调用一次。 */
 export function defineExtension(definition: ExtensionDefinition): void {
@@ -201,12 +259,15 @@ function syncNamespaced(namespace: string) {
 
 const call = {
   panel: namespaced("panel"),
+  commands: namespaced("commands"),
   storage: namespaced("storage"),
   preferences: namespaced("preferences"),
   permissions: namespaced("permissions"),
   clipboard: namespaced("clipboard"),
   quickTransfer: namespaced("quickTransfer"),
   screenshot: namespaced("screenshot"),
+  ocr: namespaced("ocr"),
+  speech: namespaced("speech"),
   notifications: namespaced("notifications"),
   inbox: namespaced("inbox"),
   memo: namespaced("memo"),
@@ -224,11 +285,15 @@ const sync = {
   host: syncNamespaced("host"),
 };
 
-/** 扩展里那个全局对象的实现。类型见 `capabilities.ts`。 */
+/** 扩展里那个全局对象的实现。类型见 `capabilities.ts`。`host` 与 `environment` 延迟到第一次读取才问宿主。 */
 export const jarvis: Jarvis = {
   sdk: { version: sdkVersion },
-  host: sync.host("info"),
-  environment: sync.host("environment"),
+  get host() {
+    return sync.host<HostInfo>("info");
+  },
+  get environment() {
+    return sync.host<EnvironmentInfo>("environment");
+  },
   ui: {
     update: () => runtime.requestUpdate(),
   },
@@ -245,6 +310,10 @@ export const jarvis: Jarvis = {
       };
     },
     collapse: () => call.panel("collapse"),
+    present: () => call.panel("present"),
+  },
+  commands: {
+    run: (id) => call.commands("run", { id }),
   },
   storage: {
     get: (key) => call.storage("get", { key }),
@@ -287,6 +356,10 @@ export const jarvis: Jarvis = {
     regex: {
       test: (pattern, text, flags) => sync.text("regex.test", { pattern, text, flags }),
     },
+    language: {
+      detect: (text, options) => sync.text("language.detect", { text, ...options }),
+      displayName: (code) => sync.text("language.displayName", { code }),
+    },
   },
   time: {
     parse: (text, unit) => sync.time("parse", { text, unit }),
@@ -298,6 +371,7 @@ export const jarvis: Jarvis = {
   },
   clipboard: {
     read: () => call.clipboard("read"),
+    readImage: () => call.clipboard("readImage"),
     write: (text) => call.clipboard("write", { text }),
     history: (options) => call.clipboard("history", options),
     entryText: (id) => call.clipboard("entryText", { id }),
@@ -314,6 +388,13 @@ export const jarvis: Jarvis = {
   },
   screenshot: {
     capture: (options) => call.screenshot("capture", options),
+  },
+  ocr: {
+    recognize: (file, options) => call.ocr("recognize", { file, ...options }),
+  },
+  speech: {
+    speak: (text, options) => call.speech("speak", { text, ...options }),
+    stop: () => call.speech("stop"),
   },
   notifications: {
     post: (content) => call.notifications("post", content),
@@ -348,4 +429,4 @@ export const jarvis: Jarvis = {
   },
 };
 
-export { ui };
+export { ui, ocr };

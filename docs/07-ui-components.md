@@ -66,6 +66,7 @@
 | `symbol` | `Image(systemName:)` | small 12 / medium 16 / large 20 | 必须是 SF Symbol 名；不存在时画 `questionmark` 并记警告 |
 | `swatch` | 色块 | `ColorPicker.Preview`：34pt / 圆角 8、外套白 4% 底 / 白 12% 边 | 外框不是装饰：当前色可能与面板底同色 |
 | `qrcode` | `QuickTransferQRCode` | 122pt | 最多一个；文本 ≤ 1 KB |
+| `image` | 缩略图 | small 64pt 高 / medium 112 / large 160，宽不超内容宽，圆角 8、白 8% 边 | 只能是宿主颁发的句柄（截图、剪贴板里的图、拖进来的图）；它是给用户核对"截到的是哪一块"用的，不是相册；`label` 必填 |
 
 ### 清单与卡片
 
@@ -113,6 +114,7 @@
 | 可点的东西自己会亮 | `onPress` / `onChange` 存在且未 `disabled` 的节点挂 `controlFocusHighlight(shape:)`，轮廓与节点自己的底一致 |
 | 选中不是失效 | `selected` 走 `selectionChroma`；`disabled` 走 `.disabled` + 45% 不透明度，**不隐藏** |
 | 输入框有焦点就 hold | `field` / `editor` / `search` 聚焦期间 `isHeldOpen`，与快传输入框同一条 |
+| 输入框的文本由宿主持有 | 用户每敲一个字，宿主先更新文本框，再把 `onChange` 送 JS；下一次 `render()` 的 `value` 只在与宿主此刻的文本不同时才覆写。打字不经 JS 往返，中文输入法的组合态不会被异步回写打断；扩展要改掉用户输入（清空、粘贴）照常改 `value` |
 | 三档辅助功能 | Reduce Motion：光停转、转圈换文字、翻转换直切；Reduce Transparency：材质换实底；Increase Contrast：边 1 → 1.5pt、光晕拉满 |
 | VoiceOver | 每个可交互节点必须有 `label`（图标类必填，文字类从标题推）；`row` 合并成一个元素；装饰层 `accessibilityHidden` |
 | 键盘 | `field` / `editor` / `search` 可 Tab 到；`button` 可空格触发；`Esc` 收面板（`search` 有内容时例外） |

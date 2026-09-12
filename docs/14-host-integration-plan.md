@@ -88,8 +88,20 @@
 - **D-B6 纯函数工具原样复用领域层。** `text.*` / `time.*` / `color.*` 直接调 `Base64Codec`、`HashDigest`、
   `JSONFormatting`、`URLBreakdown`、`RegexTesting`、`TimeConversion` 与拾色器的色彩模型，不复制。
 - **D-B7 预算与终止。** 同步 200ms 警告 / 2s 终止；内存 128 MB；节点 500；终止进错误屏。
-- **D-B8 快传、剪贴板、截图三条能力本期落地**（它们是用户点名的例子与最常见的两条）；
-  其余能力在期 C。
+- **D-B8 本期落地的能力**：快传、剪贴板（含 `readImage`）、截图（含 `selectionOnly` 与 `recognizeText`）、
+  `ocr.recognize`、`network.https`（白名单、UA 由扩展定、系统代理）、`text.language`；其余在期 C。
+  第一个扩展是截屏翻译，它要的正是这一组。
+- **D-B9 命令与快捷键**：manifest `commands[]` 由宿主在启动时按 `extension_installs` 注册
+  （`ScreenshotHotKeyMonitor` 那套 Carbon 热键复用）；按下 = 一次用户动作；`background: false` 的按需加载、
+  跑完销毁；`presentation: "panel"` 的展开面板到该扩展。设置页给一枚**键组录制控件**，
+  内置截图那两组键一并接上（了结"这一版还不能在这里改键"）。
+- **D-B10 截图后回到扩展**：`screenshot.capture` 从扩展发起时走一种"只选区、松手即完成"的会话模式，
+  完成 / 取消后按命令的 `presentation` 决定面板去向（页面按钮发起的按 `panel`）。
+- **D-B11 输入框由宿主持有文本**：`field` / `editor` / `search` 的 `value` 只在与宿主不一致时覆写，
+  中文输入法组合态不被打断。
+- **D-B12 SDK 1.1**：延迟绑定宿主、`testing` 替身、`ocr.mergeLines` / `chunk`、`image` 节点。
+  P-0 加两条量测：500 节点提交耗时、编辑器 20000 字符改一个字；顺带决定要不要加
+  `com.apple.security.cs.allow-jit`。
 
 ### 改动清单
 
@@ -122,7 +134,9 @@
   点横幅 = 展开到该扩展。
 - **D-C5 `background: true` 的常驻**：离开页面不销毁上下文；`inboxAction` 对未运行的扩展"加载 → 执行 → 销毁"。
 - **D-C6 快捷环**：`OrbShortcutKind.panelContent("extension:<id>")`；菜单里扩展列在内置工具之后。
-- **D-C7 其余能力落地**：`notifications` / `inbox` / `memo` / `calendar` / `tasks` / `net` / `files` / `system`。
+- **D-C7 其余能力落地**：`notifications` / `inbox` / `memo` / `calendar` / `tasks` / `files` / `system` / `speech`。
+- **D-C8 偏好类型 `secret` 与 `multiselect`**：`secret` 进 Keychain（`<id>/<key>`，随卸载删）、
+  设置页遮罩、`preferences.all()` 里没有它；`multiselect` 是一排可多选 chip。
 
 ### 改动清单（摘要）
 

@@ -67,34 +67,66 @@ let text = "";
 let granted = new Set<string>();
 
 defineExtension({
-  async activate(context) {
-    granted = new Set(context.granted);
+  page: {
+    async activate(context) {
+      granted = new Set(context.granted);
+    },
+    render() {
+      return ui.scroll({
+        children: [
+          ui.section({
+            title: "输入 · INPUT",
+            trailing: `${text.length} 字符`,
+            children: [ui.editor({ key: "input", value: text, rows: 3, label: "要处理的文本", onChange: (v) => (text = v) })],
+          }),
+          ui.section({
+            title: "输出 · OUTPUT",
+            children: [ui.result({ text: text.toUpperCase(), mono: true, copy: true, empty: "结果会实时出现在这里" })],
+          }),
+        ],
+      });
+    },
   },
-  render() {
-    return ui.scroll({
-      children: [
-        ui.section({
-          title: "输入 · INPUT",
-          trailing: `${text.length} 字符`,
-          children: [ui.editor({ key: "input", value: text, rows: 3, label: "要处理的文本", onChange: (v) => (text = v) })],
-        }),
-        ui.section({
-          title: "输出 · OUTPUT",
-          children: [ui.result({ text: text.toUpperCase(), mono: true, copy: true, empty: "结果会实时出现在这里" })],
-        }),
-      ],
-    });
+  commands: {
+    // manifest commands[] 里同 id 的那一条；快捷键、页面按钮（jarvis.commands.run）、快捷环都落到这里
+    "uppercase-clipboard": async () => {
+      const clip = (await jarvis.clipboard.read()) ?? "";
+      await jarvis.clipboard.write(clip.toUpperCase());
+      await jarvis.notifications.post({ title: "已转成大写", body: clip.slice(0, 60) });
+    },
   },
 });
 ```
 
-三条心智模型：
+四条心智模型：
 
-- **`render()` 是纯的**：只读你自己的变量，返回一棵树。宿主在每次 `ui` 事件回调之后自动重画；
+- **命令 + 页面**：页面是工具箱那一行打开的一屏；命令是页面之外的入口（快捷键、页面按钮、快捷环、Inbox 卡）。
+  一条命令只有一份实现，页面里的按钮用 `jarvis.commands.run(id)` 触发它。没有页面也行，SDK 会画一张命令列表。
+- **`render()` 是纯的**：只读你自己的变量，返回一棵树。宿主在每次 `ui` 事件回调与命令返回之后自动重画；
   异步回来的数据（能力调用的结果）要自己调 `jarvis.ui.update()`。
-- **状态在模块变量里**：不需要 store、不需要 React。想跨越一次面板收回记住的东西用 `jarvis.storage`。
+- **状态在模块变量里**：不需要 store、不需要 React。快捷键触发的命令跑完之后面板才展开，结果就放在
+  模块变量里等 `activate`。想跨越一次面板收回记住的东西用 `jarvis.storage`。
 - **每一项能力都有拒绝态**：`permission.denied` 与 `permission.unavailable` 是状态不是错误，
   页面要画得出它们（[05](05-permissions.md)「扩展该怎么对待拒绝」）。
+
+### 在 node 里测
+
+SDK 对宿主是延迟绑定的：`import` 不会碰 `__jarvisHost`，真的调能力时才找。配合
+`@fusionseek/jarvis-extension-sdk/testing` 的替身，逻辑在没有 Jarvis 的机器上就能断言：
+
+```ts
+import { createTestHost } from "@fusionseek/jarvis-extension-sdk/testing";
+const host = createTestHost({ async: { "clipboard.read": async () => "hello" } });
+const { defineExtension, jarvis } = await import("@fusionseek/jarvis-extension-sdk");
+// defineExtension(...) 之后：
+host.dispatch({ type: "activate", context: { entry: "toolbox", granted: [], preferences: {}, commands: [] } });
+await host.settle();
+host.find((n) => n.kind === "readout");          // 最新一棵树里的节点
+await host.fire(host.find((n) => n.key === "bump"), "press");
+```
+
+`npm test` 跑 SDK 自己的单测（`sdk/test/`），是同一套写法。替身不画界面、不管授权，
+它证明的只是"逻辑对不对"。
 
 节点目录见 [07](07-ui-components.md)；能力接口见 [06](06-capabilities.md)。
 

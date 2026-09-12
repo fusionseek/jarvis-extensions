@@ -19,9 +19,9 @@ export type JarvisErrorCode =
   /** 超过调用频率或体积上限。 */
   | "rate.limited"
   | "invalid.argument"
-  /** 宿主侧执行失败（服务没起来、文件不在了 …）。`detail` 里是给人读的一句话。 */
+  /** 宿主侧执行失败（服务没起来、文件不在了、网络不通 …）。`detail` 里是给人读的一句话。 */
   | "host.failure"
-  /** 用户在宿主的选择器 / 确认里取消了。取消不是失败，但调用方仍要收尾。 */
+  /** 用户在宿主的选择器 / 确认 / 框选里取消了。取消不是失败，但调用方仍要收尾。 */
   | "cancelled";
 
 export interface JarvisErrorShape {
@@ -75,6 +75,16 @@ export interface PanelAPI {
   hold(reason: string): HoldHandle;
   /** 把面板收成那颗球。只允许在用户动作的回调里调用（1 秒内），否则拒绝。 */
   collapse(): Promise<void>;
+  /**
+   * 把面板展开到**这个扩展的页面**：没展开就展开、贴边就弹出、不在这一屏就切过来。
+   * 典型用法是 `silent` 命令中途决定要给用户看结果。只在用户动作（含快捷键）之后 1 秒内放行。
+   */
+  present(): Promise<void>;
+}
+
+export interface CommandsAPI {
+  /** 运行 manifest 里声明的一条命令，与快捷键触发同一条路（`trigger = "page"`）。 */
+  run(id: string): Promise<void>;
 }
 
 export interface StorageAPI {
@@ -86,8 +96,9 @@ export interface StorageAPI {
 }
 
 export interface PreferencesAPI {
-  /** 读 manifest 里声明的偏好；没声明的 key 以 `invalid.argument` 拒绝。 */
+  /** 读 manifest 里声明的偏好；没声明的 key 以 `invalid.argument` 拒绝。`secret` 类型同样从这里读。 */
   get<T = unknown>(key: string): Promise<T>;
+  /** 全部偏好；`secret` 类型**不在**里面，只能按 key 单独取。 */
   all(): Promise<Record<string, unknown>>;
   onChange(listener: (changes: Record<string, unknown>) => void): Unsubscribe;
 }
@@ -147,12 +158,28 @@ export interface RegexToolAPI {
   test(pattern: string, text: string, flags?: string): { matches: { range: [number, number]; text: string; groups: string[] }[] } | { error: string };
 }
 
+export interface LanguageDetection {
+  /** BCP-47，如 `zh-Hans`、`en`、`ja`；判不出为 `null`。 */
+  code: string | null;
+  /** 0…1。 */
+  confidence: number;
+  candidates: { code: string; confidence: number }[];
+}
+
+/** 语言检测与本地化语言名，走系统 `NaturalLanguage` 与 `Locale`。 */
+export interface LanguageAPI {
+  detect(text: string, options?: { hints?: string[] }): LanguageDetection;
+  /** 按当前区域给出语言名，如 `zh-Hans` → 「简体中文」；认不出时原样返回 code。 */
+  displayName(code: string): string;
+}
+
 export interface TextToolsAPI {
   base64: Base64API;
   hash: HashAPI;
   json: JSONToolAPI;
   url: URLToolAPI;
   regex: RegexToolAPI;
+  language: LanguageAPI;
 }
 
 export interface TimeAPI {
@@ -180,6 +207,8 @@ export interface ClipboardEntry {
 export interface ClipboardAPI {
   /** `clipboard.read`。密码管理器标记为机密的内容读回 `null`，宿主不放行。 */
   read(): Promise<string | null>;
+  /** `clipboard.read`。剪贴板里是一张图时给出它的句柄（宿主落临时文件）；不是图为 `null`。 */
+  readImage(): Promise<FileHandle | null>;
   /** `clipboard.write`。 */
   write(text: string): Promise<void>;
   /** `clipboard.history`。只给摘要，不给正文；正文要 `entryText(id)` 逐条取。 */
@@ -231,26 +260,71 @@ export interface QuickTransferAPI {
   records(options?: { limit?: number }): Promise<TransferRecord[]>;
 }
 
+/** OCR 认出的一行。 */
+export interface OCRLine {
+  text: string;
+  /** 行墨迹盒，**相对整张图归一化到 0…1**，原点左上。 */
+  box: { x: number; y: number; width: number; height: number };
+  /** Vision 给的置信度 0…1。宿主不拿它做门（实测 0.5 的行全对），扩展也不该 */
+  confidence: number;
+}
+
+export interface OCRResult {
+  /** 按行拼好的纯文本（行之间 `\n`，同一行的碎片按空格连），**不合并段落**。要段落用 `ocr.mergeLines`。 */
+  text: string;
+  lines: OCRLine[];
+}
+
+export interface OCROptions {
+  /** Vision 的识别语言，如 `["zh-Hans", "en-US"]`；省略用宿主默认的中英。 */
+  languages?: string[];
+  level?: "accurate" | "fast";
+}
+
+export interface ScreenshotCaptureOptions {
+  mode?: "region" | "longshot";
+  /**
+   * 只框选、松手即完成，不进标注工具条。截屏翻译 / 识字这类"框一块就走"的场景用它；
+   * 省略时走完整的截图会话（用户可以标注，按 ⏎ 完成）。
+   */
+  selectionOnly?: boolean;
+  /** 顺手把 OCR 也做了，结果放在 `ocr` 字段；省略则不识别。 */
+  recognizeText?: boolean;
+  /** `recognizeText` 时的 OCR 选项。 */
+  ocr?: OCROptions;
+}
+
 export interface ScreenshotResult {
   /** PNG 文件，落在宿主的临时目录，会话结束即清理。 */
   file: FileHandle;
   width: number;
   height: number;
-  /** 要求识别文字时给出的行。 */
-  textLines?: string[];
+  ocr?: OCRResult;
 }
 
 export interface ScreenshotAPI {
   /**
    * `screenshot.capture`。宿主收起面板、盖遮罩、由用户框选；用户按 Esc 时以 `cancelled` 拒绝。
+   * 完成后由命令的 `presentation` 决定面板怎么办（页面里按按钮触发的按 `panel` 处理）。
    * 依赖 Jarvis 自己的屏幕录制权限：没有时以 `permission.unavailable` 拒绝，
    * 扩展应给一颗按钮走 `permissions.openSystemSettings("screenRecording")`。
    */
-  capture(options?: { mode?: "region" | "longshot"; recognizeText?: boolean }): Promise<ScreenshotResult>;
+  capture(options?: ScreenshotCaptureOptions): Promise<ScreenshotResult>;
+}
+
+export interface OCRAPI {
+  /** `ocr.recognize`。对一个句柄（截图、剪贴板里的图、用户拖进来的图）跑 Vision。图 ≤ 20 MB。 */
+  recognize(file: FileHandle, options?: OCROptions): Promise<OCRResult>;
+}
+
+export interface SpeechAPI {
+  /** `speech.speak`。系统语音朗读；再次调用打断上一次。`language` 为 BCP-47。 */
+  speak(text: string, options?: { language?: string; rate?: number }): Promise<void>;
+  stop(): Promise<void>;
 }
 
 export interface NotificationsAPI {
-  /** `notifications.post`。走通知中心；声音由宿主的提示音设置决定，扩展不能指定。 */
+  /** `notifications.post`。走通知中心；副标题恒为扩展名；点横幅展开面板到这个扩展。声音由宿主的提示音设置决定。 */
   post(content: { title: string; body: string }): Promise<void>;
 }
 
@@ -335,8 +409,9 @@ export interface NetResponse {
 
 export interface NetAPI {
   /**
-   * `network.https`。只放行 manifest `network.hosts` 里的主机、只走 HTTPS、30 秒超时。
-   * 没有 cookie、没有重定向到白名单之外的主机。
+   * `network.https`。只放行 manifest `network.hosts` 里的主机、只走 HTTPS、30 秒超时；
+   * 没有 cookie、没有重定向到白名单之外的主机。请求头由扩展决定（含 `User-Agent`），
+   * 宿主只追加一个 `X-Jarvis-Extension: <id>/<version>` 做标识。
    */
   fetch(url: string, init?: { method?: "GET" | "POST" | "PUT" | "DELETE"; headers?: Record<string, string>; body?: string }): Promise<NetResponse>;
 }
@@ -357,7 +432,7 @@ export interface SystemAPI {
 }
 
 export interface UIAPI {
-  /** 让宿主再调一次 `render()`。同一拍多次调用会被合并。 */
+  /** 让宿主再调一次 `render()`。同一拍多次调用会被合并；页面没开着时是空操作，状态留到下次 `activate`。 */
   update(): void;
 }
 
@@ -368,6 +443,7 @@ export interface Jarvis {
   readonly environment: EnvironmentInfo;
   readonly ui: UIAPI;
   readonly panel: PanelAPI;
+  readonly commands: CommandsAPI;
   readonly storage: StorageAPI;
   readonly preferences: PreferencesAPI;
   readonly permissions: PermissionsAPI;
@@ -378,6 +454,8 @@ export interface Jarvis {
   readonly clipboard: ClipboardAPI;
   readonly quickTransfer: QuickTransferAPI;
   readonly screenshot: ScreenshotAPI;
+  readonly ocr: OCRAPI;
+  readonly speech: SpeechAPI;
   readonly notifications: NotificationsAPI;
   readonly inbox: InboxAPI;
   readonly memo: MemoAPI;
