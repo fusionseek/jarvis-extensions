@@ -27,7 +27,7 @@
   "author": { "name": "fusionseek", "github": "fusionseek" },
   "main": "dist/extension.js",
   "sdk": "^1.0.0",
-  "minimumJarvisVersion": "1.5.0",
+  "minimumJarvisVersion": "2.0.0",
   "capabilities": [
     { "id": "clipboard.read", "reason": "读取要发送的文字或链接" },
     { "id": "quickTransfer.status", "reason": "知道快传开没开、有没有手机连着" },
@@ -61,7 +61,7 @@
   "author": { "name": "someone" },
   "main": "dist/extension.js",
   "sdk": "^1.0.0",
-  "minimumJarvisVersion": "1.5.0",
+  "minimumJarvisVersion": "2.0.0",
   "capabilities": [],
   "settings": false,
   "inbox": false

@@ -122,7 +122,7 @@ tokens：`JarvisDesign.Toolbox.AddExtension`（`dash: [4, 3]`、`strokeOpacity: 
 | 加载中（第一次 `evaluateScript` 与 `activate` 未返回） | 空白 + 220ms 后才出现的转圈（一次普通加载 60–120ms，第 0 帧就转会每次闪一下） |
 | 授权未决 | 弹窗盖在面板上（见 [05](05-permissions.md)），面板内容为加载中态 |
 | 错误 | 一张 `danger` 语义 `note`：标题「这个扩展出了问题」、正文 = 异常一句话、动作「重新加载」「查看日志」（开发者模式）「去扩展库」 |
-| 不兼容 | 一张 `alert` 语义 `note`：「需要 Jarvis ≥ 1.6.0」/「需要 SDK 2」+ 「检查更新」 |
+| 不兼容 | 一张 `alert` 语义 `note`：「需要 Jarvis ≥ 2.1.0」/「需要 SDK 2」+ 「检查更新」 |
 
 面板尺寸门禁照旧：扩展的内容装不下时**滚动**（根节点用 `ui.scroll`），面板不长。
 

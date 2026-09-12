@@ -15,7 +15,7 @@
   },
   "main": "dist/extension.js",
   "sdk": "^1.1.0",
-  "minimumJarvisVersion": "1.6.0",
+  "minimumJarvisVersion": "2.0.0",
   "capabilities": [
     { "id": "screenshot.capture", "reason": "框选屏幕上要翻译的那一块" },
     { "id": "ocr.recognize", "reason": "识别剪贴板里图片上的文字" },

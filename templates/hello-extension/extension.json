@@ -15,7 +15,7 @@
   },
   "main": "dist/extension.js",
   "sdk": "^1.0.0",
-  "minimumJarvisVersion": "1.5.0",
+  "minimumJarvisVersion": "2.0.0",
   "capabilities": [],
   "settings": false,
   "inbox": false

@@ -266,7 +266,7 @@ sequenceDiagram
 | 维度 | 谁说了算 | 不兼容时 |
 | --- | --- | --- |
 | SDK 主版本 | manifest `sdk: "^1.0.0"` vs 宿主 `ExtensionRuntime.sdkMajor` | 扩展库卡片灰化并写「需要 SDK 2」；已装的拒绝加载进错误屏 |
-| 宿主最低版本 | manifest `minimumJarvisVersion` vs `CFBundleShortVersionString`（`AppVersion` 比较） | 卡片灰化并写「需要 Jarvis ≥ 1.6.0」，安装按钮不可点但不隐藏 |
+| 宿主最低版本 | manifest `minimumJarvisVersion` vs `CFBundleShortVersionString`（`AppVersion` 比较） | 卡片灰化并写「需要 Jarvis ≥ 2.1.0」，安装按钮不可点但不隐藏 |
 | 扩展版本 | registry 的 `version` vs `extension_installs.version` | 卡片显示「更新到 x.y.z」 |
 | 线缆协议 | `bridgeProtocolVersion` | 同 SDK 主版本 |
 

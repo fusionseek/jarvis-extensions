@@ -1,9 +1,9 @@
 {
   "registryVersion": 1,
-  "generatedAt": "2026-09-12T07:24:25.928Z",
+  "generatedAt": "2026-09-12T08:31:45.296Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "5e46c1a724d6bb299eadf57ddd5323d28f2afd92"
+    "commit": "826831e11b1f90754b9d4a77ce77a6f2278570e5"
   },
   "extensions": [
     {
@@ -26,7 +26,7 @@
         "github": "fusionseek"
       },
       "sdk": "^1.1.0",
-      "minimumJarvisVersion": "1.6.0",
+      "minimumJarvisVersion": "2.0.0",
       "capabilities": [
         "screenshot.capture",
         "ocr.recognize",
@@ -49,7 +49,7 @@
         "sha256": "30c41e50bdea3af40b6b31c0e33eeffcbd67f9cda29c45657aafe33e2c832cc6",
         "byteCount": 39364
       },
-      "updatedAt": "2026-09-12T07:24:25.903Z",
+      "updatedAt": "2026-09-12T15:28:19+08:00",
       "network": {
         "hosts": [
           "translate.googleapis.com",
@@ -95,7 +95,7 @@
         "github": "fusionseek"
       },
       "sdk": "^1.0.0",
-      "minimumJarvisVersion": "1.5.0",
+      "minimumJarvisVersion": "2.0.0",
       "capabilities": [
         "clipboard.read",
         "quickTransfer.status",
@@ -115,7 +115,7 @@
         "sha256": "488392d6d9cbb317b98a3511ba12120e7f1743e51370e28f2c7e241b9ed8fa25",
         "byteCount": 26240
       },
-      "updatedAt": "2026-09-12T12:59:22+08:00"
+      "updatedAt": "2026-09-12T15:28:19+08:00"
     }
   ]
 }
