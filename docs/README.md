@@ -21,4 +21,4 @@
 
 契约：[`schemas/`](../schemas) 是 manifest 与 registry 的真源；[`sdk/src`](../sdk/src) 是节点、能力与线缆的类型真源。
 示例：[`templates/hello-extension`](../templates/hello-extension)、[`extensions/send-to-phone`](../extensions/send-to-phone)、
-[`extensions/screenshot-translate`](../extensions/screenshot-translate)（命令 + 快捷键 + 截图 OCR + 网络的参考实现）。
+[`extensions/translation`](../extensions/translation)（命令 + 快捷键 + 截图 OCR + 网络 + 原地弹窗的参考实现）。

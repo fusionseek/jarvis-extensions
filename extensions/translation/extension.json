@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "id": "screenshot-translate",
+  "id": "translation",
   "version": "0.1.0",
   "toolbox": {
     "symbol": "translate",
@@ -8,13 +8,13 @@
     "subtitle": "框一块屏幕，识字并翻译",
     "keywords": ["ocr", "translate", "google", "文字识别"]
   },
-  "description": "按一下快捷键框选屏幕上任意一块，Vision 识别文字、合并段落、检测语言，再经 Google 翻译成你选的语言；也可以把剪贴板里的文字或图片直接翻译。免费端点无需 key，填了 API key 就走官方接口。",
+  "description": "按一下快捷键框选屏幕上任意一块，Vision 识别文字、合并段落、检测语言，再经 Google 翻译；译文就贴着选区原地弹出。也能翻译剪贴板里的文字或图片。免费端点无需 key，填了 API key 走官方接口。",
   "author": {
     "name": "fusionseek",
     "github": "fusionseek"
   },
   "main": "dist/extension.js",
-  "sdk": "^1.1.0",
+  "sdk": "^1.2.0",
   "minimumJarvisVersion": "2.0.0",
   "capabilities": [
     { "id": "screenshot.capture", "reason": "框选屏幕上要翻译的那一块" },
@@ -30,7 +30,7 @@
     "hosts": ["translate.googleapis.com", "translation.googleapis.com"]
   },
   "commands": [
-    { "id": "capture-translate", "title": "截屏翻译", "description": "框选一块，识字并翻译，结果在面板里", "hotkey": { "default": "⌥⌘T" }, "presentation": "panel" },
+    { "id": "capture-translate", "title": "截屏翻译", "description": "框选一块，识字并翻译，译文原地弹出", "hotkey": { "default": "⌥⌘T" }, "presentation": "popover" },
     { "id": "capture-copy", "title": "截屏译文入剪贴板", "description": "框选一块，翻译后直接复制，不开面板", "hotkey": { "default": "⌥⌘O" }, "presentation": "silent" },
     { "id": "translate-clipboard", "title": "翻译剪贴板", "description": "把剪贴板里的文字或图片翻译出来", "presentation": "panel" }
   ],
@@ -55,8 +55,8 @@
       {
         "key": "alternateLanguage",
         "type": "select",
-        "title": "原文已是目标语言时翻成",
-        "description": "截到的本来就是中文时，改翻成这一种",
+        "title": "原文已是目标语言时",
+        "description": "截到的本来就是目标语言时，改翻成这一种",
         "default": "en",
         "options": [
           { "value": "en", "title": "English" },
@@ -67,7 +67,7 @@
       {
         "key": "ocrLanguages",
         "type": "multiselect",
-        "title": "识别哪些语言",
+        "title": "识别语言",
         "description": "Vision 的识别语言；选得越多越慢",
         "default": ["zh-Hans", "en-US"],
         "options": [
@@ -84,14 +84,14 @@
       {
         "key": "apiKey",
         "type": "secret",
-        "title": "Google Cloud API key",
-        "description": "留空走免费端点；填了走官方 Translation API v2",
+        "title": "Google API key",
+        "description": "留空走免费端点；填了走官方 Translation API v2。存 Keychain，不进库、不进日志",
         "placeholder": "AIza…"
       },
       {
         "key": "autoCopy",
         "type": "toggle",
-        "title": "翻译完自动复制译文",
+        "title": "翻译完自动复制",
         "default": false
       }
     ]

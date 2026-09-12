@@ -31,7 +31,7 @@
 
 | 方法 | 说明 |
 | --- | --- |
-| `hold(reason) → HoldHandle` | 告诉容器「此刻别自动收回」。三条自动收回路径（15 秒倒计时、面板外按下、切走应用）都尊重它；用户的 Esc 与点球不受影响。事情做完必须 `release()`，离开扩展时宿主兜底释放。`reason` 进开发者日志 |
+| `hold(reason) → HoldHandle` | 告诉容器「此刻别自动收回」。三条自动收回路径（15 秒倒计时、面板外按下、切走应用）都尊重它；用户的 Esc 与点球不受影响。事情做完必须 `release()`，离开扩展时宿主兜底释放。`reason` 进开发者日志。原地弹窗（`presentation: "popover"`）同样尊重它：译文没回来之前弹窗不会自己收 |
 | `collapse()` | 把面板收成那颗球。只在用户动作 1 秒内放行 |
 | `present()` | 把面板展开到**这个扩展的页面**：没展开就展开、贴边就弹出、不在这一屏就切过来。`silent` 命令中途决定要给用户看结果时用；只在用户动作（含快捷键）1 秒内放行 |
 
@@ -152,14 +152,15 @@ SDK 自己还带一组**不经宿主**的纯函数（`ocr.mergeLines` / `ocr.par
 
 ### `screenshot.capture` — 截图
 
-`capture({ mode, selectionOnly, recognizeText, ocr: { languages, level } })`：宿主收起面板、盖遮罩、由用户框选，
+`capture({ mode, selectionOnly, recognizeText, ocr: { languages, level }, hint })`：宿主收起面板、盖遮罩、由用户框选，
 返回 `{ file, width, height, ocr? }`——PNG 句柄（宿主临时目录，会话结束清理）与可选的 OCR 结果。
 
 - `selectionOnly: true`：只框选，松手即完成，不进标注工具条。截屏翻译 / 识字这种"框一块就走"用它；
   省略则走完整会话（可以标注，⏎ 完成）。
 - `recognizeText: true`：顺手把 OCR 做了；`ocr.languages` 是 Vision 的识别语言（如 `["zh-Hans","en-US"]`），
   省略用宿主默认的中英。
-- 完成后面板怎么办由命令的 `presentation` 决定；页面里按按钮触发的按 `panel` 处理（回到该扩展）。
+- `hint`：框选期间画在选框下方那句提示（≤ 16 字，如「松手即翻译」）；省略用宿主默认的「松手即完成」。只对 `selectionOnly` 有意义。
+- 完成后面板怎么办由命令的 `presentation` 决定：`popover` 的在选区旁开原地结果弹窗，`panel` 的回到面板；页面里按按钮触发的按 `panel` 处理（回到该扩展）。
 - 用户 Esc → `cancelled`。依赖 Jarvis 的屏幕录制权限；没有 → `permission.unavailable`。
   只在用户动作（含快捷键）1 秒内放行。
 
@@ -223,6 +224,11 @@ SDK 自己还带一组**不经宿主**的纯函数（`ocr.mergeLines` / `ocr.par
 | `reveal(file)` | 在访达里选中它 |
 
 `dropzone` 节点落下的文件走同一套句柄，不需要额外能力——用户亲手拖进来的。
+
+### `system.openExtensionSettings` — 打开本扩展的设置
+
+隐式能力，不需要点头。打开 设置 › 扩展 › 本扩展 那一块（偏好、授权、快捷键都在那里）；只在用户动作 1 秒内放行。
+扩展页面里**不许再画一份设置**（[10](10-settings.md)），想让用户改偏好（填 API key、改目标语言）就给一颗 `link` 按钮调它。
 
 ### `system.openURL` — 打开链接
 

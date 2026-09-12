@@ -214,6 +214,10 @@ sequenceDiagram
     else presentation = silent
         H->>H: 不碰面板；命令用剪贴板 / 横幅交结果
         H->>R: background=false 则销毁上下文
+    else presentation = popover
+        H->>H: 命令里第一次 screenshot.capture 返回时，在选区旁开原地结果弹窗（面板不动）
+        H->>R: dispatch activate { surface: "popover" } → popover.render()（没给就 page.render()）→ commit
+        H->>H: Esc / 点外面 / 指针离开 15 秒后关；钉住常驻；「在面板里打开」= deactivate 弹窗 + activate 页面
     end
 ```
 

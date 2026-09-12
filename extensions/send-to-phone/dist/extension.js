@@ -1,4 +1,4 @@
-// jarvis-extension bundle · send-to-phone@1.0.0 · sdk 1.1.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · send-to-phone@1.0.0 · sdk 1.2.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -107,7 +107,7 @@
   };
 
   // sdk/src/index.ts
-  var sdkVersion = "1.1.0";
+  var sdkVersion = "1.2.0";
   var Runtime = class {
     constructor() {
       this.definition = null;
@@ -117,7 +117,8 @@
       this.handlers = /* @__PURE__ */ new Map();
       this.subscriptions = /* @__PURE__ */ new Map();
       this.updateQueued = false;
-      this.pageActive = false;
+      /** 此刻开着的那一面；`null` = 既没有页面也没有弹窗，`render()` 不会被调。 */
+      this.activeSurface = null;
       this.commandSummaries = [];
       this.hostRef = null;
       this.registered = false;
@@ -144,9 +145,9 @@
       this.definition = definition;
       this.ensureRegistered();
     }
-    /** 让宿主再调一次 render。同一拍里的多次请求合并成一次提交；页面没开着时是空操作。 */
+    /** 让宿主再调一次 render。同一拍里的多次请求合并成一次提交；页面与弹窗都没开着时是空操作。 */
     requestUpdate() {
-      if (this.updateQueued || !this.pageActive) return;
+      if (this.updateQueued || !this.activeSurface) return;
       this.updateQueued = true;
       Promise.resolve().then(() => {
         this.updateQueued = false;
@@ -168,21 +169,34 @@
       if (result.ok) return result.value;
       throw new JarvisError(result.error);
     }
+    /**
+     * 订阅宿主事件。宿主拒绝订阅（没授权、没这个能力）时**不抛到扩展里**：一条被拒的订阅只是收不到事件，
+     * 让它变成未处理的 rejection 会把整个上下文拖垮。拒绝记一条 warn 日志，开发者模式看得见。
+     */
     subscribe(namespace, method, listener) {
       const token = `${namespace}.${method}#${this.nextRequestId++}`;
       this.subscriptions.set(token, listener);
-      void this.invoke(namespace, method, { token });
+      this.invoke(namespace, method, { token }).catch((error) => {
+        this.subscriptions.delete(token);
+        this.log("warn", `\u8BA2\u9605 ${namespace}.${method} \u88AB\u5BBF\u4E3B\u62D2\u7EDD`, error instanceof Error ? error.message : String(error));
+      });
       return () => {
         this.subscriptions.delete(token);
-        void this.invoke(namespace, "unsubscribe", { token });
+        this.invoke(namespace, "unsubscribe", { token }).catch(() => void 0);
       };
     }
     log(level, message, data) {
       this.host().log(level, message, data === void 0 ? null : JSON.stringify(data));
     }
-    /** 页面：自定义的，或按命令清单画的默认页。 */
-    renderPage() {
-      const page = this.definition?.page;
+    /** 开着的那一面的定义：弹窗（没给时退回页面）或页面。 */
+    surfaceDefinition(surface) {
+      const definition = this.definition;
+      if (surface === "popover" && definition?.popover) return definition.popover;
+      return definition?.page;
+    }
+    /** 此刻那一面的树：弹窗、自定义页面，或按命令清单画的默认页。 */
+    renderSurface() {
+      const page = this.surfaceDefinition(this.activeSurface);
       if (page) return page.render();
       return ui.scroll({
         children: [
@@ -202,35 +216,38 @@
       });
     }
     commit() {
-      if (!this.definition || !this.pageActive) return;
+      const surface = this.activeSurface;
+      if (!this.definition || !surface) return;
       this.handlers.clear();
       const register = (fn) => {
         const handlerId = `h${this.handlers.size + 1}`;
         this.handlers.set(handlerId, fn);
         return handlerId;
       };
-      const root = serialize(this.renderPage(), register);
+      const root = serialize(this.renderSurface(), register);
       const count = countNodes(root);
       if (count > maximumNodesPerRender) {
         throw new Error(`\u4E00\u6B21 render \u63D0\u4EA4\u4E86 ${count} \u4E2A\u8282\u70B9\uFF0C\u4E0A\u9650 ${maximumNodesPerRender}\u3002`);
       }
       this.generation += 1;
-      this.host().commit(JSON.stringify({ protocol: bridgeProtocolVersion, generation: this.generation, root }));
+      this.host().commit(JSON.stringify({ protocol: bridgeProtocolVersion, generation: this.generation, surface, root }));
     }
     dispatch(json) {
       const event = JSON.parse(json);
       const definition = this.definition;
       switch (event.type) {
         case "activate": {
-          this.pageActive = true;
+          const surface = event.context.surface ?? "page";
+          this.activeSurface = surface;
           this.commandSummaries = event.context.commands ?? [];
-          void Promise.resolve(definition?.page?.activate?.(event.context)).then(() => this.commit());
+          void Promise.resolve(this.surfaceDefinition(surface)?.activate?.(event.context)).then(() => this.commit());
           return;
         }
         case "deactivate": {
-          this.pageActive = false;
+          const surface = this.activeSurface;
+          this.activeSurface = null;
           this.handlers.clear();
-          void definition?.page?.deactivate?.();
+          void this.surfaceDefinition(surface)?.deactivate?.();
           return;
         }
         case "settle": {
@@ -455,7 +472,8 @@
       reveal: (file) => call.files("reveal", { file })
     },
     system: {
-      openURL: (url) => call.system("openURL", { url })
+      openURL: (url) => call.system("openURL", { url }),
+      openExtensionSettings: () => call.system("openExtensionSettings")
     }
   };
 

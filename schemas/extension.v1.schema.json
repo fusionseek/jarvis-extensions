@@ -248,9 +248,10 @@
         "presentation": {
           "enum": [
             "panel",
-            "silent"
+            "silent",
+            "popover"
           ],
-          "description": "panel = 跑完展开面板到这个扩展的页面；silent = 不碰面板。"
+          "description": "panel = 跑完展开面板到这个扩展的页面；silent = 不碰面板；popover = 面板不动，在选区旁弹一扇原地结果弹窗（没截图就锚在指针旁）。"
         }
       },
       "additionalProperties": false

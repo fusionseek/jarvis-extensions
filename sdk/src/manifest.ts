@@ -82,9 +82,13 @@ export interface Author {
  * 命令跑完之后面板怎么办。
  *
  * - `panel`：宿主把面板展开到这个扩展的页面（没展开就展开、不在这一屏就切过来）；
- * - `silent`：不碰面板。命令自己决定要不要 `jarvis.panel.present()`，否则只留一条横幅或剪贴板里的结果。
+ * - `silent`：不碰面板。命令自己决定要不要 `jarvis.panel.present()`，否则只留一条横幅或剪贴板里的结果；
+ * - `popover`：宿主在**原地**弹一扇结果弹窗，面板不动。锚在这条命令里那次 `screenshot.capture` 的选区旁
+ *   （命令里没截图就锚在指针旁）；命令里第一次截图返回时弹窗就出现——命令还在跑时里面先画"翻译中"那一屏。
+ *   弹窗里画 `defineExtension({ popover })` 的那棵树，没给就画页面那棵。Esc / 点外面 / 指针离开 15 秒后关，
+ *   钉住则常驻，「在面板里打开」把同一棵树搬进面板。截屏翻译这类"眼睛不该离开原处"的命令用它。
  */
-export type CommandPresentation = "panel" | "silent";
+export type CommandPresentation = "panel" | "silent" | "popover";
 
 /**
  * 全局快捷键，写法与 Jarvis 设置页显示的一致：修饰键按 ⌃⌥⇧⌘ 的顺序，后面一个主键

@@ -33,6 +33,10 @@ export interface TestHostOptions {
 export interface TestHost {
   /** 每一次提交的树，最新的在最后。 */
   commits: SerializedNode[];
+  /** 与 `commits` 一一对应：那棵树画在哪一面（`page` / `popover`）。 */
+  surfaces: string[];
+  /** 最新一次提交画在哪一面；还没提交过为 `undefined`。 */
+  readonly latestSurface: string | undefined;
   /** 每一次能力调用。 */
   invocations: InvokeRequest[];
   logs: { level: string; message: string; data: unknown }[];
@@ -66,6 +70,7 @@ function walk(node: SerializedNode, visit: (node: SerializedNode) => boolean): S
 /** 装上宿主替身。必须在 SDK 第一次调宿主之前调用。 */
 export function createTestHost(options: TestHostOptions = {}): TestHost {
   const commits: SerializedNode[] = [];
+  const surfaces: string[] = [];
   const invocations: InvokeRequest[] = [];
   const logs: { level: string; message: string; data: unknown }[] = [];
   let inflight: Promise<unknown>[] = [];
@@ -101,7 +106,9 @@ export function createTestHost(options: TestHostOptions = {}): TestHost {
       inflight.push(run);
     },
     commit(commitJSON) {
-      commits.push((JSON.parse(commitJSON) as CommitRequest).root);
+      const request = JSON.parse(commitJSON) as CommitRequest;
+      commits.push(request.root);
+      surfaces.push(request.surface);
     },
     log(level, message, dataJSON) {
       logs.push({ level, message, data: dataJSON === null ? undefined : JSON.parse(dataJSON) });
@@ -121,10 +128,14 @@ export function createTestHost(options: TestHostOptions = {}): TestHost {
 
   const host: TestHost = {
     commits,
+    surfaces,
     invocations,
     logs,
     get latest() {
       return commits[commits.length - 1];
+    },
+    get latestSurface() {
+      return surfaces[surfaces.length - 1];
     },
     dispatch: dispatchToRuntime,
     async settle() {

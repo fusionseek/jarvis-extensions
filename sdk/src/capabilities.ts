@@ -70,7 +70,7 @@ export interface PanelAPI {
   /**
    * 告诉容器「此刻别自动收回」。文件正在读、传输正在跑、用户正在输入框里打字——这些事跨越
    * 指针离开，15 秒倒计时到点会把这块内容连同工作一起收走。事情做完必须 `release()`；
-   * 离开扩展时宿主兜底释放。
+   * 离开扩展时宿主兜底释放。原地弹窗（`presentation: "popover"`）同样尊重它：译文没回来之前弹窗不会自己收。
    */
   hold(reason: string): HoldHandle;
   /** 把面板收成那颗球。只允许在用户动作的回调里调用（1 秒内），否则拒绝。 */
@@ -292,6 +292,11 @@ export interface ScreenshotCaptureOptions {
   recognizeText?: boolean;
   /** `recognizeText` 时的 OCR 选项。 */
   ocr?: OCROptions;
+  /**
+   * 框选期间画在选框下方那句提示（≤ 16 字），如「松手即翻译」；省略用宿主默认的「松手即完成」。
+   * 只对 `selectionOnly` 有意义——完整会话有自己的工具条。
+   */
+  hint?: string;
 }
 
 export interface ScreenshotResult {
@@ -429,6 +434,11 @@ export interface FilesAPI {
 export interface SystemAPI {
   /** `system.openURL`。只放行 https。 */
   openURL(url: string): Promise<void>;
+  /**
+   * 打开 设置 › 扩展 › 本扩展 那一块（偏好、授权、快捷键都在那里）。隐式能力，不需要点头；
+   * 只在用户动作 1 秒内放行。扩展页面里**不许再画一份设置**——想让用户改偏好就调它。
+   */
+  openExtensionSettings(): Promise<void>;
 }
 
 export interface UIAPI {

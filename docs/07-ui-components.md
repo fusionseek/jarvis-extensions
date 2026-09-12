@@ -88,7 +88,7 @@
 | `segmented` | 分段 | `compact`: `TimeConverter.Segmented`（白 6% 底 / 圆角 6 / 选中青 20% / 9pt bold）；`full`: `HashGenerator.Tab`（通栏两段各 26 高 / 圆角 8 / 选中青 7.8% 底 + 青边） | `compact` 挤在段标题右端（ms/s），`full` 是两块内容并列的入口（文本 / 文件）；档数 ≤ 5 |
 | `toggle` | `SettingsGlassToggleStyle` | 56×30 玻璃开关 | 命中区是整颗轨道，不含标签；`disabled` 整体 45% 不隐藏 |
 | `chip` | 紧凑 chip | `Base64.Options` 紧凑 chip：7×3 内距、10pt 等宽 bold；选中 `tint` 20% 底 + `tint` 边，未选白 3% 底 / 白 8% 边 | 文案压到最短，完整含义放 `help`（tooltip + VoiceOver） |
-| `picker` | 下拉 | `TimeConverter.ZonePicker`：宽 320 / 圆角 10 / 选项行 27pt / 选中青 12% 底；`searchable` 时顶部搜索框；列表最高 174pt 后滚 | 选项 > 8 自动带搜索；勾在未选中时留位不隐藏 |
+| `picker` | 下拉 | `TimeConverter.ZonePicker`：宽 320 / 圆角 10 / 选项行 27pt / 选中青 12% 底；`searchable` 时顶部搜索框；列表最高 174pt 后滚；`layout: "compact"` 时触发器是一枚「值 ▾」chip（白 5% 底 / 白 10% 边 / 圆角 8 / 12pt semibold），点开同一份下拉 | 选项 > 8 自动带搜索；勾在未选中时留位不隐藏；`compact` 用在段标题右端或「标签 + 值」的一行里（原地弹窗的语言行） |
 | `dropzone` | `HashGenerator.DropZone` | 高 88 / 圆角 10 / 青 30% 虚线 `[4,3]`；悬停底青 5% + 青 85% 虚线 1.5pt + 12pt 外发光 | 点也能选文件（键盘用户进得来）；文件夹在落下那一刻拒绝；多拖几个只算前 N 个并在屏幕上说出来 |
 
 ### 动作

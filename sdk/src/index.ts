@@ -9,7 +9,7 @@
  */
 import type { EnvironmentInfo, HostInfo, Jarvis, Unsubscribe } from "./capabilities.js";
 import { JarvisError } from "./capabilities.js";
-import type { ActivationContext, CommandContext, HostEvent, InvokeResult, HostBridge, CommandSummary } from "./bridge.js";
+import type { ActivationContext, CommandContext, HostEvent, InvokeResult, HostBridge, CommandSummary, Surface } from "./bridge.js";
 import { bridgeProtocolVersion, countNodes, serialize } from "./bridge.js";
 import type { UINode } from "./ui.js";
 import { maximumNodesPerRender, ui } from "./ui.js";
@@ -19,10 +19,10 @@ export * from "./manifest.js";
 export * from "./ui.js";
 export * from "./capabilities.js";
 export * from "./ocr.js";
-export type { ActivationContext, CommandContext, CommandSummary, CommandTrigger, HostEvent, SerializedNode } from "./bridge.js";
+export type { ActivationContext, CommandContext, CommandSummary, CommandTrigger, HostEvent, SerializedNode, Surface } from "./bridge.js";
 export { bridgeProtocolVersion } from "./bridge.js";
 
-export const sdkVersion = "1.1.0";
+export const sdkVersion = "1.2.0";
 
 export interface PageDefinition {
   /** 进入扩展页面时调用一次。拿到已授予的能力、当前偏好与命令清单。 */
@@ -38,6 +38,13 @@ export type CommandHandler = (context: CommandContext) => void | Promise<void>;
 export interface ExtensionDefinition {
   /** 工具箱那一行打开的页面。省略时 SDK 画一张列出全部命令的默认页。 */
   page?: PageDefinition;
+  /**
+   * `presentation: "popover"` 的命令结束后，宿主贴着选区弹出的那扇原地结果弹窗里画什么。
+   * 省略时弹窗里画 `page.render()` 的那棵树。弹窗 400 宽、按内容长高（最高 520），因此这里通常是
+   * 页面的紧凑版：不画缩略图、不画偏好行，只有原文、语言行与译文。
+   * 同一时刻只有一面（面板或弹窗）开着；「在面板里打开」是宿主先 `deactivate` 这里再 `activate` 页面。
+   */
+  popover?: PageDefinition;
   /** manifest `commands[]` 里每条命令的处理函数，按 id 对上。 */
   commands?: Record<string, CommandHandler>;
   /** Inbox 卡片上的按钮被按了。卡片由宿主收走，这里只做后果。 */
@@ -64,7 +71,8 @@ class Runtime {
   private handlers = new Map<string, (payload: unknown) => void>();
   private subscriptions = new Map<string, (payload: unknown) => void>();
   private updateQueued = false;
-  private pageActive = false;
+  /** 此刻开着的那一面；`null` = 既没有页面也没有弹窗，`render()` 不会被调。 */
+  private activeSurface: Surface | null = null;
   private commandSummaries: CommandSummary[] = [];
   private hostRef: HostBridge | null = null;
   private registered = false;
@@ -94,9 +102,9 @@ class Runtime {
     this.ensureRegistered();
   }
 
-  /** 让宿主再调一次 render。同一拍里的多次请求合并成一次提交；页面没开着时是空操作。 */
+  /** 让宿主再调一次 render。同一拍里的多次请求合并成一次提交；页面与弹窗都没开着时是空操作。 */
   requestUpdate(): void {
-    if (this.updateQueued || !this.pageActive) return;
+    if (this.updateQueued || !this.activeSurface) return;
     this.updateQueued = true;
     Promise.resolve().then(() => {
       this.updateQueued = false;
@@ -121,13 +129,20 @@ class Runtime {
     throw new JarvisError(result.error);
   }
 
+  /**
+   * 订阅宿主事件。宿主拒绝订阅（没授权、没这个能力）时**不抛到扩展里**：一条被拒的订阅只是收不到事件，
+   * 让它变成未处理的 rejection 会把整个上下文拖垮。拒绝记一条 warn 日志，开发者模式看得见。
+   */
   subscribe(namespace: string, method: string, listener: (payload: unknown) => void): Unsubscribe {
     const token = `${namespace}.${method}#${this.nextRequestId++}`;
     this.subscriptions.set(token, listener);
-    void this.invoke(namespace, method, { token });
+    this.invoke(namespace, method, { token }).catch((error: unknown) => {
+      this.subscriptions.delete(token);
+      this.log("warn", `订阅 ${namespace}.${method} 被宿主拒绝`, error instanceof Error ? error.message : String(error));
+    });
     return () => {
       this.subscriptions.delete(token);
-      void this.invoke(namespace, "unsubscribe", { token });
+      this.invoke(namespace, "unsubscribe", { token }).catch(() => undefined);
     };
   }
 
@@ -135,9 +150,16 @@ class Runtime {
     this.host().log(level, message, data === undefined ? null : JSON.stringify(data));
   }
 
-  /** 页面：自定义的，或按命令清单画的默认页。 */
-  private renderPage(): UINode {
-    const page = this.definition?.page;
+  /** 开着的那一面的定义：弹窗（没给时退回页面）或页面。 */
+  private surfaceDefinition(surface: Surface | null): PageDefinition | undefined {
+    const definition = this.definition;
+    if (surface === "popover" && definition?.popover) return definition.popover;
+    return definition?.page;
+  }
+
+  /** 此刻那一面的树：弹窗、自定义页面，或按命令清单画的默认页。 */
+  private renderSurface(): UINode {
+    const page = this.surfaceDefinition(this.activeSurface);
     if (page) return page.render();
     return ui.scroll({
       children: [
@@ -160,7 +182,8 @@ class Runtime {
   }
 
   private commit(): void {
-    if (!this.definition || !this.pageActive) return;
+    const surface = this.activeSurface;
+    if (!this.definition || !surface) return;
     // 上一棵树的句柄整批作废：宿主只会回传最新一棵树上的句柄。
     this.handlers.clear();
     const register = (fn: (payload: unknown) => void): string => {
@@ -168,13 +191,13 @@ class Runtime {
       this.handlers.set(handlerId, fn);
       return handlerId;
     };
-    const root = serialize(this.renderPage(), register);
+    const root = serialize(this.renderSurface(), register);
     const count = countNodes(root);
     if (count > maximumNodesPerRender) {
       throw new Error(`一次 render 提交了 ${count} 个节点，上限 ${maximumNodesPerRender}。`);
     }
     this.generation += 1;
-    this.host().commit(JSON.stringify({ protocol: bridgeProtocolVersion, generation: this.generation, root }));
+    this.host().commit(JSON.stringify({ protocol: bridgeProtocolVersion, generation: this.generation, surface, root }));
   }
 
   private dispatch(json: string): void {
@@ -182,15 +205,17 @@ class Runtime {
     const definition = this.definition;
     switch (event.type) {
       case "activate": {
-        this.pageActive = true;
+        const surface: Surface = event.context.surface ?? "page";
+        this.activeSurface = surface;
         this.commandSummaries = event.context.commands ?? [];
-        void Promise.resolve(definition?.page?.activate?.(event.context)).then(() => this.commit());
+        void Promise.resolve(this.surfaceDefinition(surface)?.activate?.(event.context)).then(() => this.commit());
         return;
       }
       case "deactivate": {
-        this.pageActive = false;
+        const surface = this.activeSurface;
+        this.activeSurface = null;
         this.handlers.clear();
-        void definition?.page?.deactivate?.();
+        void this.surfaceDefinition(surface)?.deactivate?.();
         return;
       }
       case "settle": {
@@ -426,6 +451,7 @@ export const jarvis: Jarvis = {
   },
   system: {
     openURL: (url) => call.system("openURL", { url }),
+    openExtensionSettings: () => call.system("openExtensionSettings"),
   },
 };
 

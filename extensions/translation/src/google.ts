@@ -1,9 +1,9 @@
 /**
  * Google 翻译客户端。**这是扩展自己的逻辑，SDK 里没有任何一行知道 Google。**
  *
- * 两条路：
- * - 免费的网页端点 `translate.googleapis.com/translate_a/single`（`client=gtx`），无需 key，
- *   Easydict 走的也是它；没有官方承诺，随时可能限流或改格式，因此解析要宽容、失败要说人话。
+ * 两条路（与 Easydict 的 Google 引擎同源，只取翻译这一段）：
+ * - 免费的网页端点 `translate.googleapis.com/translate_a/single`（`client=gtx`），无需 key；
+ *   没有官方承诺，随时可能限流或改格式，因此解析要宽容、失败要说人话。
  * - 官方 Translation API v2（`translation.googleapis.com/language/translate/v2`），要 API key，
  *   走用户在设置里填的 `secret` 偏好。
  *
@@ -32,8 +32,8 @@ function form(params: Record<string, string>): string {
     .join("&");
 }
 
-async function gtx(text: string, target: string): Promise<Translation> {
-  const query = form({ client: "gtx", sl: "auto", tl: target, dt: "t", dj: "1" });
+async function gtx(text: string, target: string, source: string | null): Promise<Translation> {
+  const query = form({ client: "gtx", sl: source ?? "auto", tl: target, dt: "t", dj: "1" });
   const response = await jarvis.net.fetch(`https://translate.googleapis.com/translate_a/single?${query}`, {
     method: "POST",
     headers: {
@@ -53,17 +53,16 @@ async function gtx(text: string, target: string): Promise<Translation> {
     throw new Error("Google 返回的不是 JSON，免费端点的格式可能变了");
   }
   const body = parsed as { sentences?: { trans?: string }[]; src?: string };
-  const sentences = body.sentences ?? [];
-  const translated = sentences.map((s) => s.trans ?? "").join("");
+  const translated = (body.sentences ?? []).map((s) => s.trans ?? "").join("");
   if (translated.trim() === "") throw new Error("Google 没有返回译文");
   return { text: translated, detectedSource: body.src ?? null, backend: "gtx" };
 }
 
-async function v2(text: string, target: string, apiKey: string): Promise<Translation> {
+async function v2(text: string, target: string, source: string | null, apiKey: string): Promise<Translation> {
   const response = await jarvis.net.fetch(`https://translation.googleapis.com/language/translate/v2?key=${encodeURIComponent(apiKey)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json; charset=utf-8" },
-    body: JSON.stringify({ q: [text], target, format: "text" }),
+    body: JSON.stringify({ q: [text], target, format: "text", ...(source ? { source } : {}) }),
   });
   if (response.status === 403 || response.status === 400) {
     throw new Error("Google 拒绝了这个 API key（检查它是否启用了 Cloud Translation API）");
@@ -79,14 +78,15 @@ async function v2(text: string, target: string, apiKey: string): Promise<Transla
 
 /**
  * 翻译一段文本。长文本按句边界分块、逐块请求、按段落拼回；任何一块失败整次失败并说清原因。
+ * `source` 是用户在语言行里手动指定的原文语言（Google 代码）；`null` = 让 Google 自己判。
  */
-export async function translate(text: string, target: string, apiKey: string | null): Promise<Translation> {
+export async function translate(text: string, target: string, apiKey: string | null, source: string | null = null): Promise<Translation> {
   const pieces = ocr.chunk(text, chunkLength);
   if (pieces.length === 0) throw new Error("没有可翻译的文字");
   const results: Translation[] = [];
   for (const piece of pieces) {
     try {
-      results.push(apiKey ? await v2(piece, target, apiKey) : await gtx(piece, target));
+      results.push(apiKey ? await v2(piece, target, source, apiKey) : await gtx(piece, target, source));
     } catch (error) {
       throw new Error(describe(error));
     }

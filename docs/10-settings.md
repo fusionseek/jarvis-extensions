@@ -89,8 +89,8 @@ manifest 里删掉的 key 对应的行留着不读（下次卸载一并删）。
 ### 与扩展页面的关系
 
 - 扩展页面里**不许再画一份设置**。`jarvis.preferences` 只读；扩展想改自己的偏好，只能引导用户去设置页。
-- 扩展页面可以有一颗 `link` 按钮「在设置里调整」→ `jarvis.system.openSettings()`（v1 暂无此方法；
-  用 `note` 写一句「去 设置 › 扩展 › 发到手机 里调整」）。
+- 扩展页面可以有一颗 `link` 按钮「在设置里调整」→ `jarvis.system.openExtensionSettings()`（SDK 1.2 起；隐式能力，
+  只在用户动作 1 秒内放行）。
 - 设置页改动偏好时如果扩展页面正开着，宿主发 `preferencesChanged` 并自动重画。
 
 ### 日志抽屉

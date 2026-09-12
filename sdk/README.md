@@ -36,7 +36,7 @@ defineExtension({
 | `src/capabilities.ts` | 全局 `jarvis` 的接口与错误码 |
 | `src/bridge.ts` | 宿主 ⇄ 扩展的线缆协议、节点序列化、事件类型 |
 | `src/ocr.ts` | 行 → 段落合并、按句分块（纯函数，node 里可测） |
-| `src/index.ts` | `defineExtension`、`jarvis` 实现、运行时（对宿主延迟绑定） |
+| `src/index.ts` | `defineExtension`（页面、命令、原地弹窗）、`jarvis` 实现、运行时（对宿主延迟绑定；`activate` 的 `surface` 决定画页面还是弹窗） |
 | `src/testing.ts` | 宿主替身：`createTestHost()`，让扩展逻辑在 node 里跑单测 |
 
 ```bash

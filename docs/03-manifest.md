@@ -102,7 +102,7 @@
 | `main` | `dist/<name>.js`，单文件 | 宿主只 `evaluateScript` 这一个文件；没有模块加载器。ESM/IIFE 都行，但不能 `import` 别的文件 |
 | `commands[]` | ≤ 8 条，每条 `{ id, title, description?, hotkey?, presentation }`；`id` 与扩展 id 同一套规则、扩展内唯一；`title` ≤ 12 字 | 页面之外的入口。快捷键、页面按钮、快捷环、Inbox 卡片触发，落到 `defineExtension({ commands })` 里同 id 的处理函数。**没有页面也可以**：SDK 会画一张列出全部命令的默认页 |
 | `commands[].hotkey.default` | 修饰键按 `⌃⌥⇧⌘` 顺序 + 一个主键（`A`–`Z`、`0`–`9`、`F1`–`F12` 或 `- = [ ] ; ' , . /`），至少含 ⌃、⌥、⌘ 之一；例 `⌥⌘T` | 与 Jarvis 设置页显示的写法一致。它只是默认值，用户可以改；系统探测不到跨应用冲突，因此设置页会写明"按了没反应多半是别的应用占着" |
-| `commands[].presentation` | `panel` / `silent` | `panel`：跑完展开面板到这个扩展的页面；`silent`：不碰面板，命令自己用剪贴板、横幅或 `jarvis.panel.present()` 交结果 |
+| `commands[].presentation` | `panel` / `silent` / `popover` | `panel`：跑完展开面板到这个扩展的页面；`silent`：不碰面板，命令自己用剪贴板、横幅或 `jarvis.panel.present()` 交结果；`popover`：面板不动，宿主在**原地**弹一扇结果弹窗——锚在这条命令里那次 `screenshot.capture` 的选区旁（没截图就锚在指针旁），命令里第一次截图返回时就出现（命令还在跑时里面先画"翻译中"），画 `defineExtension({ popover })` 的树（没给就画页面那棵）；Esc / 点外面 / 指针离开 15 秒后关，钉住常驻，「在面板里打开」把同一棵树搬进面板 |
 | `capabilities[]` | ≤ 12 项，每项 `{ id, reason }`，`reason` 4–60 字 | `reason` 是授权弹窗那一行的第二句，**写给用户看**：说清拿它做什么，不写"为了更好的体验"。同一个 id 不能出现两次（校验脚本查） |
 | `network.hosts` | 声明了 `network.https` 时**必填**，1–8 个主机名（不带协议与路径） | 宿主只放行这几个主机上的 HTTPS；授权弹窗把主机名逐条列给用户看 |
 
@@ -119,6 +119,8 @@
 - `presentation: "silent"` 的命令必须至少声明 `clipboard.write`、`notifications.post`、`inbox.post` 之一：
   一条不开面板又不交结果的命令，用户按了只会以为坏了。
 - 两条命令不能用同一个快捷键。
+- `presentation: "popover"` 的命令通常声明 `screenshot.capture`：没有截图的弹窗只能锚在指针旁，
+  用户的眼睛未必在那里——那种场合 `panel` 更合适。
 
 ### 第三部分：`settings`
 

@@ -1,81 +1,11 @@
 {
   "registryVersion": 1,
-  "generatedAt": "2026-09-12T09:12:16.242Z",
+  "generatedAt": "2026-09-12T11:31:25.700Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "b8f0c5a9e1452a78aea5378d7977a02f19ea558f"
+    "commit": "7bfb129d9e1f7613d3332c2f7460127dc42a3459"
   },
   "extensions": [
-    {
-      "id": "screenshot-translate",
-      "version": "0.1.0",
-      "toolbox": {
-        "symbol": "translate",
-        "name": "截屏翻译",
-        "subtitle": "框一块屏幕，识字并翻译",
-        "keywords": [
-          "ocr",
-          "translate",
-          "google",
-          "文字识别"
-        ]
-      },
-      "description": "按一下快捷键框选屏幕上任意一块，Vision 识别文字、合并段落、检测语言，再经 Google 翻译成你选的语言；也可以把剪贴板里的文字或图片直接翻译。免费端点无需 key，填了 API key 就走官方接口。",
-      "author": {
-        "name": "fusionseek",
-        "github": "fusionseek"
-      },
-      "sdk": "^1.1.0",
-      "minimumJarvisVersion": "2.0.0",
-      "capabilities": [
-        "screenshot.capture",
-        "ocr.recognize",
-        "clipboard.read",
-        "clipboard.write",
-        "network.https",
-        "notifications.post",
-        "speech.speak",
-        "hotkeys.register"
-      ],
-      "settings": true,
-      "inbox": {
-        "cards": false,
-        "notifications": true
-      },
-      "background": false,
-      "path": "extensions/screenshot-translate",
-      "bundle": {
-        "path": "extensions/screenshot-translate/dist/extension.js",
-        "sha256": "30c41e50bdea3af40b6b31c0e33eeffcbd67f9cda29c45657aafe33e2c832cc6",
-        "byteCount": 39364
-      },
-      "updatedAt": "2026-09-12T16:47:19+08:00",
-      "network": {
-        "hosts": [
-          "translate.googleapis.com",
-          "translation.googleapis.com"
-        ]
-      },
-      "commands": [
-        {
-          "id": "capture-translate",
-          "title": "截屏翻译",
-          "hotkey": "⌥⌘T",
-          "presentation": "panel"
-        },
-        {
-          "id": "capture-copy",
-          "title": "截屏译文入剪贴板",
-          "hotkey": "⌥⌘O",
-          "presentation": "silent"
-        },
-        {
-          "id": "translate-clipboard",
-          "title": "翻译剪贴板",
-          "presentation": "panel"
-        }
-      ]
-    },
     {
       "id": "send-to-phone",
       "version": "1.0.0",
@@ -112,10 +42,80 @@
       "path": "extensions/send-to-phone",
       "bundle": {
         "path": "extensions/send-to-phone/dist/extension.js",
-        "sha256": "488392d6d9cbb317b98a3511ba12120e7f1743e51370e28f2c7e241b9ed8fa25",
-        "byteCount": 26240
+        "sha256": "8ae3b84dcf7ec54f28b84751262f48b4862e2c9c5234eacd7e45a1cce0a3bb36",
+        "byteCount": 27492
       },
       "updatedAt": "2026-09-12T16:47:19+08:00"
+    },
+    {
+      "id": "translation",
+      "version": "0.1.0",
+      "toolbox": {
+        "symbol": "translate",
+        "name": "截屏翻译",
+        "subtitle": "框一块屏幕，识字并翻译",
+        "keywords": [
+          "ocr",
+          "translate",
+          "google",
+          "文字识别"
+        ]
+      },
+      "description": "按一下快捷键框选屏幕上任意一块，Vision 识别文字、合并段落、检测语言，再经 Google 翻译；译文就贴着选区原地弹出。也能翻译剪贴板里的文字或图片。免费端点无需 key，填了 API key 走官方接口。",
+      "author": {
+        "name": "fusionseek",
+        "github": "fusionseek"
+      },
+      "sdk": "^1.2.0",
+      "minimumJarvisVersion": "2.0.0",
+      "capabilities": [
+        "screenshot.capture",
+        "ocr.recognize",
+        "clipboard.read",
+        "clipboard.write",
+        "network.https",
+        "notifications.post",
+        "speech.speak",
+        "hotkeys.register"
+      ],
+      "settings": true,
+      "inbox": {
+        "cards": false,
+        "notifications": true
+      },
+      "background": false,
+      "path": "extensions/translation",
+      "bundle": {
+        "path": "extensions/translation/dist/extension.js",
+        "sha256": "dda32978ab85cd9e8a5223f691f7ea47df91cf947bb5ead8d7ec38e4347e0f2d",
+        "byteCount": 62994
+      },
+      "updatedAt": "2026-09-12T11:31:25.689Z",
+      "network": {
+        "hosts": [
+          "translate.googleapis.com",
+          "translation.googleapis.com"
+        ]
+      },
+      "commands": [
+        {
+          "id": "capture-translate",
+          "title": "截屏翻译",
+          "hotkey": "⌥⌘T",
+          "presentation": "popover"
+        },
+        {
+          "id": "capture-copy",
+          "title": "截屏译文入剪贴板",
+          "hotkey": "⌥⌘O",
+          "presentation": "silent"
+        },
+        {
+          "id": "translate-clipboard",
+          "title": "翻译剪贴板",
+          "presentation": "panel"
+        }
+      ]
     }
   ]
 }

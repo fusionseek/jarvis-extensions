@@ -19,6 +19,13 @@ import type { CommandPresentation } from "./manifest.js";
 /** 线缆协议版本。宿主与 SDK 主版本不同时，宿主拒绝加载并在扩展页面说明。 */
 export const bridgeProtocolVersion = 1 as const;
 
+/**
+ * 扩展的树画在哪一面：面板里的页面（`page`），或 `presentation: "popover"` 的命令结束后贴着选区的
+ * 原地结果弹窗（`popover`）。同一时刻只有一面开着；弹窗上的「在面板里打开」是宿主先 `deactivate` 弹窗
+ * 再 `activate` 页面，扩展的状态自己留着。
+ */
+export type Surface = "page" | "popover";
+
 /** SDK → 宿主：一次能力调用。 */
 export interface InvokeRequest {
   protocol: typeof bridgeProtocolVersion;
@@ -39,6 +46,8 @@ export interface CommitRequest {
   protocol: typeof bridgeProtocolVersion;
   /** 每次提交递增；宿主丢弃比已渲染更旧的树（异步回调交叉时会出现）。 */
   generation: number;
+  /** 这棵树画在哪一面。宿主按它挑窗口，也按它挑 diff 的基线。 */
+  surface: Surface;
   root: SerializedNode;
 }
 
@@ -71,6 +80,8 @@ export interface CommandSummary {
 export interface ActivationContext {
   /** 从哪里进来的：工具箱那一行、快捷环、Inbox 卡片、通知横幅、命令跑完之后、开发者模式重载。 */
   entry: "toolbox" | "shortcutRing" | "inboxCard" | "notification" | "command" | "developer";
+  /** 要画的是页面还是原地弹窗；省略 = 页面（协议 1 的宿主不发这个字段）。 */
+  surface?: Surface | undefined;
   granted: string[];
   preferences: Record<string, unknown>;
   commands: CommandSummary[];

@@ -166,7 +166,8 @@
               "presentation": {
                 "enum": [
                   "panel",
-                  "silent"
+                  "silent",
+                  "popover"
                 ]
               }
             },

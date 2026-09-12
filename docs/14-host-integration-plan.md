@@ -102,6 +102,20 @@
 - **D-B12 SDK 1.1**：延迟绑定宿主、`testing` 替身、`ocr.mergeLines` / `chunk`、`image` 节点。
   P-0 加两条量测：500 节点提交耗时、编辑器 20000 字符改一个字；顺带决定要不要加
   `com.apple.security.cs.allow-jit`。
+- **D-B13 原地结果弹窗——宿主的第三类窗口**（面板是第一类、授权弹窗是第二类；Figma `jarvis-extension-screenshot-translate`
+  `983:2` 的 `popover-01-translating` `993:4` / `popover-02-result` `993:53` / `capture-02-result-in-place` `994:4`）。
+  `presentation: "popover"` 的命令：宿主在命令里第一次 `screenshot.capture` 返回时开弹窗，锚在选区左下角、
+  顶边距选区下沿 12pt、左边对齐，下方放不下翻到上方，不出屏幕边 16pt，跟着选区所在的屏幕；没截图的命令锚在指针旁。
+  400 宽、按内容长高最高 520 再滚；**不拿焦点**（原来的窗口继续能打字）；Esc（指针在弹窗上或弹窗刚出现 3 秒内）/
+  点弹窗外 / 指针离开 15 秒关，翻译中（`panel.hold`）不倒计时；⊙ 钉住常驻，再截一块时被新的一次替换；
+  ⤢「在面板里打开」= `deactivate` 弹窗 + `activate` 页面。弹窗期间原选区留一圈 1pt 青 70% 轮廓。
+  线缆：`activate` 带 `surface: "popover"`，`commit` 带 `surface`；渲染器同一套节点视图换一层 chrome。
+  VoiceOver 播报「<扩展名> · 结果」并把主要结果作为 `accessibilityValue`；Reduce Motion 直接出现。
+- **D-B14 `screenshot.capture` 的 `hint`**：只框选会话里选框下方那句提示由扩展给（≤ 16 字），省略用「松手即完成」。
+- **D-B15 `system.openExtensionSettings`**：隐式能力；打开设置窗并滚到 扩展 › 本扩展；用户动作 1 秒内放行。
+- **D-B16 `picker.layout: "compact"`**：触发器画成「值 ▾」chip（借 `SettingsStatusBadge` 的形），下拉同一份。
+- **期 A.1（已在 2.0.1 落地）**：manifest / registry 的 `presentation` 枚举认 `popover`——不认的宿主会把整份
+  registry 判为无效而回落到上一份快照，因此这一步先于运行时。
 
 ### 改动清单
 

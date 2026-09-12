@@ -38,7 +38,7 @@ npm run registry
 | 四 | 要不要往 Inbox 投递 | `inbox: false \| { cards, notifications }` |
 
 入口模型是 **命令 + 页面**（与 Raycast 相同）：工具箱那一行打开页面；快捷键、页面按钮、快捷环、
-Inbox 卡片触发命令。参考实现：[`extensions/screenshot-translate`](extensions/screenshot-translate)
+Inbox 卡片触发命令。参考实现：[`extensions/translation`](extensions/translation)
 （截屏 OCR + Google 翻译，两条带快捷键的命令加一个页面）。
 
 完整手册：[docs/12-developer-guide.md](docs/12-developer-guide.md)。审核清单：[docs/13-review-checklist.md](docs/13-review-checklist.md)。

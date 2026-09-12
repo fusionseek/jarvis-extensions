@@ -1,5 +1,5 @@
 {
-  "name": "jarvis-ext-screenshot-translate",
+  "name": "jarvis-ext-translation",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,9 +7,10 @@
     "build": "node ../../scripts/build-extension.mjs .",
     "watch": "node ../../scripts/build-extension.mjs . --watch",
     "check": "tsc -p tsconfig.json --noEmit",
-    "validate": "node ../../scripts/validate.mjs ."
+    "validate": "node ../../scripts/validate.mjs .",
+    "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
-    "@fusionseek/jarvis-extension-sdk": "^1.1.0"
+    "@fusionseek/jarvis-extension-sdk": "^1.2.0"
   }
 }

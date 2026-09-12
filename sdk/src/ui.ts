@@ -208,6 +208,11 @@ export interface PickerNode extends Keyed {
   label: string;
   /** 选项多于 8 个时宿主自动给搜索框。 */
   searchable?: boolean;
+  /**
+   * `full`（默认）= 320 宽的通栏下拉；`compact` = 一枚「值 ▾」chip，挤在段标题右端或一行的两侧
+   * （原地弹窗的语言行、页面上「翻译成 · 中文 ▾」那种标签 + 值的行）。点开的是同一份下拉。
+   */
+  layout?: "full" | "compact";
   disabled?: boolean;
   onChange: Handler<string>;
 }
