@@ -1,0 +1,34 @@
+{
+  "manifestVersion": 1,
+  "id": "send-to-phone",
+  "version": "1.0.0",
+  "toolbox": {
+    "symbol": "iphone.and.arrow.forward",
+    "name": "发到手机",
+    "subtitle": "把剪贴板里的东西推到手机",
+    "keywords": ["phone", "push", "快传"]
+  },
+  "description": "读一次剪贴板，经 Jarvis 快传把文字或链接推到已配对的手机上；快传没开时给一颗按钮替你打开，发完在 Inbox 留一张卡。",
+  "author": {
+    "name": "fusionseek",
+    "github": "fusionseek"
+  },
+  "main": "dist/extension.js",
+  "sdk": "^1.0.0",
+  "minimumJarvisVersion": "1.5.0",
+  "capabilities": [
+    { "id": "clipboard.read", "reason": "读取要发送的文字或链接" },
+    { "id": "quickTransfer.status", "reason": "知道快传开没开、有没有手机连着" },
+    { "id": "quickTransfer.control", "reason": "快传没开时替你打开" },
+    { "id": "quickTransfer.send", "reason": "把内容推到手机" },
+    { "id": "inbox.post", "reason": "发完在 Inbox 留一张卡，关掉面板也看得见" }
+  ],
+  "settings": {
+    "preferences": [
+      { "key": "trimWhitespace", "type": "toggle", "title": "去掉首尾空白", "default": true },
+      { "key": "confirmBeforeSend", "type": "toggle", "title": "发送前确认", "description": "点「发到手机」后先看一眼再发", "default": false }
+    ]
+  },
+  "inbox": { "cards": true, "notifications": false },
+  "background": false
+}

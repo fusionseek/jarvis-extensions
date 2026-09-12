@@ -1,0 +1,31 @@
+{
+  "name": "jarvis-extensions",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Jarvis 开放平台：扩展仓库、SDK、契约与文档。",
+  "workspaces": [
+    "sdk",
+    "extensions/*",
+    "templates/*"
+  ],
+  "scripts": {
+    "check:sdk": "tsc -p sdk/tsconfig.json --noEmit",
+    "build:sdk": "tsc -p sdk/tsconfig.json",
+    "check:extensions": "for d in extensions/*/ templates/*/; do tsc -p \"$d/tsconfig.json\" --noEmit || exit 1; done",
+    "build": "node scripts/build-extension.mjs --all",
+    "validate": "node scripts/validate.mjs",
+    "registry": "node scripts/build-registry.mjs",
+    "registry:check": "node scripts/build-registry.mjs --check",
+    "verify": "npm run check:sdk && npm run check:extensions && npm run build && npm run validate && npm run registry:check"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

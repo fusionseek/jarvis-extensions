@@ -1,0 +1,51 @@
+{
+  "registryVersion": 1,
+  "generatedAt": "2026-09-12T04:57:27.086Z",
+  "source": {
+    "repository": "https://github.com/fusionseek/jarvis-extensions",
+    "commit": "0000000000000000000000000000000000000000"
+  },
+  "extensions": [
+    {
+      "id": "send-to-phone",
+      "version": "1.0.0",
+      "toolbox": {
+        "symbol": "iphone.and.arrow.forward",
+        "name": "发到手机",
+        "subtitle": "把剪贴板里的东西推到手机",
+        "keywords": [
+          "phone",
+          "push",
+          "快传"
+        ]
+      },
+      "description": "读一次剪贴板，经 Jarvis 快传把文字或链接推到已配对的手机上；快传没开时给一颗按钮替你打开，发完在 Inbox 留一张卡。",
+      "author": {
+        "name": "fusionseek",
+        "github": "fusionseek"
+      },
+      "sdk": "^1.0.0",
+      "minimumJarvisVersion": "1.5.0",
+      "capabilities": [
+        "clipboard.read",
+        "quickTransfer.status",
+        "quickTransfer.control",
+        "quickTransfer.send",
+        "inbox.post"
+      ],
+      "settings": true,
+      "inbox": {
+        "cards": true,
+        "notifications": false
+      },
+      "background": false,
+      "path": "extensions/send-to-phone",
+      "bundle": {
+        "path": "extensions/send-to-phone/dist/extension.js",
+        "sha256": "227a0c8465482ff585d8669a742be3907c996b140994029156d84272eb1a1466",
+        "byteCount": 22720
+      },
+      "updatedAt": "2026-09-12T04:57:27.085Z"
+    }
+  ]
+}

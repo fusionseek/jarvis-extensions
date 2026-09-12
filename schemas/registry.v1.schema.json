@@ -1,0 +1,229 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jarvis.fusionseek.ai/schemas/registry.v1.schema.json",
+  "title": "Jarvis extension registry v1",
+  "description": "仓库根目录的 registry.json。由 scripts/build-registry.mjs 从各扩展的 extension.json 生成，宿主只读它来罗列扩展库；不得手改。",
+  "type": "object",
+  "required": [
+    "registryVersion",
+    "generatedAt",
+    "source",
+    "extensions"
+  ],
+  "properties": {
+    "registryVersion": {
+      "const": 1
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "repository",
+        "commit"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^https://github\\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "extensions": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "entry": {
+      "type": "object",
+      "description": "扩展库卡片需要的全部事实。它是 extension.json 的投影，多出 path / bundle / updatedAt 三项。",
+      "required": [
+        "id",
+        "version",
+        "toolbox",
+        "description",
+        "author",
+        "sdk",
+        "minimumJarvisVersion",
+        "capabilities",
+        "settings",
+        "inbox",
+        "background",
+        "path",
+        "bundle",
+        "updatedAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+        },
+        "version": {
+          "$ref": "#/$defs/semver"
+        },
+        "toolbox": {
+          "type": "object",
+          "required": [
+            "symbol",
+            "name",
+            "subtitle"
+          ],
+          "properties": {
+            "symbol": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9.-]+$"
+            },
+            "name": {
+              "type": "string",
+              "maxLength": 12
+            },
+            "subtitle": {
+              "type": "string",
+              "maxLength": 22
+            },
+            "keywords": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "author": {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            },
+            "github": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "repository": {
+          "type": "string"
+        },
+        "sdk": {
+          "type": "string"
+        },
+        "minimumJarvisVersion": {
+          "$ref": "#/$defs/semver"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "network": {
+          "type": "object",
+          "required": [
+            "hosts"
+          ],
+          "properties": {
+            "hosts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "settings": {
+          "type": "boolean",
+          "description": "有没有设置区段。偏好项的定义在安装时从 extension.json 读，这里只留一个布尔给卡片。"
+        },
+        "inbox": {
+          "oneOf": [
+            {
+              "const": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "cards",
+                "notifications"
+              ],
+              "properties": {
+                "cards": {
+                  "type": "boolean"
+                },
+                "notifications": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "background": {
+          "type": "boolean"
+        },
+        "path": {
+          "type": "string",
+          "description": "扩展目录，相对仓库根。恒为 extensions/<id>。",
+          "pattern": "^extensions/[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+        },
+        "bundle": {
+          "type": "object",
+          "description": "宿主安装时要校验的产物指纹。哈希对不上就拒绝安装。",
+          "required": [
+            "path",
+            "sha256",
+            "byteCount"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "pattern": "^extensions/[a-z][a-z0-9]*(-[a-z0-9]+)*/dist/[A-Za-z0-9._-]+\\.js$"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "byteCount": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 524288
+            }
+          },
+          "additionalProperties": false
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

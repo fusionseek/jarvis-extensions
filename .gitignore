@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+._*
+
+# Node
+node_modules/
+npm-debug.log*
+
+# SDK 构建产物：SDK 从源码被 alias 进扩展的 bundle，仓库里不留一份会漂的 dist
+sdk/dist/
+
+# 扩展的 dist/extension.js **要提交**（宿主只认它），因此不在这里忽略
+
+# Editors
+.idea/
+.vscode/
+*.swp

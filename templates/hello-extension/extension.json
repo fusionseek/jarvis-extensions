@@ -1,0 +1,22 @@
+{
+  "manifestVersion": 1,
+  "id": "hello-extension",
+  "version": "0.1.0",
+  "toolbox": {
+    "symbol": "textformat.123",
+    "name": "字数统计",
+    "subtitle": "字符、单词与行数",
+    "keywords": ["count", "words", "统计"]
+  },
+  "description": "粘一段文字，实时数出字符、单词与行数；一键复制摘要。脚手架示例：不需要任何授权，不进设置页，不进 Inbox。",
+  "author": {
+    "name": "fusionseek",
+    "github": "fusionseek"
+  },
+  "main": "dist/extension.js",
+  "sdk": "^1.0.0",
+  "minimumJarvisVersion": "1.5.0",
+  "capabilities": [],
+  "settings": false,
+  "inbox": false
+}

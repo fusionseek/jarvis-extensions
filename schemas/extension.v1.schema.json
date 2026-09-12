@@ -1,0 +1,432 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jarvis.fusionseek.ai/schemas/extension.v1.schema.json",
+  "title": "Jarvis extension manifest v1",
+  "description": "每个扩展目录里的 extension.json。四个部分（工具箱条目 / 功能入口与能力 / 设置 / Inbox）都必须显式回答，没有默认值。",
+  "type": "object",
+  "required": [
+    "manifestVersion",
+    "id",
+    "version",
+    "toolbox",
+    "description",
+    "author",
+    "main",
+    "sdk",
+    "minimumJarvisVersion",
+    "capabilities",
+    "settings",
+    "inbox"
+  ],
+  "properties": {
+    "manifestVersion": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "description": "扩展标识，同时是目录名与工具箱行 id。小写字母开头，只允许小写字母、数字与单个连字符。",
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+      "minLength": 3,
+      "maxLength": 40
+    },
+    "version": {
+      "$ref": "#/$defs/semver"
+    },
+    "toolbox": {
+      "$ref": "#/$defs/toolboxEntry"
+    },
+    "description": {
+      "type": "string",
+      "description": "扩展库卡片上的说明。回答「它替我做什么」，不写营销语。",
+      "minLength": 8,
+      "maxLength": 240
+    },
+    "author": {
+      "$ref": "#/$defs/author"
+    },
+    "repository": {
+      "type": "string",
+      "description": "源码地址；省略时指向本仓库里的扩展目录。",
+      "pattern": "^https://[^\\s]+$",
+      "maxLength": 256
+    },
+    "main": {
+      "type": "string",
+      "description": "构建产物：相对扩展目录的单文件 JS bundle，必须提交进仓库。",
+      "pattern": "^dist/[A-Za-z0-9._-]+\\.js$"
+    },
+    "sdk": {
+      "type": "string",
+      "description": "依赖的 SDK 主版本区间，形如 ^1.0.0。宿主只兼容同一主版本。",
+      "pattern": "^\\^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "minimumJarvisVersion": {
+      "$ref": "#/$defs/semver"
+    },
+    "capabilities": {
+      "type": "array",
+      "description": "要向用户申请的宿主能力。空数组表示这个扩展只用隐式能力（存储、偏好、纯函数工具）。",
+      "maxItems": 12,
+      "items": {
+        "$ref": "#/$defs/capabilityRequest"
+      }
+    },
+    "network": {
+      "$ref": "#/$defs/network"
+    },
+    "settings": {
+      "description": "第三部分：要不要出现在设置页。false = 不出现；对象 = 出现，并按 preferences 渲染。",
+      "oneOf": [
+        {
+          "const": false
+        },
+        {
+          "$ref": "#/$defs/settingsSection"
+        }
+      ]
+    },
+    "inbox": {
+      "description": "第四部分：要不要往 Inbox 投递。false = 不投递；对象 = 声明卡片与系统通知两条通路各开不开。",
+      "oneOf": [
+        {
+          "const": false
+        },
+        {
+          "$ref": "#/$defs/inboxParticipation"
+        }
+      ]
+    },
+    "background": {
+      "type": "boolean",
+      "description": "离开扩展页面后运行时是否常驻。只有要在后台投递 Inbox 卡片或观察宿主状态的扩展才需要。默认 false。",
+      "default": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "toolboxEntry": {
+      "type": "object",
+      "description": "第一部分：工具箱里的那一行 / 那一格，以及扩展页面 header 上的徽标。",
+      "required": [
+        "symbol",
+        "name",
+        "subtitle"
+      ],
+      "properties": {
+        "symbol": {
+          "type": "string",
+          "description": "SF Symbol 名。不接受 emoji、图片或自绘路径。",
+          "pattern": "^[A-Za-z0-9.-]+$",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "name": {
+          "type": "string",
+          "description": "工具箱标题，也是 header 标题。header 留给标题的宽度只有 144pt。",
+          "minLength": 1,
+          "maxLength": 12
+        },
+        "subtitle": {
+          "type": "string",
+          "description": "列表排布下那一行说明；宫格常态不显示、搜索命中时显示。",
+          "minLength": 1,
+          "maxLength": 22
+        },
+        "keywords": {
+          "type": "array",
+          "description": "搜索时额外认的词。只装标题与说明里没有的词。",
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 24
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "author": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://[^\\s]+$",
+          "maxLength": 256
+        },
+        "github": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "capabilityID": {
+      "type": "string",
+      "description": "能力目录见 docs/06-capabilities.md。隐式能力（panel.* / storage.* / preferences.* / text.* / time.* / color.* / environment / log）不在这里声明。",
+      "enum": [
+        "clipboard.read",
+        "clipboard.write",
+        "clipboard.history",
+        "quickTransfer.status",
+        "quickTransfer.control",
+        "quickTransfer.send",
+        "quickTransfer.records",
+        "screenshot.capture",
+        "notifications.post",
+        "inbox.post",
+        "memo.read",
+        "memo.write",
+        "calendar.read",
+        "tasks.read",
+        "network.https",
+        "files.pick",
+        "system.openURL"
+      ]
+    },
+    "capabilityRequest": {
+      "type": "object",
+      "required": [
+        "id",
+        "reason"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/capabilityID"
+        },
+        "reason": {
+          "type": "string",
+          "description": "授权弹窗里那一行的第二句：这个扩展拿它做什么。写给用户看，不写给审核看。",
+          "minLength": 4,
+          "maxLength": 60
+        }
+      },
+      "additionalProperties": false
+    },
+    "network": {
+      "type": "object",
+      "description": "声明了 network.https 能力时必填：允许访问的主机白名单。宿主只放行这几个主机上的 HTTPS 请求。",
+      "required": [
+        "hosts"
+      ],
+      "properties": {
+        "hosts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$",
+            "maxLength": 253
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "settingsSection": {
+      "type": "object",
+      "required": [
+        "preferences"
+      ],
+      "properties": {
+        "preferences": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/preference"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "preferenceBase": {
+      "type": "object",
+      "required": [
+        "key",
+        "type",
+        "title"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[a-z][a-zA-Z0-9]*$",
+          "maxLength": 32
+        },
+        "type": {
+          "enum": [
+            "toggle",
+            "text",
+            "number",
+            "select",
+            "directory"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 80
+        }
+      }
+    },
+    "preference": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/preferenceBase"
+        },
+        {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "toggle"
+                },
+                "default": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "default"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "text"
+                },
+                "default": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "placeholder": {
+                  "type": "string",
+                  "maxLength": 40
+                },
+                "maxLength": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 200
+                }
+              },
+              "required": [
+                "default"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "number"
+                },
+                "default": {
+                  "type": "number"
+                },
+                "minimum": {
+                  "type": "number"
+                },
+                "maximum": {
+                  "type": "number"
+                },
+                "step": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                }
+              },
+              "required": [
+                "default",
+                "minimum",
+                "maximum"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "select"
+                },
+                "default": {
+                  "type": "string"
+                },
+                "options": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 8,
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "value",
+                      "title"
+                    ],
+                    "properties": {
+                      "value": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9_-]{1,32}$"
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "default",
+                "options"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "directory"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "inboxParticipation": {
+      "type": "object",
+      "required": [
+        "cards",
+        "notifications"
+      ],
+      "properties": {
+        "cards": {
+          "type": "boolean",
+          "description": "往 Inbox 投递卡片。为 true 时必须同时声明 inbox.post 能力。"
+        },
+        "notifications": {
+          "type": "boolean",
+          "description": "投递卡片时可以同时弹系统横幅。为 true 时必须同时声明 notifications.post 能力。"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
