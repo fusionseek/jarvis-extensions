@@ -1,0 +1,64 @@
+{
+  "manifestVersion": 1,
+  "id": "http-status",
+  "version": "0.1.0",
+  "toolbox": {
+    "symbol": "number.circle",
+    "name": "HTTP 状态码",
+    "subtitle": "查一个码：含义、成因、怎么处理",
+    "keywords": ["status", "code", "rfc", "nginx", "cloudflare", "接口调试"]
+  },
+  "description": "输入状态码或关键词，给出这个码的读法、语义、常见成因、怎么处理、相关的码与 RFC 出处。⌥⌘/ 还能从剪贴板里抓出状态码，结果贴着指针原地弹出。62 个标准码与 12 个常见非标准码都编在扩展里，不联网。",
+  "author": {
+    "name": "fusionseek",
+    "github": "fusionseek"
+  },
+  "main": "dist/extension.js",
+  "sdk": "^1.5.0",
+  "minimumJarvisVersion": "2.0.1",
+  "capabilities": [
+    { "id": "clipboard.read", "reason": "⌥⌘/ 按下时读一次剪贴板，从里面找状态码" },
+    { "id": "system.openURL", "reason": "点「打开原文」时用默认浏览器打开 RFC / MDN" },
+    { "id": "hotkeys.register", "reason": "两条命令的全局快捷键" }
+  ],
+  "commands": [
+    { "id": "lookup", "title": "查状态码", "description": "打开面板，落在这个扩展的页面上", "hotkey": { "default": "⌥⌘H" }, "presentation": "panel" },
+    { "id": "explain-clipboard", "title": "解释剪贴板里的码", "description": "读一次剪贴板，抓出状态码，结果贴着指针弹出", "hotkey": { "default": "⌥⌘/" }, "presentation": "popover" }
+  ],
+  "settings": {
+    "preferences": [
+      {
+        "key": "copyFormat",
+        "type": "select",
+        "title": "复制格式",
+        "description": "复制钮与弹窗里那颗 chip 写进剪贴板的形状",
+        "default": "name",
+        "options": [
+          { "value": "code", "title": "404" },
+          { "value": "name", "title": "404 Not Found" },
+          { "value": "line", "title": "整行含协议" }
+        ]
+      },
+      {
+        "key": "specSource",
+        "type": "select",
+        "title": "出处打开哪一边",
+        "description": "点「打开原文」时去 rfc-editor.org，还是 MDN 的中文页",
+        "default": "rfc",
+        "options": [
+          { "value": "rfc", "title": "RFC 原文" },
+          { "value": "mdn", "title": "MDN 中文" }
+        ]
+      },
+      {
+        "key": "includeUnofficial",
+        "type": "toggle",
+        "title": "搜索包含非标准码",
+        "description": "nginx、IIS、Cloudflare 自己造的码；命中时界面上会标出来",
+        "default": true
+      }
+    ]
+  },
+  "inbox": false,
+  "background": false
+}

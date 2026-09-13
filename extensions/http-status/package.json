@@ -1,0 +1,16 @@
+{
+  "name": "jarvis-ext-http-status",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node ../../scripts/build-extension.mjs .",
+    "watch": "node ../../scripts/build-extension.mjs . --watch",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "validate": "node ../../scripts/validate.mjs .",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@fusionseek/jarvis-extension-sdk": "^1.5.0"
+  }
+}
