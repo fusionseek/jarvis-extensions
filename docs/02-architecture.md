@@ -160,8 +160,8 @@ sequenceDiagram
 | 项 | 值 | 为什么 |
 | --- | --- | --- |
 | 隔离 | 每个扩展一个 `JSVirtualMachine` + `JSContext`，一条串行 `DispatchQueue` | 内存互不可见；一个扩展死循环不拖住另一个 |
-| 全局环境 | 只有 ES2020 标准库 + `__jarvisHost`；**没有** `fetch` / `XMLHttpRequest` / `setTimeout` 以外的宿主对象 | 能做的每一件事都必须经过闸门 |
-| 定时器 | `setTimeout` / `setInterval` 由宿主实现，每个扩展最多 8 个活动定时器，最短 100 ms | 防止一个扩展把主线程喂满 |
+| 全局环境 | ES2020 标准库 + `__jarvisHost` + `setTimeout` / `clearTimeout`。**没有** `fetch`、`XMLHttpRequest`、`require`、DOM、文件系统 | 能做的每一件事都必须经过闸门 |
+| 定时器 | 只有 `setTimeout` / `clearTimeout`（SDK 1.4 起另有 `sleep(ms)`）。单次延时 ≤ 30 s、同时挂起 ≤ 64 个，会话结束时全部取消 | 退避重试、去抖都要它；而**没有 `setInterval`**——一个忘记 clear 的 interval 会在面板关掉之后继续醒着，直到应用退出 |
 | 同步预算 | 一次事件回调（含 `render()`）超过 200 ms 记一次警告，超过 2 s 终止上下文 | 主线程上等的是用户的一次点击 |
 | 内存 | `JSVirtualMachine` 单独计量；超过 128 MB 终止 | 同上 |
 | 加载 | 进入时 `evaluateScript(bundle)`；`background: false` 的扩展离开页面即 `deactivate` 并**销毁上下文** | 不常驻的扩展不该在后台占着任何东西 |

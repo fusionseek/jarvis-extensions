@@ -1,4 +1,4 @@
-// jarvis-extension bundle · translation@0.1.1 · sdk 1.3.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · translation@0.1.3 · sdk 1.5.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -237,7 +237,7 @@
   var ocr = { isCJK, joiner, paragraphs, joinParagraph, mergeLines, chunk };
 
   // sdk/src/index.ts
-  var sdkVersion = "1.3.0";
+  var sdkVersion = "1.5.0";
   var Runtime = class {
     constructor() {
       this.definition = null;
@@ -472,7 +472,8 @@
       return sync.host("environment");
     },
     ui: {
-      update: () => runtime.requestUpdate()
+      update: () => runtime.requestUpdate(),
+      dismissPopover: () => runtime.invoke("ui", "dismissPopover", {})
     },
     panel: {
       hold(reason) {
@@ -606,9 +607,24 @@
       openExtensionSettings: () => call.system("openExtensionSettings")
     }
   };
+  function sleep(milliseconds) {
+    return new Promise((resolve) => {
+      setTimeout(resolve, milliseconds);
+    });
+  }
 
   // extensions/translation/src/google.ts
-  var chunkLength = 4e3;
+  var gtxHosts = [
+    "https://translate.googleapis.com/translate_a/single",
+    "https://translate.google.com/translate_a/single"
+  ];
+  var backoffMs = [500, 1500, 4e3];
+  var chunkLimits = { cjk: 1800, latin: 5e3 };
+  var cacheLimit = 64;
+  var cache = /* @__PURE__ */ new Map();
+  function chunkLength(text) {
+    return /[㐀-鿿豈-﫿]/.test(text) ? chunkLimits.cjk : chunkLimits.latin;
+  }
   function describe(error) {
     if (error instanceof JarvisError) return error.detail ?? error.message;
     return error instanceof Error ? error.message : String(error);
@@ -616,48 +632,128 @@
   function form(params) {
     return Object.entries(params).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
   }
-  async function gtx(text, target, source) {
-    const query = form({ client: "gtx", sl: source ?? "auto", tl: target, dt: "t", dj: "1" });
-    const response = await jarvis.net.fetch(`https://translate.googleapis.com/translate_a/single?${query}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
-        // 这个端点对空 UA 偶尔 403；给一个浏览器样子的 UA 是 Easydict 等客户端的通行做法。
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
-      },
-      body: form({ q: text })
+  function header(headers, name) {
+    const wanted = name.toLowerCase();
+    for (const [key, value] of Object.entries(headers)) {
+      if (key.toLowerCase() === wanted) return value;
+    }
+    return null;
+  }
+  function throttled(status, body) {
+    if (status === 429 || status === 503) return true;
+    const head = body.slice(0, 400).trimStart().toLowerCase();
+    return head.startsWith("<!doctype") || head.startsWith("<html");
+  }
+  function retryAfterMs(headers) {
+    const raw = header(headers, "Retry-After");
+    if (raw === null) return null;
+    const seconds = Number.parseInt(raw.trim(), 10);
+    if (!Number.isFinite(seconds) || seconds <= 0) return null;
+    return Math.min(seconds, 30) * 1e3;
+  }
+  async function gtxOnce(endpoint, text, target, source) {
+    const query = form({
+      client: "gtx",
+      sl: source ?? "auto",
+      tl: target,
+      dt: "t",
+      // `dj=1` 把回应换成 JSON 对象（`{"sentences":[…],"src":…}`）。
+      // 不加它拿到的是位置数组，要按 [0][1][2][8] 硬取下标——Easydict 的 webapp 路径就是那样，
+      // 而 Google 一旦调整字段顺序，那种解析会安静地取到错误的东西。
+      dj: "1",
+      ie: "UTF-8"
     });
+    let response;
+    try {
+      response = await jarvis.net.fetch(`${endpoint}?${query}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
+          // 这个端点对空 UA 偶尔 403。Easydict 冻着一个 2019 年的 Chrome 串；给一个当下的
+          // Safari 串同样管用，而且不像那种老串一样一眼就是个脚本。
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+        },
+        // q 走 POST 体而不是查询串（Easydict 是放查询串的）：长文本不受 URL 长度限制。
+        body: form({ q: text })
+      });
+    } catch (error) {
+      return { kind: "failed", reason: describe(error) };
+    }
+    if (throttled(response.status, response.text)) {
+      return { kind: "throttled", waitMs: retryAfterMs(response.headers) };
+    }
     if (response.status !== 200) {
-      throw new Error(response.status === 429 ? "Google \u514D\u8D39\u7AEF\u70B9\u9650\u6D41\u4E86\uFF0C\u7A0D\u540E\u518D\u8BD5\u6216\u586B\u4E00\u4E2A API key" : `Google \u8FD4\u56DE ${response.status}`);
+      return { kind: "failed", reason: `Google \u8FD4\u56DE ${response.status}` };
     }
     let parsed;
     try {
       parsed = JSON.parse(response.text);
     } catch {
-      throw new Error("Google \u8FD4\u56DE\u7684\u4E0D\u662F JSON\uFF0C\u514D\u8D39\u7AEF\u70B9\u7684\u683C\u5F0F\u53EF\u80FD\u53D8\u4E86");
+      return { kind: "failed", reason: "Google \u8FD4\u56DE\u7684\u4E0D\u662F JSON\uFF0C\u514D\u8D39\u7AEF\u70B9\u7684\u683C\u5F0F\u53EF\u80FD\u53D8\u4E86" };
     }
     const body = parsed;
     const translated = (body.sentences ?? []).map((s) => s.trans ?? "").join("");
-    if (translated.trim() === "") throw new Error("Google \u6CA1\u6709\u8FD4\u56DE\u8BD1\u6587");
-    return { text: translated, detectedSource: body.src ?? null, backend: "gtx" };
+    if (translated.trim() === "") return { kind: "failed", reason: "Google \u6CA1\u6709\u8FD4\u56DE\u8BD1\u6587" };
+    return {
+      kind: "ok",
+      value: { text: translated, detectedSource: body.src ?? null, backend: "gtx" }
+    };
+  }
+  async function gtx(text, target, source) {
+    let reason = "Google \u6CA1\u6709\u8FD4\u56DE\u8BD1\u6587";
+    for (const endpoint of gtxHosts) {
+      for (let attempt = 0; ; attempt++) {
+        const outcome = await gtxOnce(endpoint, text, target, source);
+        if (outcome.kind === "ok") return outcome.value;
+        if (outcome.kind === "failed") {
+          reason = outcome.reason;
+          break;
+        }
+        if (attempt >= backoffMs.length) {
+          throw new Error("Google \u7684\u514D\u8D39\u7AEF\u70B9\u628A\u8FD9\u53F0\u673A\u5668\u9650\u6D41\u4E86\u3002\u7B49\u51E0\u5206\u949F\u518D\u8BD5\uFF0C\u6216\u8005\u5728\u8BBE\u7F6E\u91CC\u586B\u4E00\u4E2A API key");
+        }
+        await sleep(outcome.waitMs ?? backoffMs[attempt]);
+      }
+    }
+    throw new Error(reason);
   }
   async function v2(text, target, source, apiKey) {
-    const response = await jarvis.net.fetch(`https://translation.googleapis.com/language/translate/v2?key=${encodeURIComponent(apiKey)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ q: [text], target, format: "text", ...source ? { source } : {} })
-    });
+    const response = await jarvis.net.fetch(
+      `https://translation.googleapis.com/language/translate/v2?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ q: [text], target, format: "text", ...source ? { source } : {} })
+      }
+    );
     if (response.status === 403 || response.status === 400) {
       throw new Error("Google \u62D2\u7EDD\u4E86\u8FD9\u4E2A API key\uFF08\u68C0\u67E5\u5B83\u662F\u5426\u542F\u7528\u4E86 Cloud Translation API\uFF09");
+    }
+    if (response.status === 429) {
+      throw new Error("\u8FD9\u4E2A API key \u7684\u914D\u989D\u7528\u5B8C\u4E86");
     }
     if (response.status !== 200) throw new Error(`Google Translation API \u8FD4\u56DE ${response.status}`);
     const body = JSON.parse(response.text);
     const first = body.data?.translations?.[0];
     if (!first?.translatedText) throw new Error("Google Translation API \u6CA1\u6709\u8FD4\u56DE\u8BD1\u6587");
-    return { text: first.translatedText, detectedSource: first.detectedSourceLanguage ?? null, backend: "v2" };
+    return {
+      text: first.translatedText,
+      detectedSource: first.detectedSourceLanguage ?? null,
+      backend: "v2"
+    };
+  }
+  function remember(key, value) {
+    if (cache.size >= cacheLimit) {
+      const oldest = cache.keys().next();
+      if (!oldest.done) cache.delete(oldest.value);
+    }
+    cache.set(key, value);
   }
   async function translate(text, target, apiKey, source = null) {
-    const pieces = ocr.chunk(text, chunkLength);
+    const key = `${source ?? "auto"}\0${target}\0${apiKey ? "v2" : "gtx"}\0${text}`;
+    const hit = cache.get(key);
+    if (hit) return hit;
+    const pieces = ocr.chunk(text, chunkLength(text));
     if (pieces.length === 0) throw new Error("\u6CA1\u6709\u53EF\u7FFB\u8BD1\u7684\u6587\u5B57");
     const results = [];
     for (const piece of pieces) {
@@ -668,11 +764,16 @@
       }
     }
     const first = results[0];
-    return {
+    const merged = {
       text: results.map((r) => r.text).join("\n\n"),
       detectedSource: first.detectedSource,
       backend: first.backend
     };
+    remember(key, merged);
+    return merged;
+  }
+  function forgetTranslations() {
+    cache.clear();
   }
 
   // extensions/translation/src/session.ts
@@ -697,6 +798,9 @@
     { value: "de-DE", title: "Deutsch" },
     { value: "es-ES", title: "Espa\xF1ol" }
   ];
+  function hasTranslatableText(text) {
+    return /[\p{L}\p{N}]/u.test(text);
+  }
   function toGoogle(code) {
     const lower = code.toLowerCase().replace("_", "-");
     if (lower.startsWith("zh")) return lower.includes("hant") || lower.includes("tw") || lower.includes("hk") ? "zh-TW" : "zh-CN";
@@ -746,6 +850,13 @@
       this.origin = "typed";
       /** OCR 认出的行数；打字进来的原文按换行数。 */
       this.lines = 0;
+      /**
+       * 这一轮被忽略了（框到的那块里没有文字）。
+       *
+       * 它只活在一次 `capture()` 里，作用是**拦住那次提交**——宿主要等第一次提交才开弹窗，
+       * 提交了就等于给一次误拖弹一个空框。
+       */
+      this.ignoredRound = false;
       this.image = null;
       this.imageSize = null;
       this.detected = { code: null, name: "" };
@@ -807,6 +918,7 @@
       const previous = this.translation ? "done" : "idle";
       this.phase = "capturing";
       this.failure = null;
+      this.ignoredRound = false;
       jarvis.ui.update();
       try {
         const shot = await jarvis.screenshot.capture({
@@ -822,7 +934,7 @@
         this.systemPermissionMissing = false;
         this.image = shot.file;
         this.imageSize = { width: shot.width, height: shot.height };
-        return this.adoptOCR(shot.ocr, "screenshot");
+        return this.adoptOCR(shot.ocr, "screenshot", previous);
       } catch (error) {
         if (error instanceof JarvisError && error.code === "cancelled") {
           this.phase = previous;
@@ -841,11 +953,19 @@
         this.fail(failureFor(error));
         return false;
       } finally {
-        jarvis.ui.update();
+        if (this.ignoredRound) {
+          await jarvis.ui.dismissPopover();
+        } else {
+          jarvis.ui.update();
+        }
       }
     }
-    /** 把 OCR 的行合成段落、检测语言，作为新的原文。 */
-    adoptOCR(result, origin) {
+    /**
+     * 把 OCR 的行合成段落、检测语言，作为新的原文。
+     *
+     * `previous` 是这次动作开始前的阶段：框到的那块里没有文字时要回到它，当这一次没发生过。
+     */
+    adoptOCR(result, origin, previous = "idle") {
       const lines = result?.lines ?? [];
       this.origin = origin;
       this.lines = lines.length;
@@ -853,21 +973,26 @@
       this.dirty = false;
       this.autoCopied = false;
       this.sourceOverride = null;
-      if (lines.length === 0) {
+      const draft = lines.length === 0 ? "" : ocr.mergeLines(lines);
+      if (!hasTranslatableText(draft)) {
         this.source = "";
         this.detected = { code: null, name: "" };
+        if (origin === "screenshot") {
+          this.phase = previous;
+          this.ignoredRound = true;
+          return false;
+        }
         this.fail({
           kind: "empty",
           title: "\u6CA1\u8BA4\u51FA\u6587\u5B57",
-          body: origin === "screenshot" ? "\u8FD9\u5757\u533A\u57DF\u91CC\u6CA1\u6709\u53EF\u8BC6\u522B\u7684\u6587\u5B57\u3002\u518D\u622A\u4E00\u5757\uFF0C\u6216\u5728\u8BBE\u7F6E\u91CC\u52A0\u4E00\u79CD\u8BC6\u522B\u8BED\u8A00\u3002" : "\u8FD9\u5F20\u56FE\u91CC\u6CA1\u6709\u53EF\u8BC6\u522B\u7684\u6587\u5B57\u3002"
+          body: "\u8FD9\u5F20\u56FE\u91CC\u6CA1\u6709\u53EF\u8BC6\u522B\u7684\u6587\u5B57\u3002"
         });
         return false;
       }
-      const draft = ocr.mergeLines(lines);
       this.detect(draft);
       this.source = ocr.mergeLines(lines, this.detected.code ? { language: this.detected.code } : {});
       this.phase = "recognizing";
-      return this.source.trim() !== "";
+      return hasTranslatableText(this.source);
     }
     detect(text) {
       try {
@@ -1025,8 +1150,15 @@
       if (this.source.trim() === "" || this.busy) return;
       void this.translate();
     }
-    /** 「清空」：回到空屏。语言行里手动改过的也一并回到偏好——这是用户唯一的"重来"。 */
+    /**
+     * 「清空」：回到空屏。语言行里手动改过的也一并回到偏好——这是用户唯一的"重来"。
+     *
+     * 译文缓存也一起丢掉。缓存平时是好事（重复翻译同一段不再打 Google，那是唯一能真正减少
+     * IP 暴露的手段），但「清空」这个动作的含义就是"把刚才那次忘掉"——留着缓存的话，
+     * 用户重新截同一块屏会拿到一份他以为已经丢掉的旧译文。
+     */
     clear() {
+      forgetTranslations();
       this.targetTouched = false;
       this.alternateTouched = false;
       this.ocrTouched = false;

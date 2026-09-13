@@ -1,6 +1,6 @@
 {
   "name": "@fusionseek/jarvis-extension-sdk",
-  "version": "1.3.0",
+  "version": "1.5.0",
   "description": "Jarvis 扩展 SDK：manifest 类型、命令与页面、原地结果弹窗、声明式 UI 节点、宿主能力接口、OCR 段落合并与 JavaScriptCore 桥。",
   "type": "module",
   "main": "./dist/index.js",

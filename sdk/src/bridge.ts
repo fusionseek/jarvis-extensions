@@ -127,6 +127,19 @@ declare global {
   var __jarvisHost: HostBridge | undefined;
   // eslint-disable-next-line no-var
   var __jarvisRuntime: RuntimeBridge | undefined;
+
+  /**
+   * 宿主注入的定时器（SDK 1.4）。
+   *
+   * 这里要自己声明，是因为 `tsconfig` 的 `lib` 只有 `ES2020`、`types` 是空的——
+   * **故意的**：这个运行时没有 DOM、没有 Node，把那两套类型引进来会让扩展写出
+   * `document` 或 `process` 这种编译得过、真机上抛 ReferenceError 的代码。
+   * 于是宿主环境里有什么，就在这里一条一条说出来。
+   *
+   * 没有 `setInterval`：没有哪个扩展需要一个自己不会停的循环。
+   */
+  function setTimeout(callback: () => void, milliseconds: number): number;
+  function clearTimeout(id: number): void;
 }
 
 /** 把一棵节点树序列化到线缆上；回调函数在这里换成句柄。 */

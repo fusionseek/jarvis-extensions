@@ -22,7 +22,7 @@ export * from "./ocr.js";
 export type { ActivationContext, CommandContext, CommandSummary, CommandTrigger, HostEvent, SerializedNode, Surface } from "./bridge.js";
 export { bridgeProtocolVersion } from "./bridge.js";
 
-export const sdkVersion = "1.3.0";
+export const sdkVersion = "1.5.0";
 
 export interface PageDefinition {
   /** 进入扩展页面时调用一次。拿到已授予的能力、当前偏好与命令清单。 */
@@ -321,6 +321,7 @@ export const jarvis: Jarvis = {
   },
   ui: {
     update: () => runtime.requestUpdate(),
+    dismissPopover: () => runtime.invoke<void>("ui", "dismissPopover", {}),
   },
   panel: {
     hold(reason) {
@@ -454,5 +455,24 @@ export const jarvis: Jarvis = {
     openExtensionSettings: () => call.system("openExtensionSettings"),
   },
 };
+
+/**
+ * 等一会儿（SDK 1.4）。
+ *
+ * **宿主的 JavaScript 环境里有 `setTimeout`，但没有 `setInterval`**：没有哪个扩展需要一个
+ * 自己不会停的循环，而一个忘记 clear 的 interval 会在面板关掉之后继续醒着。
+ *
+ * 会话结束时宿主会把还没到点的定时器全部取消，因此这个 Promise 有可能**永远不 resolve**——
+ * 那正是想要的：面板已经没了，接着往下跑的那段代码没有任何人在等它的结果。
+ *
+ * 上限由宿主定：单次 30s、同时挂起 64 个。超出时那一次调用被丢掉并记一条 warn。
+ *
+ * @param milliseconds 等多久。负数、NaN 与 Infinity 一律当 0（与浏览器一致，含义是"尽快"）。
+ */
+export function sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
 
 export { ui, ocr };

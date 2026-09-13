@@ -1,4 +1,4 @@
-// jarvis-extension bundle · send-to-phone@1.0.0 · sdk 1.3.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · send-to-phone@1.0.0 · sdk 1.5.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -107,7 +107,7 @@
   };
 
   // sdk/src/index.ts
-  var sdkVersion = "1.3.0";
+  var sdkVersion = "1.5.0";
   var Runtime = class {
     constructor() {
       this.definition = null;
@@ -342,7 +342,8 @@
       return sync.host("environment");
     },
     ui: {
-      update: () => runtime.requestUpdate()
+      update: () => runtime.requestUpdate(),
+      dismissPopover: () => runtime.invoke("ui", "dismissPopover", {})
     },
     panel: {
       hold(reason) {

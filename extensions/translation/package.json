@@ -1,6 +1,6 @@
 {
   "name": "jarvis-ext-translation",
-  "version": "0.1.1",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,6 +11,6 @@
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
-    "@fusionseek/jarvis-extension-sdk": "^1.3.0"
+    "@fusionseek/jarvis-extension-sdk": "^1.5.0"
   }
 }

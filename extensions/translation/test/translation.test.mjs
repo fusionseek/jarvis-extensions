@@ -36,6 +36,7 @@ let clipboardImage;
 const written = [];
 const posted = [];
 const spoken = [];
+const dismissedPopovers = [];
 
 const host = createTestHost({
   async: {
@@ -56,6 +57,7 @@ const host = createTestHost({
     "panel.release": async () => undefined,
     "commands.run": async () => undefined,
     "system.openExtensionSettings": async () => undefined,
+    "ui.dismissPopover": async () => void dismissedPopovers.push(true),
   },
   sync: {
     "text.language.detect": ({ text }) => ({ code: /[一-鿿]/.test(text) ? "zh-Hans" : "en", confidence: 0.9, candidates: [] }),
@@ -89,6 +91,16 @@ const pressAction = async (node, actionID) => {
   host.dispatch({ type: "ui", handler: action.on.press, payload: {} });
   await host.settle();
 };
+/**
+ * 真的等一段墙上时间再收敛。
+ *
+ * 退避重试用的是**真的** `setTimeout`（宿主注入、Node 原生都是），`host.settle()` 只排空
+ * 微任务，排不到它。凡是断言"退避之后发生了什么"的用例都要先在这里等够。
+ */
+const waitRealTime = async (ms) => {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+  await host.settle();
+};
 const fetches = () => host.invocations.filter((i) => i.namespace === "net" && i.method === "fetch");
 const lastFetch = () => fetches()[fetches().length - 1];
 
@@ -101,6 +113,7 @@ beforeEach(async () => {
   written.length = 0;
   posted.length = 0;
   spoken.length = 0;
+  dismissedPopovers.length = 0;
   // 会话状态跨测试留着（宿主也这样）：用页面上的「清空」回到空屏。
   await activate("page");
   const source = byKey("source-section");
@@ -255,15 +268,30 @@ test("翻译失败：note 带「重试」与「填 API key」，重试成功后�
   assert.equal(byKey("failure"), undefined);
 });
 
-test("空区域：没认出文字，不问 Google，说清还能怎么办", async () => {
+test("框空了：当这一次没发生过——不问 Google，也一个字都不提交", async () => {
+  // 框到一块没有字的地方几乎总是误拖。为一次误拖弹一个"没认出文字"的框，
+  // 是拿一件用户不关心的事去打断他；而且宿主是"扩展第一次提交才开弹窗"，
+  // 只要这里不提交，屏幕上就什么都不会出现。
   captureBehaviour = () => ({ ...SHOT, ocr: { text: "", lines: [] } });
-  const before = fetches().length;
+  const beforeFetches = fetches().length;
+  const beforeCommits = host.commits.length;
   await runCommand("capture-translate");
-  assert.equal(fetches().length, before);
-  await activate("popover");
-  const note = byKey("failure");
-  assert.equal(note.props.title, "没认出文字");
-  assert.deepEqual(note.props.actions.map((a) => a.id), ["recapture"]);
+  assert.equal(fetches().length, beforeFetches, "不该问 Google");
+  assert.equal(dismissedPopovers.length, 1, "必须明说这一轮不值得弹，否则 SDK 那次自动提交会把空弹窗开出来");
+  assert.equal(byKey("failure"), undefined, "不留错误屏");
+  assert.ok(host.commits.length > beforeCommits, "SDK 仍会自动提交一次，这是 dismissPopover 存在的理由");
+});
+
+test("只认出标点也算框空：一两个符号不值得翻译", async () => {
+  captureBehaviour = () => ({
+    ...SHOT,
+    ocr: { text: "", lines: [{ text: "· —", box: { x: 0.1, y: 0.1, width: 0.2, height: 0.05 }, confidence: 0.5 }] },
+  });
+  const beforeFetches = fetches().length;
+  const beforeCommits = host.commits.length;
+  await runCommand("capture-translate");
+  assert.equal(fetches().length, beforeFetches);
+  assert.equal(dismissedPopovers.length, 1);
 });
 
 test("翻译剪贴板：是图先 OCR，页面里标成「剪贴板里的图片」", async () => {
@@ -309,4 +337,73 @@ test("产物体积在预算内：不压缩也该远小于 512 KB 的上限", () 
   const size = statSync(bundlePath).size;
   console.log(`[translation] dist/extension.js = ${size} 字节`);
   assert.ok(size <= 96 * 1024, `产物 ${size} 字节，超过 96 KB 的自设预算`);
+});
+
+test("被限流：429 之后退避重试，重试成功就当没事发生", async () => {
+  let calls = 0;
+  fetchBehaviour = () => {
+    calls += 1;
+    return calls === 1 ? { status: 429, headers: {}, text: "" } : gtx("退避之后的译文");
+  };
+  const before = fetches().length;
+  await runCommand("capture-translate");
+  await waitRealTime(900);
+  await activate("popover");
+  assert.equal(byKey("translation").props.text, "退避之后的译文");
+  assert.equal(fetches().length - before, 2, "该退避一次再重试一次");
+  assert.equal(byKey("failure"), undefined, "重试成功就不该留下错误提示");
+});
+
+test("被限流的另一副面孔：200 但正文是验证码 HTML", async () => {
+  let calls = 0;
+  fetchBehaviour = () => {
+    calls += 1;
+    // 过了阈值 Google 不一定给 429，它会用 200 返回一张 sorry / captcha 页。
+    // 只看状态码的话这里会落到「返回的不是 JSON」那条分支上，提示词变成"格式可能变了"，
+    // 而用户照着那句话去查格式，查不出任何东西。
+    return calls === 1
+      ? { status: 200, headers: {}, text: "<!DOCTYPE html><html><head><title>Error 429 (Too Many Requests)</title></head></html>" }
+      : gtx("认出验证码页之后的译文");
+  };
+  await runCommand("capture-translate");
+  await waitRealTime(900);
+  await activate("popover");
+  assert.equal(byKey("translation").props.text, "认出验证码页之后的译文");
+});
+
+test("退避用尽：说清是限流，而且从头到尾没换过主机", async () => {
+  fetchBehaviour = () => ({ status: 429, headers: { "Retry-After": "1" }, text: "" });
+  const before = fetches().length;
+  await runCommand("capture-translate");
+  // Retry-After 说 1 秒，三档退避就是三秒出头。
+  await waitRealTime(3600);
+  await activate("popover");
+  assert.match(byKey("failure").props.body, /限流/);
+  const urls = fetches().slice(before).map((f) => f.params.url);
+  assert.equal(urls.length, 4, "三档退避 = 一次首发加三次重试");
+  assert.ok(
+    urls.every((u) => u.startsWith("https://translate.googleapis.com/")),
+    "限流是按 IP 算的，换个域名还是同一个 IP——换主机只会给一台已经在拒绝你的服务器加压"
+  );
+});
+
+test("这台答得不对才换主机：500 之后落到 translate.google.com", async () => {
+  const seen = [];
+  fetchBehaviour = ({ url }) => {
+    seen.push(url);
+    return url.startsWith("https://translate.google.com/")
+      ? gtx("备用主机的译文")
+      : { status: 500, headers: {}, text: "" };
+  };
+  await runCommand("capture-translate");
+  await activate("popover");
+  assert.equal(byKey("translation").props.text, "备用主机的译文");
+  assert.ok(seen.some((u) => u.startsWith("https://translate.google.com/translate_a/single?")));
+});
+
+test("缓存：同一段原文再翻一次不打网络", async () => {
+  await runCommand("capture-translate");
+  const after = fetches().length;
+  await runCommand("capture-translate");
+  assert.equal(fetches().length, after, "命中缓存就不该再问 Google——那是唯一能真正减少 IP 暴露的手段");
 });

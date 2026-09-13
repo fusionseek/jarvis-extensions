@@ -16,7 +16,7 @@ import {
   type FileHandle,
   type OCRResult,
 } from "@fusionseek/jarvis-extension-sdk";
-import { translate, type Translation } from "./google.js";
+import { translate, forgetTranslations, type Translation } from "./google.js";
 
 export type Phase = "idle" | "capturing" | "recognizing" | "translating" | "done" | "failed";
 export type Origin = "screenshot" | "clipboard" | "typed";
@@ -64,6 +64,17 @@ export interface Failure {
 }
 
 /** NaturalLanguage / Vision 的 BCP-47 → Google 的代码：只差中文那几档。 */
+/**
+ * 这段文字里有没有**值得翻译**的东西。
+ *
+ * 不是 `trim() !== ""`：OCR 在一块空白上偶尔会认出一两个标点或框线残影，
+ * 而"把「·」翻译一下"对用户没有任何意义，却会弹一个框出来。
+ * 判据是至少有一个字母或数字——`\p{L}` 把汉字、假名、西里尔也一并涵盖了。
+ */
+export function hasTranslatableText(text: string): boolean {
+  return /[\p{L}\p{N}]/u.test(text);
+}
+
 export function toGoogle(code: string): string {
   const lower = code.toLowerCase().replace("_", "-");
   if (lower.startsWith("zh")) return lower.includes("hant") || lower.includes("tw") || lower.includes("hk") ? "zh-TW" : "zh-CN";
@@ -122,6 +133,13 @@ export class Session {
   origin: Origin = "typed";
   /** OCR 认出的行数；打字进来的原文按换行数。 */
   lines = 0;
+  /**
+   * 这一轮被忽略了（框到的那块里没有文字）。
+   *
+   * 它只活在一次 `capture()` 里，作用是**拦住那次提交**——宿主要等第一次提交才开弹窗，
+   * 提交了就等于给一次误拖弹一个空框。
+   */
+  ignoredRound = false;
   image: FileHandle | null = null;
   imageSize: { width: number; height: number } | null = null;
   detected: { code: string | null; name: string } = { code: null, name: "" };
@@ -192,6 +210,7 @@ export class Session {
     const previous: Phase = this.translation ? "done" : "idle";
     this.phase = "capturing";
     this.failure = null;
+    this.ignoredRound = false;
     jarvis.ui.update();
     try {
       const shot = await jarvis.screenshot.capture({
@@ -207,7 +226,7 @@ export class Session {
       this.systemPermissionMissing = false;
       this.image = shot.file;
       this.imageSize = { width: shot.width, height: shot.height };
-      return this.adoptOCR(shot.ocr, "screenshot");
+      return this.adoptOCR(shot.ocr, "screenshot", previous);
     } catch (error) {
       if (error instanceof JarvisError && error.code === "cancelled") {
         this.phase = previous;
@@ -226,12 +245,22 @@ export class Session {
       this.fail(failureFor(error));
       return false;
     } finally {
-      jarvis.ui.update();
+      if (this.ignoredRound) {
+        // SDK 在命令处理函数结束后总会自动提交一次，因此"什么都不做"做不到"什么都不弹"。
+        // 明说一句：这一轮不值得弹。宿主随即把等着开弹窗的那个锚点丢掉。
+        await jarvis.ui.dismissPopover();
+      } else {
+        jarvis.ui.update();
+      }
     }
   }
 
-  /** 把 OCR 的行合成段落、检测语言，作为新的原文。 */
-  adoptOCR(result: OCRResult | undefined, origin: Origin): boolean {
+  /**
+   * 把 OCR 的行合成段落、检测语言，作为新的原文。
+   *
+   * `previous` 是这次动作开始前的阶段：框到的那块里没有文字时要回到它，当这一次没发生过。
+   */
+  adoptOCR(result: OCRResult | undefined, origin: Origin, previous: Phase = "idle"): boolean {
     const lines = result?.lines ?? [];
     this.origin = origin;
     this.lines = lines.length;
@@ -239,22 +268,30 @@ export class Session {
     this.dirty = false;
     this.autoCopied = false;
     this.sourceOverride = null;
-    if (lines.length === 0) {
+    // 先按无语言合一次拿去检测，再按检测出的语言合一次——中英夹杂的截图两次结果可能不同。
+    const draft = lines.length === 0 ? "" : ocr.mergeLines(lines);
+    if (!hasTranslatableText(draft)) {
       this.source = "";
       this.detected = { code: null, name: "" };
+      if (origin === "screenshot") {
+        // **框空了就当这一次没发生过。** 框到一块没有字的地方几乎总是误拖——
+        // 为一次误拖弹一个"没认出文字"的框，是拿一件用户不关心的事去打断他。
+        this.phase = previous;
+        this.ignoredRound = true;
+        return false;
+      }
+      // 剪贴板那条路不一样：用户在面板里按了一个按钮，什么都不说才是坏的。
       this.fail({
         kind: "empty",
         title: "没认出文字",
-        body: origin === "screenshot" ? "这块区域里没有可识别的文字。再截一块，或在设置里加一种识别语言。" : "这张图里没有可识别的文字。",
+        body: "这张图里没有可识别的文字。",
       });
       return false;
     }
-    // 先按无语言合一次拿去检测，再按检测出的语言合一次——中英夹杂的截图两次结果可能不同。
-    const draft = ocr.mergeLines(lines);
     this.detect(draft);
     this.source = ocr.mergeLines(lines, this.detected.code ? { language: this.detected.code } : {});
     this.phase = "recognizing";
-    return this.source.trim() !== "";
+    return hasTranslatableText(this.source);
   }
 
   detect(text: string): void {
@@ -431,8 +468,15 @@ export class Session {
     void this.translate();
   }
 
-  /** 「清空」：回到空屏。语言行里手动改过的也一并回到偏好——这是用户唯一的"重来"。 */
+  /**
+   * 「清空」：回到空屏。语言行里手动改过的也一并回到偏好——这是用户唯一的"重来"。
+   *
+   * 译文缓存也一起丢掉。缓存平时是好事（重复翻译同一段不再打 Google，那是唯一能真正减少
+   * IP 暴露的手段），但「清空」这个动作的含义就是"把刚才那次忘掉"——留着缓存的话，
+   * 用户重新截同一块屏会拿到一份他以为已经丢掉的旧译文。
+   */
   clear(): void {
+    forgetTranslations();
     this.targetTouched = false;
     this.alternateTouched = false;
     this.ocrTouched = false;
