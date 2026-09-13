@@ -1,11 +1,64 @@
 {
   "registryVersion": 1,
-  "generatedAt": "2026-09-13T10:18:33.196Z",
+  "generatedAt": "2026-09-13T15:23:32.992Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "f8fe03e5135d791b48b897875c9b6b6b18d42712"
+    "commit": "a5ee33e4123d7b8652b696ff277e49a99c92784b"
   },
   "extensions": [
+    {
+      "id": "http-status",
+      "version": "0.1.0",
+      "toolbox": {
+        "symbol": "number.circle",
+        "name": "HTTP 状态码",
+        "subtitle": "查一个码：含义、成因、怎么处理",
+        "keywords": [
+          "status",
+          "code",
+          "rfc",
+          "nginx",
+          "cloudflare",
+          "接口调试"
+        ]
+      },
+      "description": "输入状态码或关键词，给出这个码的读法、语义、常见成因、怎么处理、相关的码与 RFC 出处。⌥⌘/ 还能从剪贴板里抓出状态码，结果贴着指针原地弹出。62 个标准码与 12 个常见非标准码都编在扩展里，不联网。",
+      "author": {
+        "name": "fusionseek",
+        "github": "fusionseek"
+      },
+      "sdk": "^1.5.0",
+      "minimumJarvisVersion": "2.0.1",
+      "capabilities": [
+        "clipboard.read",
+        "system.openURL",
+        "hotkeys.register"
+      ],
+      "settings": true,
+      "inbox": false,
+      "background": false,
+      "path": "extensions/http-status",
+      "bundle": {
+        "path": "extensions/http-status/dist/extension.js",
+        "sha256": "c27d378829b18549b35ff5204d1273e222c2f6574c07ed6ac4bb3697f28a6760",
+        "byteCount": 108066
+      },
+      "updatedAt": "2026-09-13T15:23:32.922Z",
+      "commands": [
+        {
+          "id": "lookup",
+          "title": "查状态码",
+          "hotkey": "⌥⌘H",
+          "presentation": "panel"
+        },
+        {
+          "id": "explain-clipboard",
+          "title": "解释剪贴板里的码",
+          "hotkey": "⌥⌘/",
+          "presentation": "popover"
+        }
+      ]
+    },
     {
       "id": "send-to-phone",
       "version": "1.0.0",
@@ -90,7 +143,7 @@
         "sha256": "f668039e5281fd1721d2b3f193718433504fd03a442662f03f765fe59248e2d8",
         "byteCount": 68111
       },
-      "updatedAt": "2026-09-13T16:43:49+08:00",
+      "updatedAt": "2026-09-13T18:42:02+08:00",
       "network": {
         "hosts": [
           "translate.googleapis.com",
