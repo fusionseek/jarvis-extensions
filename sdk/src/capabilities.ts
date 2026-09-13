@@ -297,6 +297,37 @@ export interface ScreenshotCaptureOptions {
    * 只对 `selectionOnly` 有意义——完整会话有自己的工具条。
    */
   hint?: string;
+  /**
+   * 这一次框选**长什么样**。只对 `selectionOnly` 有意义。
+   *
+   * 截图这件事在不同扩展手里是不同的动作：「截个图存下来」要压暗、要参照线，因为用户在**构图**；
+   * 「框一块来翻译」两样都不要，因为用户在**看原文**——把他正要读的那段字压暗一层、
+   * 再盖满网格，等于让他先把工具的装饰读掉一遍。
+   *
+   * 省略时与宿主自己的截图**一模一样**：不因为"是扩展发起的"就悄悄换一种长相。
+   */
+  appearance?: ScreenshotCaptureAppearance;
+}
+
+/** 只框选那次会话的外观（SDK 1.3）。 */
+export interface ScreenshotCaptureAppearance {
+  /** 背景压暗。默认 `true`。 */
+  dim?: boolean;
+  /**
+   * 整屏网格、十字参照线与放大镜——**它们是给构图用的**。默认 `true`。
+   *
+   * 它同时决定系统指针：`true` 时是系统十字准星（与 macOS 自己的截图一致），
+   * `false` 时换成一枚与选框同色的短准星，尾巴上挂 `cursorSymbol`。
+   */
+  guides?: boolean;
+  /**
+   * 跟在光标尾巴上那枚 SF Symbol。它回答的是"我此刻按下去会发生什么"——
+   * 同一块遮罩，截图与翻译长得一样时用户分不清刚才按的是哪一个键。省略时只有准星。
+   *
+   * **它换的是真的系统指针**，不是画在遮罩上的一层：屏幕上只有一个指针，
+   * 且它不会落后于鼠标。仅在 `guides: false` 时生效。
+   */
+  cursorSymbol?: string;
 }
 
 export interface ScreenshotResult {

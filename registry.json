@@ -1,9 +1,9 @@
 {
   "registryVersion": 1,
-  "generatedAt": "2026-09-12T11:31:25.700Z",
+  "generatedAt": "2026-09-12T14:17:49.596Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "7bfb129d9e1f7613d3332c2f7460127dc42a3459"
+    "commit": "77324b14afa8164ae8bb2428605eded9911f9167"
   },
   "extensions": [
     {
@@ -42,14 +42,14 @@
       "path": "extensions/send-to-phone",
       "bundle": {
         "path": "extensions/send-to-phone/dist/extension.js",
-        "sha256": "8ae3b84dcf7ec54f28b84751262f48b4862e2c9c5234eacd7e45a1cce0a3bb36",
+        "sha256": "a5e4b03f8e8546fbec2ab4af4defe9c3cdd6d77efe4b8a2da6fa571d4e9ab76f",
         "byteCount": 27492
       },
-      "updatedAt": "2026-09-12T16:47:19+08:00"
+      "updatedAt": "2026-09-12T19:43:14+08:00"
     },
     {
       "id": "translation",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "toolbox": {
         "symbol": "translate",
         "name": "截屏翻译",
@@ -66,7 +66,7 @@
         "name": "fusionseek",
         "github": "fusionseek"
       },
-      "sdk": "^1.2.0",
+      "sdk": "^1.3.0",
       "minimumJarvisVersion": "2.0.0",
       "capabilities": [
         "screenshot.capture",
@@ -87,10 +87,10 @@
       "path": "extensions/translation",
       "bundle": {
         "path": "extensions/translation/dist/extension.js",
-        "sha256": "dda32978ab85cd9e8a5223f691f7ea47df91cf947bb5ead8d7ec38e4347e0f2d",
-        "byteCount": 62994
+        "sha256": "6fef76a01a4b47e0e3f27d593e9e1eb74315fe39aa98a91bbe58118c4375009c",
+        "byteCount": 63361
       },
-      "updatedAt": "2026-09-12T11:31:25.689Z",
+      "updatedAt": "2026-09-12T19:43:14+08:00",
       "network": {
         "hosts": [
           "translate.googleapis.com",

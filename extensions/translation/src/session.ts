@@ -199,6 +199,10 @@ export class Session {
         recognizeText: true,
         ocr: { languages: this.ocrLanguages, level: "accurate" },
         hint: "松手即翻译",
+        // 不压暗、不画参照线：用户此刻在**读屏幕上那段字**，把它压暗再盖上网格
+        // 等于让他先把工具的装饰读掉一遍。光标尾巴上挂一枚 translate，
+        // 好让他一眼看出这一下按的是翻译不是截图。
+        appearance: { dim: false, guides: false, cursorSymbol: "translate" },
       });
       this.systemPermissionMissing = false;
       this.image = shot.file;

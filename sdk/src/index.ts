@@ -22,7 +22,7 @@ export * from "./ocr.js";
 export type { ActivationContext, CommandContext, CommandSummary, CommandTrigger, HostEvent, SerializedNode, Surface } from "./bridge.js";
 export { bridgeProtocolVersion } from "./bridge.js";
 
-export const sdkVersion = "1.2.0";
+export const sdkVersion = "1.3.0";
 
 export interface PageDefinition {
   /** 进入扩展页面时调用一次。拿到已授予的能力、当前偏好与命令清单。 */

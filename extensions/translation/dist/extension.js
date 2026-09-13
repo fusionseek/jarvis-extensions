@@ -1,4 +1,4 @@
-// jarvis-extension bundle · translation@0.1.0 · sdk 1.2.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · translation@0.1.1 · sdk 1.3.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -237,7 +237,7 @@
   var ocr = { isCJK, joiner, paragraphs, joinParagraph, mergeLines, chunk };
 
   // sdk/src/index.ts
-  var sdkVersion = "1.2.0";
+  var sdkVersion = "1.3.0";
   var Runtime = class {
     constructor() {
       this.definition = null;
@@ -813,7 +813,11 @@
           selectionOnly: true,
           recognizeText: true,
           ocr: { languages: this.ocrLanguages, level: "accurate" },
-          hint: "\u677E\u624B\u5373\u7FFB\u8BD1"
+          hint: "\u677E\u624B\u5373\u7FFB\u8BD1",
+          // 不压暗、不画参照线：用户此刻在**读屏幕上那段字**，把它压暗再盖上网格
+          // 等于让他先把工具的装饰读掉一遍。光标尾巴上挂一枚 translate，
+          // 好让他一眼看出这一下按的是翻译不是截图。
+          appearance: { dim: false, guides: false, cursorSymbol: "translate" }
         });
         this.systemPermissionMissing = false;
         this.image = shot.file;

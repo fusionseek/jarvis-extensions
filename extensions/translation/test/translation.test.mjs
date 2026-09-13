@@ -110,7 +110,14 @@ beforeEach(async () => {
 test("⌥⌘T：只框选、带提示与识别语言；行合成段、连字符接回；译文画在弹窗里", async () => {
   await runCommand("capture-translate");
   const capture = host.invocations.filter((i) => i.namespace === "screenshot" && i.method === "capture").pop();
-  assert.deepEqual(capture.params, { selectionOnly: true, recognizeText: true, ocr: { languages: ["zh-Hans", "en-US"], level: "accurate" }, hint: "松手即翻译" });
+  assert.deepEqual(capture.params, {
+    selectionOnly: true,
+    recognizeText: true,
+    ocr: { languages: ["zh-Hans", "en-US"], level: "accurate" },
+    hint: "松手即翻译",
+    // 不压暗、不画参照线：用户此刻在读屏幕上那段字（SDK 1.3 的 appearance）。
+    appearance: { dim: false, guides: false, cursorSymbol: "translate" },
+  });
   const request = lastFetch();
   assert.match(request.params.url, /^https:\/\/translate\.googleapis\.com\/translate_a\/single\?/);
   assert.match(request.params.url, /sl=auto/);
