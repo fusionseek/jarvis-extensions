@@ -114,8 +114,12 @@
 - **D-B14 `screenshot.capture` 的 `hint`**：只框选会话里选框下方那句提示由扩展给（≤ 16 字），省略用「松手即完成」。
 - **D-B15 `system.openExtensionSettings`**：隐式能力；打开设置窗并滚到 扩展 › 本扩展；用户动作 1 秒内放行。
 - **D-B16 `picker.layout: "compact"`**：触发器画成「值 ▾」chip（借 `SettingsStatusBadge` 的形），下拉同一份。
-- **期 A.1（已在 2.0.1 落地）**：manifest / registry 的 `presentation` 枚举认 `popover`——不认的宿主会把整份
+- **期 A.1（在 2.0.0 里）**：manifest / registry 的 `presentation` 枚举认 `popover`——不认的宿主会把整份
   registry 判为无效而回落到上一份快照，因此这一步先于运行时。
+  这一条曾写作「已在 2.0.1 落地」：宿主 `845da91` 当时确实把版本推到 2.0.1，但随后
+  `cb650bf`（`hold at 2.0.0 until the owner starts iterating`）把版本退回 2.0.0 并钉住——
+  2.0.0 还没发出去。**因此 2.0.1 不存在，扩展的 `minimumJarvisVersion` 不得写它**：
+  `ExtensionCompatibilityPolicy` 只做 `hostVersion < minimum` 的比较，写了就等于在每一版宿主上都装不上。
 
 ### 改动清单
 

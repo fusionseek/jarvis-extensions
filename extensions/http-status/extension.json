@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "http-status",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "toolbox": {
     "symbol": "number.circle",
     "name": "HTTP 状态码",
@@ -15,7 +15,7 @@
   },
   "main": "dist/extension.js",
   "sdk": "^1.5.0",
-  "minimumJarvisVersion": "2.0.1",
+  "minimumJarvisVersion": "2.0.0",
   "capabilities": [
     { "id": "clipboard.read", "reason": "⌥⌘/ 按下时读一次剪贴板，从里面找状态码" },
     { "id": "system.openURL", "reason": "点「打开原文」时用默认浏览器打开 RFC / MDN" },

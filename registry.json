@@ -1,14 +1,14 @@
 {
   "registryVersion": 1,
-  "generatedAt": "2026-09-13T15:23:32.992Z",
+  "generatedAt": "2026-09-13T15:45:57.776Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "a5ee33e4123d7b8652b696ff277e49a99c92784b"
+    "commit": "4206e9f035283b5f04f7cb83576461eb1bd0fb90"
   },
   "extensions": [
     {
       "id": "http-status",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "toolbox": {
         "symbol": "number.circle",
         "name": "HTTP 状态码",
@@ -28,7 +28,7 @@
         "github": "fusionseek"
       },
       "sdk": "^1.5.0",
-      "minimumJarvisVersion": "2.0.1",
+      "minimumJarvisVersion": "2.0.0",
       "capabilities": [
         "clipboard.read",
         "system.openURL",
@@ -40,10 +40,10 @@
       "path": "extensions/http-status",
       "bundle": {
         "path": "extensions/http-status/dist/extension.js",
-        "sha256": "c27d378829b18549b35ff5204d1273e222c2f6574c07ed6ac4bb3697f28a6760",
+        "sha256": "c8aacc717669ce4ce6e0a58da64a7e2593bc8bc2533bb117d43258a9b9148320",
         "byteCount": 108066
       },
-      "updatedAt": "2026-09-13T15:23:32.922Z",
+      "updatedAt": "2026-09-13T23:35:26+08:00",
       "commands": [
         {
           "id": "lookup",
