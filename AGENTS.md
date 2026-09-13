@@ -62,9 +62,17 @@ extensions/<id>/
 ```bash
 npm install
 npm run verify       # check:sdk + check:extensions + build + validate + registry:check
+npm run check:pr     # 与 origin/main 比：版本递增、锁文件跟上、registry diff 只涉及本 PR 的扩展
 ```
 
-CI 在每个 PR 上跑同一条；此外查 `version` 递增、保留 id、`registry.json` diff 只涉及本 PR 的扩展。
+CI（`.github/workflows/verify.yml`）在每个 PR 与每次推 main 时跑 `npm run verify`；PR 上还多跑一次
+`check:pr`，它排在 `npm ci` **之前**——那三条都只用 node 与 git，而其中一条拦的正是"锁文件没跟上、
+依赖根本装不起来"。
+
+> **升完版本记得 `npm install`。** 扩展是 npm workspace，版本号记在 `package-lock.json` 里；
+> 不同步的话 CI 的 `npm ci` 会以一句 `Missing: jarvis-ext-… from lock file` 失败。
+> 锁文件必须提交：`npm run verify` 会重建每个产物并与 `registry.json` 里的 sha256 比对，
+> 而 esbuild 换一个补丁版本就可能吐出不同的字节——浮动依赖会让 CI 在与本次改动无关的地方红。
 
 ## 审核
 
@@ -73,7 +81,6 @@ CI 在每个 PR 上跑同一条；此外查 `version` 递增、保留 id、`regi
 
 ## 待建
 
-- **CI 工作流**（`.github/workflows/verify.yml`）：跑 `npm run verify`、版本递增、`registry.json` diff 范围。
 - **PR 模板**：从 `docs/13-review-checklist.md` 生成。
 - **npm 发布 SDK**：目前扩展经 alias 从 `sdk/src` 直接构建；发布到 npm 是给仓库外的开发者用的，
   与宿主运行时 1.0 一起发。

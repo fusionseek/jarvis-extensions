@@ -17,6 +17,7 @@
     "validate": "node scripts/validate.mjs",
     "registry": "node scripts/build-registry.mjs",
     "registry:check": "node scripts/build-registry.mjs --check",
+    "check:pr": "node scripts/check-pr.mjs",
     "test": "npm run build:sdk && node --test 'sdk/test/*.test.mjs' && npm run test:extensions",
     "test:extensions": "node scripts/build-extension.mjs --all && node --test 'extensions/*/test/*.test.mjs'",
     "verify": "npm run check:sdk && npm run test && npm run check:extensions && npm run build && npm run validate && npm run registry:check"

@@ -1,0 +1,49 @@
+# 扩展库的门禁。AGENTS.md 的四条硬规则里，有三条在这里被机器执行：
+# schema 先于实现（validate 跑 schema）、产物按哈希校验（重建一遍比对）、一个扩展一个 PR 每次升版本（check-pr）。
+#
+# 锁文件是这条流水线成立的前提：`npm run verify` 会把每个扩展重建一遍并与 registry.json 里的
+# sha256 比对，而 esbuild 换一个补丁版本就可能吐出不同的字节——浮动依赖会让 CI 在与本次改动
+# 无关的地方红，而且每次红的还不一样。
+name: verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# 同一个分支连着推几次时，取消还在跑的那一次
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # check-pr.mjs 要与 base 比，浅克隆看不到主干
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # 放在 npm ci 之前：这一步只用 node 与 git，而它拦的正是「锁文件没跟上导致 npm ci 装不起来」
+      - name: PR 门禁 · 版本递增、锁文件与 registry diff 范围
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags origin "+refs/heads/$BASE:refs/remotes/origin/$BASE"
+          node scripts/check-pr.mjs "origin/$BASE"
+
+      - run: npm ci
+
+      # check:sdk + test（SDK 与每个扩展的端到端）+ check:extensions + build + validate + registry:check
+      - name: npm run verify
+        run: npm run verify
