@@ -28,9 +28,11 @@ jobs:
           # check-pr.mjs 要与 base 比，浅克隆看不到主干
           fetch-depth: 0
 
+      # 22 不是随手挑的：test 脚本把 glob 交给 node --test 自己展开，那是 Node 21 才有的；
+      # Node 20 会把 'sdk/test/*.test.mjs' 当成字面路径，报 Could not find。engines 同批改成 >=22。
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       # 放在 npm ci 之前：这一步只用 node 与 git，而它拦的正是「锁文件没跟上导致 npm ci 装不起来」
