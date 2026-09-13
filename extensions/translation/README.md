@@ -29,7 +29,7 @@
 | 识别图片文字 | 剪贴板里的图 |
 | 读取剪贴板 | 「翻译剪贴板」 |
 | 写入剪贴板 | 静默命令与「翻译完自动复制」 |
-| 访问网络 | 只放行 `translate.googleapis.com` 与 `translation.googleapis.com` |
+| 访问网络 | 只放行 `translate.google.com`、`translate.googleapis.com` 与 `translation.googleapis.com` |
 | 系统横幅 | 静默命令完成（或失败）时的那一条 |
 | 朗读 | 原文与译文的两颗小喇叭 |
 | 全局快捷键 | 上面两条 |
@@ -39,7 +39,11 @@ Jarvis 自己没有屏幕录制权限时，页面上会多一张「打开系统�
 
 ## 翻译从哪来
 
-- **默认走免费端点**（`translate.googleapis.com/translate_a/single`，`client=gtx`），无需 key。
+- **默认走免费端点**（`translate_a/single`），无需 key、也不需要 `tk` 签名。
+  端点的限流是按 **(主机, client)** 算的：同一秒里 `client=gtx` 被 429，换一个 client 立刻 200。
+  因此这里按顺序试四个候选，被限流就立刻换下一个：
+  `translate.google.com/gtx`（Easydict 走的那一个）→ `translate.googleapis.com` 的
+  `gtx` / `at` / `dict-chrome-ex`。一整轮都被拒才退避一次再扫一轮。
   它没有官方承诺，可能限流或改格式——失败时页面会写清是哪一种，并给「重试」。
 - **填了 API key 走官方 Translation API v2**。key 是 `secret` 类型偏好：存在 Keychain、设置页遮罩显示、
   只有这个扩展自己读得到、不进日志。

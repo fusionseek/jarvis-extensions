@@ -132,10 +132,15 @@ test("⌥⌘T：只框选、带提示与识别语言；行合成段、连字符�
     appearance: { dim: false, guides: false, cursorSymbol: "translate" },
   });
   const request = lastFetch();
-  assert.match(request.params.url, /^https:\/\/translate\.googleapis\.com\/translate_a\/single\?/);
+  // GET，q 放查询串，与 Easydict 一致；第一个候选就是它走的那一个。
+  assert.equal(request.params.init?.method ?? "GET", "GET");
+  assert.equal(request.params.init?.body, undefined, "GET 不带正文");
+  assert.match(request.params.url, /^https:\/\/translate\.google\.com\/translate_a\/single\?/);
+  assert.match(request.params.url, /client=gtx/);
   assert.match(request.params.url, /sl=auto/);
   assert.match(request.params.url, /tl=zh-CN/);
-  assert.equal(decodeURIComponent(request.params.body), `q=${MERGED}`);
+  assert.match(request.params.url, /dj=1/);
+  assert.ok(decodeURIComponent(request.params.url).includes(`q=${MERGED}`), "原文该在查询串里");
 
   await activate("popover");
   assert.equal(host.latestSurface, "popover");
@@ -180,7 +185,10 @@ test("原文已经是目标语言时改翻成备选语言", async () => {
   fetchBehaviour = () => gtx("Extensions run inside a JavaScriptCore context.", "zh-CN");
   await runCommand("capture-translate");
   assert.match(lastFetch().params.url, /tl=en/);
-  assert.equal(decodeURIComponent(lastFetch().params.body), "q=扩展在 JavaScriptCore 上下文里运行。宿主用原生方式渲染节点树。");
+  assert.ok(
+    decodeURIComponent(lastFetch().params.url).includes("q=扩展在 JavaScriptCore 上下文里运行。宿主用原生方式渲染节点树。"),
+    "原文该在查询串里"
+  );
   await activate("popover");
   assert.equal(byKey("detected").props.title, "识别为 简体中文");
 });
@@ -339,66 +347,91 @@ test("产物体积在预算内：不压缩也该远小于 512 KB 的上限", () 
   assert.ok(size <= 96 * 1024, `产物 ${size} 字节，超过 96 KB 的自设预算`);
 });
 
-test("被限流：429 之后退避重试，重试成功就当没事发生", async () => {
+test("被限流：立刻换下一个候选，不在原地等", async () => {
+  // 实测过的那件事：同一秒里 client=gtx 被 429，而换一个 client 立刻 200。
+  // 限流按 (主机, client) 算，所以正确的反应是换候选，不是对着同一个退避。
   let calls = 0;
   fetchBehaviour = () => {
     calls += 1;
-    return calls === 1 ? { status: 429, headers: {}, text: "" } : gtx("退避之后的译文");
+    return calls === 1 ? { status: 429, headers: {}, text: "" } : gtx("换了候选之后的译文");
   };
   const before = fetches().length;
   await runCommand("capture-translate");
-  await waitRealTime(900);
   await activate("popover");
-  assert.equal(byKey("translation").props.text, "退避之后的译文");
-  assert.equal(fetches().length - before, 2, "该退避一次再重试一次");
-  assert.equal(byKey("failure"), undefined, "重试成功就不该留下错误提示");
+  assert.equal(byKey("translation").props.text, "换了候选之后的译文");
+  assert.equal(fetches().length - before, 2, "第一个候选被拒就该立刻试第二个");
+  assert.equal(byKey("failure"), undefined, "换成了就不该留下错误提示");
+});
+
+test("换候选时不许在原地等：整轮扫完之前一次 sleep 都不该有", async () => {
+  // 这一条守的是"快"。上一版对着同一个组合退避 0.5 + 1.5 + 4 秒才放弃，
+  // 用户等了六秒拿到一句"被限流了"，而隔壁候选一直是通的。
+  fetchBehaviour = ({ url }) =>
+    url.includes("client=dict-chrome-ex") ? gtx("最后一个候选的译文") : { status: 429, headers: {}, text: "" };
+  const started = Date.now();
+  await runCommand("capture-translate");
+  await activate("popover");
+  assert.equal(byKey("translation").props.text, "最后一个候选的译文");
+  assert.ok(Date.now() - started < 500, `一轮之内不该有退避，实际用了 ${Date.now() - started}ms`);
 });
 
 test("被限流的另一副面孔：200 但正文是验证码 HTML", async () => {
   let calls = 0;
   fetchBehaviour = () => {
     calls += 1;
-    // 过了阈值 Google 不一定给 429，它会用 200 返回一张 sorry / captcha 页。
-    // 只看状态码的话这里会落到「返回的不是 JSON」那条分支上，提示词变成"格式可能变了"，
+    // 实测：被挡住时这个端点给的就是 429 加一张 sorry 页。但它也会用 200 发同一张页，
+    // 只看状态码的话会落到「返回的不是 JSON」那条分支上，提示词变成"格式可能变了"，
     // 而用户照着那句话去查格式，查不出任何东西。
     return calls === 1
       ? { status: 200, headers: {}, text: "<!DOCTYPE html><html><head><title>Error 429 (Too Many Requests)</title></head></html>" }
       : gtx("认出验证码页之后的译文");
   };
   await runCommand("capture-translate");
-  await waitRealTime(900);
   await activate("popover");
   assert.equal(byKey("translation").props.text, "认出验证码页之后的译文");
 });
 
-test("退避用尽：说清是限流，而且从头到尾没换过主机", async () => {
-  fetchBehaviour = () => ({ status: 429, headers: { "Retry-After": "1" }, text: "" });
+test("所有候选都被限流：只扫一轮就放弃，不再等着重扫", async () => {
+  // 上一版在这里等 1.2 秒再扫一轮，也就是多四个注定失败的请求——
+  // 而限流正是按用量算的，那四个请求只会加深它。Google 的窗口是分钟量级，
+  // 一秒之后重扫不会有别的结果。
+  fetchBehaviour = () => ({ status: 429, headers: {}, text: "" });
   const before = fetches().length;
+  const started = Date.now();
   await runCommand("capture-translate");
-  // Retry-After 说 1 秒，三档退避就是三秒出头。
-  await waitRealTime(3600);
   await activate("popover");
   assert.match(byKey("failure").props.body, /限流/);
-  const urls = fetches().slice(before).map((f) => f.params.url);
-  assert.equal(urls.length, 4, "三档退避 = 一次首发加三次重试");
-  assert.ok(
-    urls.every((u) => u.startsWith("https://translate.googleapis.com/")),
-    "限流是按 IP 算的，换个域名还是同一个 IP——换主机只会给一台已经在拒绝你的服务器加压"
-  );
+  assert.equal(fetches().length - before, 4, "四个候选各一次，就这些");
+  assert.ok(Date.now() - started < 500, "不该在里面等");
 });
 
-test("这台答得不对才换主机：500 之后落到 translate.google.com", async () => {
+test("被限流的候选进冷却：下一次翻译一个请求都不发", async () => {
+  fetchBehaviour = () => ({ status: 429, headers: {}, text: "" });
+  await runCommand("capture-translate");
+  const after = fetches().length;
+  // 换一段原文绕开缓存。
+  captureBehaviour = () => ({
+    ...SHOT,
+    ocr: { text: "", lines: [{ text: "Another capture entirely.", box: { x: 0.1, y: 0.1, width: 0.5, height: 0.05 }, confidence: 0.9 }] },
+  });
+  await runCommand("capture-translate");
+  assert.equal(fetches().length, after, "全在冷却里就该安静地等，而不是继续敲");
+  await activate("popover");
+  assert.match(byKey("failure").props.body, /冷却/);
+});
+
+test("这个候选答得不对也换下一个：500 之后接着试", async () => {
   const seen = [];
   fetchBehaviour = ({ url }) => {
     seen.push(url);
-    return url.startsWith("https://translate.google.com/")
-      ? gtx("备用主机的译文")
+    return url.includes("translate.googleapis.com") && url.includes("client=at")
+      ? gtx("第三个候选的译文")
       : { status: 500, headers: {}, text: "" };
   };
   await runCommand("capture-translate");
   await activate("popover");
-  assert.equal(byKey("translation").props.text, "备用主机的译文");
-  assert.ok(seen.some((u) => u.startsWith("https://translate.google.com/translate_a/single?")));
+  assert.equal(byKey("translation").props.text, "第三个候选的译文");
+  assert.equal(seen.length, 3, "前两个候选都答得不对，第三个才成");
 });
 
 test("缓存：同一段原文再翻一次不打网络", async () => {
@@ -406,4 +439,25 @@ test("缓存：同一段原文再翻一次不打网络", async () => {
   const after = fetches().length;
   await runCommand("capture-translate");
   assert.equal(fetches().length, after, "命中缓存就不该再问 Google——那是唯一能真正减少 IP 暴露的手段");
+});
+
+test("记住上一次成功的候选：第二次翻译不再撞那个被限流的", async () => {
+  // 少发请求本身就是止损：被压住的那个候选如果每次都先撞一遍，
+  // 那些注定失败的请求本身就在加深限流。
+  fetchBehaviour = ({ url }) =>
+    url.includes("client=gtx") ? { status: 429, headers: {}, text: "" } : gtx("第三个候选的译文");
+  await runCommand("capture-translate");
+  const firstRound = fetches().length;
+  await activate("popover");
+  assert.equal(byKey("translation").props.text, "第三个候选的译文");
+  assert.equal(firstRound >= 3, true, "第一次要撞过两个被限流的才走到第三个");
+
+  // 换一段原文，绕开缓存。
+  captureBehaviour = () => ({
+    ...SHOT,
+    ocr: { text: "", lines: [{ text: "A second capture.", box: { x: 0.1, y: 0.1, width: 0.5, height: 0.05 }, confidence: 0.9 }] },
+  });
+  const before = fetches().length;
+  await runCommand("capture-translate");
+  assert.equal(fetches().length - before, 1, "第二次该直接从上次成功的那个开始");
 });

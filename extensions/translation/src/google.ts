@@ -11,7 +11,7 @@
  *
  * 两条路都经 `jarvis.net.fetch`：只放行 manifest 白名单里的主机、只走 HTTPS、30 秒超时。
  */
-import { jarvis, ocr, sleep, JarvisError } from "@fusionseek/jarvis-extension-sdk";
+import { jarvis, ocr, JarvisError } from "@fusionseek/jarvis-extension-sdk";
 
 export interface Translation {
   text: string;
@@ -21,30 +21,58 @@ export interface Translation {
 }
 
 /**
- * 免费端点的两个主机，**按顺序试**。
+ * 免费端点的候选：**(主机, client) 的组合，按顺序试，被限流就换下一个。**
  *
- * 主用 `translate.googleapis.com`，备用 `translate.google.com`（Easydict 用的那一个）。
- * 两个都不要 key、跑同一套 `translate_a/single`。
+ * 这一版是对着实测改的（2026-09-13 本机）：同一主机、同一 IP、同一秒，
+ * `client=gtx` 返回 429 与一张 sorry 页，而 `client=at` 与 `client=dict-chrome-ex`
+ * 返回 200 与**完全一样形状**的 JSON。也就是说这个端点的限流按 **(主机, client)** 算，
+ * 不是单纯按 IP。
  *
- * **换主机只在"这台答得不对"时发生，被限流时绝不换**：限流是按 IP 算的，换个域名还是同一个 IP，
- * 只会给一台已经在拒绝你的服务器加压。Easydict 恰恰做错了这一条——它的 webapp 路径失败后
- * 会回落到 gtx 再打一次同一个主机。
+ * 上一版写着"限流时绝不换主机，换了只是给同一个 IP 加压"——**那条判断被实测推翻了**。
+ * 它正是"经常翻译不出来"的来源：`gtx` 是每篇教程都在用的那个值，被压得最狠，
+ * 而我们退避三次之后就放弃了，从没试过别的组合。
+ *
+ * 顺序上把 Easydict 走的那一个放第一位（`translate.google.com` + `gtx`），
+ * 它在那边长期工作；后面几个是本机实测 200 的。
  */
-const gtxHosts = [
-  "https://translate.googleapis.com/translate_a/single",
-  "https://translate.google.com/translate_a/single",
+const candidates: { host: string; client: string }[] = [
+  { host: "translate.google.com", client: "gtx" },
+  { host: "translate.googleapis.com", client: "gtx" },
+  { host: "translate.googleapis.com", client: "at" },
+  { host: "translate.googleapis.com", client: "dict-chrome-ex" },
 ];
 
 /**
- * 退避档位。三次之后仍被挡就报出来——再试下去只是给同一个 IP 加压。
- * 服务端给了 `Retry-After` 就听它的，这几个数只是它没给时的兜底。
+ * 一个候选被限流之后，多久之内不再碰它。
+ *
+ * **这是这一版的重点：少发请求本身就是止损。** 限流是按用量算的，而"被拒之后马上再试"
+ * 等于一边被拒一边加深限流。Google 的限流窗口是分钟量级，1.2 秒之后重扫一轮
+ * 不会有别的结果，只会多四个注定失败的请求——上一版就是这么把自己的额度烧掉的。
+ *
+ * 5 分钟：短到网络环境一变就能恢复，长到足够跨过一次限流窗口。
+ * 服务端给了更长的 `Retry-After` 就听它的。
  */
-const backoffMs = [500, 1500, 4000];
+const cooldownMs = 5 * 60 * 1000;
+
+/** 每个候选的冷却到期时刻（`Date.now()` 毫秒）。只在内存里。 */
+const coolingUntil = new Map<string, number>();
+
+/**
+ * 上一次成功的那个候选，下一次从它开始扫。
+ *
+ * **这是为了少发请求，而不是为了快。** 限流是按用量算的，而第一个候选一旦在这台机器上
+ * 被压住，不记住的话**每一次翻译**都要先撞它一次再往后走——那些注定失败的请求本身
+ * 就在加深限流。记住之后，一次会话里只在第一次付这个代价。
+ *
+ * 只在内存里，不落盘：换个网络环境、过一阵子，被压住的那个多半又通了，
+ * 而一个记在磁盘上的偏好会让它永远排在后面。
+ */
+let preferred = 0;
 
 /**
  * 单次请求的正文上限，按语种分档，与 Easydict 的两档一致。
  *
- * 中文原文 1800、其余 5000：同样长度的 q，中文更容易被这个端点 4xx。
+ * 中文原文 1800、其余 5000。实测这个长度的中文放进查询串是 16 KB 的 URL，端点照收。
  * 我们是**分块**而不是像 Easydict 那样截断——截断意味着用户看不到后半段，
  * 而他并不知道是被截了。
  */
@@ -54,8 +82,18 @@ const chunkLimits = { cjk: 1800, latin: 5000 };
 const cacheLimit = 64;
 const cache = new Map<string, Translation>();
 
+/**
+ * UA。**逐字取自 Easydict 的 `kGoogleUserAgent`**（`GoogleService+Translate.swift:12`）。
+ *
+ * 它是一个 2019 年的 Chrome 77 串，看着该换新，但这里不换：这一轮的目的就是与那边对齐，
+ * 而"换成新串会不会更好"没有任何证据——反过来，这个串在 Easydict 上长期工作是有证据的。
+ * 端点对空 UA 偶尔 403，所以它不能省。
+ */
+const userAgent =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.120 Safari/537.36";
+
 function chunkLength(text: string): number {
-  return /[㐀-鿿豈-﫿]/.test(text) ? chunkLimits.cjk : chunkLimits.latin;
+  return /[\u3400-\u9fff\uf900-\ufaff]/.test(text) ? chunkLimits.cjk : chunkLimits.latin;
 }
 
 function describe(error: unknown): string {
@@ -106,35 +144,35 @@ type Attempt =
   | { kind: "failed"; reason: string };
 
 async function gtxOnce(
-  endpoint: string,
+  candidate: { host: string; client: string },
   text: string,
   target: string,
   source: string | null
 ): Promise<Attempt> {
+  // **GET，`q` 放查询串**，与 Easydict 一致（它显式 `method: .get`，Alamofire 的
+  // `URLEncoding.default` 对 GET 走查询串分支，从不设 body）。实测 1800 个汉字、
+  // URL 16 KB，端点照收。
+  //
+  // 键按字典序排：Alamofire 编码时会 `keys.sorted()`，于是 Easydict 发出去的就是这个顺序。
+  // 顺序大概率无关紧要，但这一轮的目的是对齐，能对的就都对上，省得下次再怀疑它。
+  //
+  // `dj=1` 把回应换成 JSON 对象（`{"sentences":[…],"src":…}`）。不加它拿到的是位置数组，
+  // 要按 [0][1][2][8] 硬取下标——Easydict 的 webapp 路径就是那样，
+  // 而 Google 一旦调整字段顺序，那种解析会安静地取到错误的东西。
   const query = form({
-    client: "gtx",
+    client: candidate.client,
+    dj: "1",
+    dt: "t",
+    ie: "UTF-8",
+    q: text,
     sl: source ?? "auto",
     tl: target,
-    dt: "t",
-    // `dj=1` 把回应换成 JSON 对象（`{"sentences":[…],"src":…}`）。
-    // 不加它拿到的是位置数组，要按 [0][1][2][8] 硬取下标——Easydict 的 webapp 路径就是那样，
-    // 而 Google 一旦调整字段顺序，那种解析会安静地取到错误的东西。
-    dj: "1",
-    ie: "UTF-8",
   });
   let response: Awaited<ReturnType<typeof jarvis.net.fetch>>;
   try {
-    response = await jarvis.net.fetch(`${endpoint}?${query}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
-        // 这个端点对空 UA 偶尔 403。Easydict 冻着一个 2019 年的 Chrome 串；给一个当下的
-        // Safari 串同样管用，而且不像那种老串一样一眼就是个脚本。
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
-      },
-      // q 走 POST 体而不是查询串（Easydict 是放查询串的）：长文本不受 URL 长度限制。
-      body: form({ q: text }),
+    response = await jarvis.net.fetch(`https://${candidate.host}/translate_a/single?${query}`, {
+      method: "GET",
+      headers: { "User-Agent": userAgent },
     });
   } catch (error) {
     return { kind: "failed", reason: describe(error) };
@@ -161,25 +199,59 @@ async function gtxOnce(
   };
 }
 
-async function gtx(text: string, target: string, source: string | null): Promise<Translation> {
-  let reason = "Google 没有返回译文";
-  for (const endpoint of gtxHosts) {
-    for (let attempt = 0; ; attempt++) {
-      const outcome = await gtxOnce(endpoint, text, target, source);
-      if (outcome.kind === "ok") return outcome.value;
-      if (outcome.kind === "failed") {
-        // 这台答得不对：换下一台。
-        reason = outcome.reason;
-        break;
-      }
-      if (attempt >= backoffMs.length) {
-        // 退避用尽。**不换主机**——见 `gtxHosts` 的注释。
-        throw new Error("Google 的免费端点把这台机器限流了。等几分钟再试，或者在设置里填一个 API key");
-      }
-      await sleep(outcome.waitMs ?? backoffMs[attempt]!);
-    }
+/**
+ * 扫一遍候选。被限流就**立刻换下一个**，不在这里等——等是给同一个组合等，
+ * 而下一个组合此刻多半是通的。
+ */
+function key(candidate: { host: string; client: string }): string {
+  return `${candidate.host}|${candidate.client}`;
+}
+
+/** 这个候选此刻还在冷却里吗。 */
+function cooling(candidate: { host: string; client: string }, now: number): boolean {
+  const until = coolingUntil.get(key(candidate));
+  if (until === undefined) return false;
+  if (until <= now) {
+    coolingUntil.delete(key(candidate));
+    return false;
   }
-  throw new Error(reason);
+  return true;
+}
+
+/**
+ * 扫一遍候选。**只扫一遍。**
+ *
+ * 从上一次成功的那个开始绕一圈，跳过还在冷却里的；被限流的当场进冷却。
+ * 一整轮都不通就如实报出去——不再等一会儿重扫，那只是多四个注定失败的请求。
+ */
+async function gtx(text: string, target: string, source: string | null): Promise<Translation> {
+  const now = Date.now();
+  let reason: string | undefined;
+  let tried = 0;
+  for (let step = 0; step < candidates.length; step++) {
+    // 从上一次成功的那个开始，绕一圈。
+    const index = (preferred + step) % candidates.length;
+    const candidate = candidates[index]!;
+    if (cooling(candidate, now)) continue;
+    tried += 1;
+    const outcome = await gtxOnce(candidate, text, target, source);
+    if (outcome.kind === "ok") {
+      preferred = index;
+      return outcome.value;
+    }
+    if (outcome.kind === "throttled") {
+      coolingUntil.set(key(candidate), now + Math.max(cooldownMs, outcome.waitMs ?? 0));
+      continue;
+    }
+    reason = outcome.reason;
+  }
+  if (reason !== undefined) throw new Error(reason);
+  // 全在冷却里：**一个请求都没发**，这正是想要的——被压住的时候安静地等，而不是继续敲。
+  throw new Error(
+    tried === 0
+      ? "Google 的免费端点还在限流冷却里。过几分钟再试，或者在设置里填一个 API key"
+      : "Google 的免费端点把这台机器限流了。过几分钟再试，或者在设置里填一个 API key"
+  );
 }
 
 async function v2(
@@ -261,7 +333,9 @@ export async function translate(
   return merged;
 }
 
-/** 清空译文缓存。只给测试用。 */
+/** 清空译文缓存，并把候选偏好与冷却全部复位。 */
 export function forgetTranslations(): void {
   cache.clear();
+  coolingUntil.clear();
+  preferred = 0;
 }

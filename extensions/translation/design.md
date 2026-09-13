@@ -163,3 +163,73 @@
 - [README](README.md) · [`src/index.ts`](src/index.ts) · [`src/session.ts`](src/session.ts) · [`src/page.ts`](src/page.ts) · [`src/popover.ts`](src/popover.ts) · [`src/google.ts`](src/google.ts) · [`test/translation.test.mjs`](test/translation.test.mjs)
 - [docs/03 manifest](../../docs/03-manifest.md) · [docs/05 权限](../../docs/05-permissions.md) · [docs/06 能力](../../docs/06-capabilities.md) · [docs/07 UI 组件](../../docs/07-ui-components.md) · [docs/14 宿主方案](../../docs/14-host-integration-plan.md)
 - `jarvis-mac/CLAUDE.md`（Figma ↔ 代码规则）· `jarvis-mac/docs/uiux/floating-status/design-system.md`
+
+## 免费端点为什么"经常翻译不出来"
+
+对着真实端点打了一轮，答案不在代码结构里：
+
+```
+同一主机、同一 IP、同一秒
+client=gtx             -> 429 + 一张 sorry 页
+client=at              -> 200 + {"sentences":[…],"src":"zh-CN"}
+client=dict-chrome-ex  -> 200 + 同样形状
+client=webapp          -> 403（那条路要 tk 签名）
+```
+
+**限流是按 (主机, client) 算的，不是单纯按 IP。** `gtx` 是每篇教程都在用的那个值，被压得最狠。
+
+上一版写着"限流时绝不换主机，换了只是给同一个 IP 加压"——那条判断被这次实测推翻了。
+它正是症状的来源：退避 0.5 + 1.5 + 4 秒之后放弃，全程没试过别的组合，而隔壁组合一直是通的。
+
+现在按顺序扫四个候选，被限流就**立刻**换下一个（不在原地等）：
+
+| 候选 | 来历 |
+|---|---|
+| `translate.google.com` + `gtx` | Easydict 走的那一个，放第一位 |
+| `translate.googleapis.com` + `gtx` | 上一版的默认 |
+| `translate.googleapis.com` + `at` | 本机实测 200 |
+| `translate.googleapis.com` + `dict-chrome-ex` | 本机实测 200 |
+
+**只扫一轮。** 一整轮都不通就如实报出去，不再等一会儿重扫——那只是多四个注定失败的请求，
+而限流正是按用量算的。Google 的窗口是分钟量级，一秒之后重扫不会有别的结果。
+
+**被限流的候选进 5 分钟冷却，期间跳过。** 四个全在冷却里时**一个请求都不发**，
+直接告诉用户"还在冷却里，过几分钟再试"。这是这一版真正的止损：被压住的时候安静地等，
+而不是一边被拒一边加深限流。常见情形仍然是一次请求就成。
+
+**记住上一次成功的那个，下次从它开始扫。** 这是为了少发请求，不是为了快：
+第一个候选一旦在这台机器上被压住，不记住的话每一次翻译都要先撞它一次再往后走，
+而那些注定失败的请求本身就在加深限流。只记在内存里——换个网络、过一阵子，
+被压住的那个多半又通了，而记在磁盘上的偏好会让它永远排在后面。
+
+## Easydict 为什么没事：分清测到的与推断的
+
+**测到的**：`translate.googleapis.com` 配 `gtx` 在这台机器上稳定 429，
+而同一主机、同一秒换个 client 就 200。
+
+**测不到的**：`translate.google.com`，也就是 Easydict 走的那一个。
+这台机器到它的 CONNECT 被代理挡着，一次都没打通过。
+所以"换个主机就好了"是**推断**，不是结论。
+
+更站得住的一半解释是用量，而且不必测、看代码就成立：上一版每次失败要在**同一个**
+被压住的组合上退避三次，一次翻译最多四个请求，长文本再乘上分块数；
+而 Easydict 一次翻译只发一个请求，超过 1800 字直接截断。同样的额度我们烧得快得多。
+
+两条合起来才是完整答案。而新的候选轮扫让这个问题对我们不再重要——哪一个通就走哪一个。
+
+## 与 Easydict 逐项对齐的结果
+
+读过它的源码之后，请求这一行改成逐字对齐：
+
+| 项 | Easydict | 我们 |
+|---|---|---|
+| 方法 | 显式 `method: .get`，Alamofire 的 `URLEncoding.default` 对 GET 走查询串、从不设 body | 同 |
+| 参数 | `client` `dj` `dt` `ie` `q` `sl` `tl`（Alamofire 按键名排序） | 同一组、同一顺序 |
+| UA | `kGoogleUserAgent`，一个 2019 年的 Chrome 77 串 | 逐字照搬 |
+| `tk` 签名 | gtx 路径**一个都不发** | 同，不算 |
+| 超时 | 15s | 宿主 30s |
+
+两处**故意不对齐**，都是它那边的短板：
+
+- **长文本**：它 `prefix(1800)` 直接截断，用户看不到后半段且不知道被截了。我们按句边界分块、逐块请求、拼回。
+- **限流**：它把 429、验证码页、IP 封禁全塌成一个 message 为 nil 的通用错误，也没有退避。见上一节。

@@ -1,4 +1,4 @@
-// jarvis-extension bundle · translation@0.1.3 · sdk 1.5.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · translation@0.1.5 · sdk 1.5.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -494,13 +494,13 @@
       run: (id) => call.commands("run", { id })
     },
     storage: {
-      get: (key) => call.storage("get", { key }),
-      set: (key, value) => call.storage("set", { key, value }),
-      delete: (key) => call.storage("delete", { key }),
+      get: (key2) => call.storage("get", { key: key2 }),
+      set: (key2, value) => call.storage("set", { key: key2, value }),
+      delete: (key2) => call.storage("delete", { key: key2 }),
       keys: () => call.storage("keys")
     },
     preferences: {
-      get: (key) => call.preferences("get", { key }),
+      get: (key2) => call.preferences("get", { key: key2 }),
       all: () => call.preferences("all"),
       onChange: (listener) => runtime.subscribe("preferences", "observe", listener)
     },
@@ -607,23 +607,23 @@
       openExtensionSettings: () => call.system("openExtensionSettings")
     }
   };
-  function sleep(milliseconds) {
-    return new Promise((resolve) => {
-      setTimeout(resolve, milliseconds);
-    });
-  }
 
   // extensions/translation/src/google.ts
-  var gtxHosts = [
-    "https://translate.googleapis.com/translate_a/single",
-    "https://translate.google.com/translate_a/single"
+  var candidates = [
+    { host: "translate.google.com", client: "gtx" },
+    { host: "translate.googleapis.com", client: "gtx" },
+    { host: "translate.googleapis.com", client: "at" },
+    { host: "translate.googleapis.com", client: "dict-chrome-ex" }
   ];
-  var backoffMs = [500, 1500, 4e3];
+  var cooldownMs = 5 * 60 * 1e3;
+  var coolingUntil = /* @__PURE__ */ new Map();
+  var preferred = 0;
   var chunkLimits = { cjk: 1800, latin: 5e3 };
   var cacheLimit = 64;
   var cache = /* @__PURE__ */ new Map();
+  var userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.120 Safari/537.36";
   function chunkLength(text) {
-    return /[㐀-鿿豈-﫿]/.test(text) ? chunkLimits.cjk : chunkLimits.latin;
+    return /[\u3400-\u9fff\uf900-\ufaff]/.test(text) ? chunkLimits.cjk : chunkLimits.latin;
   }
   function describe(error) {
     if (error instanceof JarvisError) return error.detail ?? error.message;
@@ -634,8 +634,8 @@
   }
   function header(headers, name) {
     const wanted = name.toLowerCase();
-    for (const [key, value] of Object.entries(headers)) {
-      if (key.toLowerCase() === wanted) return value;
+    for (const [key2, value] of Object.entries(headers)) {
+      if (key2.toLowerCase() === wanted) return value;
     }
     return null;
   }
@@ -651,30 +651,21 @@
     if (!Number.isFinite(seconds) || seconds <= 0) return null;
     return Math.min(seconds, 30) * 1e3;
   }
-  async function gtxOnce(endpoint, text, target, source) {
+  async function gtxOnce(candidate, text, target, source) {
     const query = form({
-      client: "gtx",
-      sl: source ?? "auto",
-      tl: target,
-      dt: "t",
-      // `dj=1` 把回应换成 JSON 对象（`{"sentences":[…],"src":…}`）。
-      // 不加它拿到的是位置数组，要按 [0][1][2][8] 硬取下标——Easydict 的 webapp 路径就是那样，
-      // 而 Google 一旦调整字段顺序，那种解析会安静地取到错误的东西。
+      client: candidate.client,
       dj: "1",
-      ie: "UTF-8"
+      dt: "t",
+      ie: "UTF-8",
+      q: text,
+      sl: source ?? "auto",
+      tl: target
     });
     let response;
     try {
-      response = await jarvis.net.fetch(`${endpoint}?${query}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
-          // 这个端点对空 UA 偶尔 403。Easydict 冻着一个 2019 年的 Chrome 串；给一个当下的
-          // Safari 串同样管用，而且不像那种老串一样一眼就是个脚本。
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
-        },
-        // q 走 POST 体而不是查询串（Easydict 是放查询串的）：长文本不受 URL 长度限制。
-        body: form({ q: text })
+      response = await jarvis.net.fetch(`https://${candidate.host}/translate_a/single?${query}`, {
+        method: "GET",
+        headers: { "User-Agent": userAgent }
       });
     } catch (error) {
       return { kind: "failed", reason: describe(error) };
@@ -699,23 +690,42 @@
       value: { text: translated, detectedSource: body.src ?? null, backend: "gtx" }
     };
   }
-  async function gtx(text, target, source) {
-    let reason = "Google \u6CA1\u6709\u8FD4\u56DE\u8BD1\u6587";
-    for (const endpoint of gtxHosts) {
-      for (let attempt = 0; ; attempt++) {
-        const outcome = await gtxOnce(endpoint, text, target, source);
-        if (outcome.kind === "ok") return outcome.value;
-        if (outcome.kind === "failed") {
-          reason = outcome.reason;
-          break;
-        }
-        if (attempt >= backoffMs.length) {
-          throw new Error("Google \u7684\u514D\u8D39\u7AEF\u70B9\u628A\u8FD9\u53F0\u673A\u5668\u9650\u6D41\u4E86\u3002\u7B49\u51E0\u5206\u949F\u518D\u8BD5\uFF0C\u6216\u8005\u5728\u8BBE\u7F6E\u91CC\u586B\u4E00\u4E2A API key");
-        }
-        await sleep(outcome.waitMs ?? backoffMs[attempt]);
-      }
+  function key(candidate) {
+    return `${candidate.host}|${candidate.client}`;
+  }
+  function cooling(candidate, now) {
+    const until = coolingUntil.get(key(candidate));
+    if (until === void 0) return false;
+    if (until <= now) {
+      coolingUntil.delete(key(candidate));
+      return false;
     }
-    throw new Error(reason);
+    return true;
+  }
+  async function gtx(text, target, source) {
+    const now = Date.now();
+    let reason;
+    let tried = 0;
+    for (let step = 0; step < candidates.length; step++) {
+      const index = (preferred + step) % candidates.length;
+      const candidate = candidates[index];
+      if (cooling(candidate, now)) continue;
+      tried += 1;
+      const outcome = await gtxOnce(candidate, text, target, source);
+      if (outcome.kind === "ok") {
+        preferred = index;
+        return outcome.value;
+      }
+      if (outcome.kind === "throttled") {
+        coolingUntil.set(key(candidate), now + Math.max(cooldownMs, outcome.waitMs ?? 0));
+        continue;
+      }
+      reason = outcome.reason;
+    }
+    if (reason !== void 0) throw new Error(reason);
+    throw new Error(
+      tried === 0 ? "Google \u7684\u514D\u8D39\u7AEF\u70B9\u8FD8\u5728\u9650\u6D41\u51B7\u5374\u91CC\u3002\u8FC7\u51E0\u5206\u949F\u518D\u8BD5\uFF0C\u6216\u8005\u5728\u8BBE\u7F6E\u91CC\u586B\u4E00\u4E2A API key" : "Google \u7684\u514D\u8D39\u7AEF\u70B9\u628A\u8FD9\u53F0\u673A\u5668\u9650\u6D41\u4E86\u3002\u8FC7\u51E0\u5206\u949F\u518D\u8BD5\uFF0C\u6216\u8005\u5728\u8BBE\u7F6E\u91CC\u586B\u4E00\u4E2A API key"
+    );
   }
   async function v2(text, target, source, apiKey) {
     const response = await jarvis.net.fetch(
@@ -742,16 +752,16 @@
       backend: "v2"
     };
   }
-  function remember(key, value) {
+  function remember(key2, value) {
     if (cache.size >= cacheLimit) {
       const oldest = cache.keys().next();
       if (!oldest.done) cache.delete(oldest.value);
     }
-    cache.set(key, value);
+    cache.set(key2, value);
   }
   async function translate(text, target, apiKey, source = null) {
-    const key = `${source ?? "auto"}\0${target}\0${apiKey ? "v2" : "gtx"}\0${text}`;
-    const hit = cache.get(key);
+    const key2 = `${source ?? "auto"}\0${target}\0${apiKey ? "v2" : "gtx"}\0${text}`;
+    const hit = cache.get(key2);
     if (hit) return hit;
     const pieces = ocr.chunk(text, chunkLength(text));
     if (pieces.length === 0) throw new Error("\u6CA1\u6709\u53EF\u7FFB\u8BD1\u7684\u6587\u5B57");
@@ -769,11 +779,13 @@
       detectedSource: first.detectedSource,
       backend: first.backend
     };
-    remember(key, merged);
+    remember(key2, merged);
     return merged;
   }
   function forgetTranslations() {
     cache.clear();
+    coolingUntil.clear();
+    preferred = 0;
   }
 
   // extensions/translation/src/session.ts
@@ -1042,8 +1054,8 @@
     }
     async readAPIKey() {
       try {
-        const key = await jarvis.preferences.get("apiKey");
-        return typeof key === "string" && key.trim() !== "" ? key.trim() : null;
+        const key2 = await jarvis.preferences.get("apiKey");
+        return typeof key2 === "string" && key2.trim() !== "" ? key2.trim() : null;
       } catch {
         return null;
       }
