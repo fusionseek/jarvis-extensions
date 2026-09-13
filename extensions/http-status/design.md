@@ -159,9 +159,17 @@
 
 ## 宿主侧要的东西
 
-`minimumJarvisVersion` 写的是 **2.0.1**，不是 2.0.0：`presentation: "popover"` 这个值从 2.0.1 起才被
-manifest / registry 认（[docs/14](../../docs/14-host-integration-plan.md) 期 A.1），更早的宿主会把整份
-registry 判为无效而回落到上一份快照。
+`minimumJarvisVersion` 写的是 **2.0.0**。0.1.0 曾经写成 2.0.1——那是照着
+[docs/14](../../docs/14-host-integration-plan.md) 期 A.1「已在 2.0.1 落地」写的，而那句话已经过期：
+宿主 `845da91` 教会 manifest 认 `popover` 时确实推到过 2.0.1，随后 `cb650bf`
+（`hold at 2.0.0 until the owner starts iterating`）把版本整个退回 2.0.0——2.0.0 还没发出去，
+中间那几次 patch +1 命名的是没有任何人装过的构建。于是 **2.0.1 从没存在过**，而
+`ExtensionCompatibilityPolicy` 是一句朴素比较（`hostVersion < minimum` → 商店那颗 chip 失效并写
+「需要 Jarvis ≥ 2.0.1」），0.1.0 因此在现存的每一版宿主上都装不上。0.1.1 改回 2.0.0。
+
+**`row.hoverCard` 在 2.0.0 上是空操作**：宿主的节点解析只查必填属性，多出来的属性被忽略——
+清单照画，指针停 320ms 不浮出那张卡。稿上 `1033:2` 那张卡因此是"目录里有、宿主还没画"的那一类，
+与第 8 条的 header 状态标一样，等宿主补上。
 
 运行时那一半只有一件，已经写进 [docs/14](../../docs/14-host-integration-plan.md) 的期 B：
 `presentation: "popover"` 的窗体与锚定（D-B13）。锚点这里是**指针**而不是选区——

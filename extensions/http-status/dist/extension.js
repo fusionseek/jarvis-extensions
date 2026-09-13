@@ -1,4 +1,4 @@
-// jarvis-extension bundle · http-status@0.1.0 · sdk 1.5.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · http-status@0.1.1 · sdk 1.5.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
