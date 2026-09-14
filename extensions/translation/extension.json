@@ -1,14 +1,14 @@
 {
   "manifestVersion": 1,
   "id": "translation",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "toolbox": {
     "symbol": "translate",
     "name": "截屏翻译",
-    "subtitle": "框一块屏幕，识字并翻译",
-    "keywords": ["ocr", "translate", "google", "文字识别"]
+    "subtitle": "框一块屏幕，识字、翻译、查词",
+    "keywords": ["ocr", "translate", "google", "文字识别", "词典", "dictionary"]
   },
-  "description": "按一下快捷键框选屏幕上任意一块，Vision 识别文字、合并段落、检测语言，再经 Google 翻译；译文就贴着选区原地弹出。也能翻译剪贴板里的文字或图片。免费端点无需 key，填了 API key 走官方接口。",
+  "description": "按一下快捷键框选屏幕上任意一块，Vision 识别文字、合并段落、检测语言，再经 Google 翻译；译文就贴着选区原地弹出。框到的是一个词时，译文下面还有读音与按词性分行的全部词义。也能翻译剪贴板里的文字或图片。免费端点无需 key，填了 API key 走官方接口。",
   "author": {
     "name": "fusionseek",
     "github": "fusionseek"
@@ -85,7 +85,7 @@
         "key": "apiKey",
         "type": "secret",
         "title": "Google API key",
-        "description": "留空走免费端点；填了走官方 Translation API v2。存 Keychain，不进库、不进日志",
+        "description": "留空走免费端点；填了走官方 API v2（只翻译，没有词典那一块）。存 Keychain，不进日志",
         "placeholder": "AIza…"
       },
       {

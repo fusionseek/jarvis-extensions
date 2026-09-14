@@ -7,6 +7,7 @@
  */
 import { jarvis, ui, type ActionSpec, type UINode } from "@fusionseek/jarvis-extension-sdk";
 import { languageOptions, ocrLanguageOptions, type Session } from "./session.js";
+import { dictionaryRows } from "./dictionary.js";
 
 const FOOTNOTE = "Vision 识别文字、合并段落、检测语言，再经 Google 翻译；免费端点无需 key，填了 API key 走官方接口。";
 
@@ -206,6 +207,8 @@ function translationSection(s: Session): UINode {
         tint: s.translation ? "accent" : "neutral",
         empty: s.source.trim() === "" ? "译文会出现在这里" : "按「翻译」把上面的原文翻出来",
       }),
+      // 与弹窗画同一份（`dictionary.ts`）：同一个词在两个面上不该长成两样。
+      ...dictionaryRows(s),
     );
   }
   const trailing = failed ? "失败" : s.phase === "translating" ? "翻译中" : s.translation ? `GOOGLE · ${s.targetTitle}` : "";

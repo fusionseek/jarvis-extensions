@@ -1,4 +1,4 @@
-// jarvis-extension bundle · translation@0.1.5 · sdk 1.5.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · translation@0.2.0 · sdk 1.5.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -609,6 +609,32 @@
   };
 
   // extensions/translation/src/google.ts
+  var posAbbreviations = {
+    noun: "n.",
+    verb: "v.",
+    "auxiliary verb": "aux.",
+    adjective: "adj.",
+    adverb: "adv.",
+    pronoun: "pron.",
+    preposition: "prep.",
+    conjunction: "conj.",
+    interjection: "int.",
+    exclamation: "int.",
+    determiner: "det.",
+    article: "art.",
+    numeral: "num.",
+    particle: "part.",
+    abbreviation: "abbr.",
+    prefix: "pref.",
+    suffix: "suf."
+  };
+  function phoneticLabel(source) {
+    const lower = (source ?? "").toLowerCase();
+    if (lower === "en" || lower.startsWith("en-")) return "\u7F8E";
+    if (lower.startsWith("zh")) return "\u62FC\u97F3";
+    if (lower.startsWith("ja") || lower.startsWith("ko")) return "\u7F57\u9A6C\u97F3";
+    return "\u8BFB\u97F3";
+  }
   var candidates = [
     { host: "translate.google.com", client: "gtx" },
     { host: "translate.googleapis.com", client: "gtx" },
@@ -630,7 +656,7 @@
     return error instanceof Error ? error.message : String(error);
   }
   function form(params) {
-    return Object.entries(params).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
+    return params.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
   }
   function header(headers, name) {
     const wanted = name.toLowerCase();
@@ -652,15 +678,18 @@
     return Math.min(seconds, 30) * 1e3;
   }
   async function gtxOnce(candidate, text, target, source) {
-    const query = form({
-      client: candidate.client,
-      dj: "1",
-      dt: "t",
-      ie: "UTF-8",
-      q: text,
-      sl: source ?? "auto",
-      tl: target
-    });
+    const query = form([
+      ["client", candidate.client],
+      ["dj", "1"],
+      ["dt", "t"],
+      ["dt", "bd"],
+      ["dt", "rm"],
+      ["hl", "en"],
+      ["ie", "UTF-8"],
+      ["q", text],
+      ["sl", source ?? "auto"],
+      ["tl", target]
+    ]);
     let response;
     try {
       response = await jarvis.net.fetch(`https://${candidate.host}/translate_a/single?${query}`, {
@@ -685,9 +714,32 @@
     const body = parsed;
     const translated = (body.sentences ?? []).map((s) => s.trans ?? "").join("");
     if (translated.trim() === "") return { kind: "failed", reason: "Google \u6CA1\u6709\u8FD4\u56DE\u8BD1\u6587" };
+    const detectedSource = body.src ?? null;
     return {
       kind: "ok",
-      value: { text: translated, detectedSource: body.src ?? null, backend: "gtx" }
+      value: {
+        text: translated,
+        detectedSource,
+        backend: "gtx",
+        dictionary: readDictionary(body, detectedSource)
+      }
+    };
+  }
+  function readDictionary(body, detectedSource) {
+    const senses = [];
+    for (const entry of body.dict ?? []) {
+      const pos = typeof entry.pos === "string" ? entry.pos.trim() : "";
+      const terms = (entry.terms ?? []).filter((t) => typeof t === "string" && t.trim() !== "");
+      if (terms.length === 0) continue;
+      senses.push({ pos, short: posAbbreviations[pos.toLowerCase()] ?? pos, terms });
+    }
+    if (senses.length === 0) return null;
+    const translit = (body.sentences ?? []).map((s) => s.src_translit).find((t) => typeof t === "string" && t.trim() !== "");
+    const baseForm = (body.dict ?? []).map((e) => e.base_form).find((f) => typeof f === "string" && f.trim() !== "");
+    return {
+      baseForm: baseForm ?? null,
+      phonetic: translit ? { text: translit.trim(), label: phoneticLabel(detectedSource) } : null,
+      senses
     };
   }
   function key(candidate) {
@@ -749,7 +801,10 @@
     return {
       text: first.translatedText,
       detectedSource: first.detectedSourceLanguage ?? null,
-      backend: "v2"
+      backend: "v2",
+      // 官方 v2 **没有**词典这一段：它只翻译。填了 API key 的用户因此看不到词典卡，
+      // 这写在扩展设置的说明里，不在这里悄悄退回免费端点补一次——那等于背着用户多发一个请求。
+      dictionary: null
     };
   }
   function remember(key2, value) {
@@ -777,7 +832,11 @@
     const merged = {
       text: results.map((r) => r.text).join("\n\n"),
       detectedSource: first.detectedSource,
-      backend: first.backend
+      backend: first.backend,
+      // **分了块就没有词典。** 那时第一块的词条只描述前 1800 字里的一个词，
+      // 把它挂在整段译文上等于指着一段话说"这是它的词性"。分块只发生在长文本上，
+      // 而长文本 Google 本来也不给词条——这一行拦的是"万一它给了"。
+      dictionary: pieces.length === 1 ? first.dictionary : null
     };
     remember(key2, merged);
     return merged;
@@ -1192,6 +1251,66 @@
     }
   };
 
+  // extensions/translation/src/dictionary.ts
+  function dictionaryRows(s) {
+    const dictionary = s.translation?.dictionary;
+    if (!dictionary) return [];
+    const rows = [];
+    const phonetic = phoneticRow(s, dictionary);
+    if (phonetic) rows.push(phonetic);
+    dictionary.senses.forEach((sense, index) => rows.push(senseRow(sense, index)));
+    const base = baseFormNote(s, dictionary);
+    if (base) rows.push(base);
+    return rows;
+  }
+  function headword(s, dictionary) {
+    return dictionary.baseForm ?? s.source.trim();
+  }
+  function phoneticRow(s, dictionary) {
+    if (!dictionary.phonetic) return null;
+    const word = headword(s, dictionary);
+    return ui.stack({
+      key: "phonetic",
+      axis: "horizontal",
+      spacing: "tight",
+      alignment: "center",
+      children: [
+        ui.badge({ key: "phonetic-label", title: dictionary.phonetic.label, tint: "neutral" }),
+        ui.text({ key: "phonetic-text", text: `/ ${dictionary.phonetic.text} /`, style: "mono", selectable: true }),
+        ui.button({
+          key: "speak-word",
+          title: "\u6717\u8BFB",
+          symbol: "speaker.wave.2",
+          variant: "secondary",
+          size: "inline",
+          // 读的是**词条**不是整段原文：截到 `founded` 时词条是 `found`，
+          // 而这一枚按钮就贴在 `found` 的音标旁边，读出另一个词会读成一句自相矛盾的话。
+          disabled: !s.has("speech.speak") || word === "",
+          help: `\u6717\u8BFB ${word}`,
+          onPress: () => s.speak(word, s.detected.code)
+        })
+      ]
+    });
+  }
+  function senseRow(sense, index) {
+    const children = [];
+    if (sense.short !== "") {
+      children.push(ui.badge({ key: `pos-${index}`, title: sense.short, tint: "accent" }));
+    }
+    children.push(
+      ui.text({ key: `terms-${index}`, text: sense.terms.join("; "), style: "body", selectable: true })
+    );
+    return ui.stack({ key: `sense-${index}`, axis: "horizontal", spacing: "tight", children });
+  }
+  function baseFormNote(s, dictionary) {
+    const base = dictionary.baseForm;
+    if (!base) return null;
+    const source = s.source.trim();
+    const normalise = (text) => text.toLowerCase().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+    if (normalise(base) === normalise(source)) return null;
+    return ui.text({ key: "dict-base", text: `\u8BCD\u6761\u6309 ${base} \u67E5`, style: "footnote" });
+  }
+
   // extensions/translation/src/page.ts
   var FOOTNOTE = "Vision \u8BC6\u522B\u6587\u5B57\u3001\u5408\u5E76\u6BB5\u843D\u3001\u68C0\u6D4B\u8BED\u8A00\uFF0C\u518D\u7ECF Google \u7FFB\u8BD1\uFF1B\u514D\u8D39\u7AEF\u70B9\u65E0\u9700 key\uFF0C\u586B\u4E86 API key \u8D70\u5B98\u65B9\u63A5\u53E3\u3002";
   function renderPage(s) {
@@ -1377,7 +1496,8 @@
           copy: true,
           tint: s.translation ? "accent" : "neutral",
           empty: s.source.trim() === "" ? "\u8BD1\u6587\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC" : "\u6309\u300C\u7FFB\u8BD1\u300D\u628A\u4E0A\u9762\u7684\u539F\u6587\u7FFB\u51FA\u6765"
-        })
+        }),
+        ...dictionaryRows(s)
       );
     }
     const trailing = failed ? "\u5931\u8D25" : s.phase === "translating" ? "\u7FFB\u8BD1\u4E2D" : s.translation ? `GOOGLE \xB7 ${s.targetTitle}` : "";
@@ -1562,6 +1682,7 @@
       children.push(ui.note({ key: "failure", tint: "danger", symbol: "exclamationmark.triangle", title: s.failure.title, body: s.failure.body, actions: failureActions(s) }));
     } else {
       children.push(ui.result({ key: "translation", text: s.translation?.text ?? "", copy: false, tint: done ? "accent" : "neutral", empty: "\u8BD1\u6587\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC" }));
+      children.push(...dictionaryRows(s));
     }
     const backend = done && s.translation ? `Google \xB7 ${s.translation.backend === "v2" ? "\u5B98\u65B9\u63A5\u53E3" : "\u514D\u8D39\u7AEF\u70B9"} \xB7 ${(s.elapsedMs / 1e3).toFixed(1)} s` : "Google";
     children.push(

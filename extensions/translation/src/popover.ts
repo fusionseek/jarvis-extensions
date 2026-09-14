@@ -7,6 +7,7 @@
  */
 import { jarvis, ui, type UINode } from "@fusionseek/jarvis-extension-sdk";
 import { languageOptions, type Session } from "./session.js";
+import { dictionaryRows } from "./dictionary.js";
 import { failureActions } from "./page.js";
 
 export function renderPopover(s: Session): UINode {
@@ -97,6 +98,8 @@ function resultCard(s: Session): UINode {
     children.push(ui.note({ key: "failure", tint: "danger", symbol: "exclamationmark.triangle", title: s.failure.title, body: s.failure.body, actions: failureActions(s) }));
   } else {
     children.push(ui.result({ key: "translation", text: s.translation?.text ?? "", copy: false, tint: done ? "accent" : "neutral", empty: "译文会出现在这里" }));
+    // 词典贴着译文，在同一张卡里：它讲的是这个词，不是"另外一段资料"。
+    children.push(...dictionaryRows(s));
   }
   const backend = done && s.translation ? `Google · ${s.translation.backend === "v2" ? "官方接口" : "免费端点"} · ${(s.elapsedMs / 1000).toFixed(1)} s` : "Google";
   children.push(

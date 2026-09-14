@@ -1,9 +1,9 @@
 {
   "registryVersion": 1,
-  "generatedAt": "2026-09-13T15:45:57.776Z",
+  "generatedAt": "2026-09-14T06:00:46.108Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "4206e9f035283b5f04f7cb83576461eb1bd0fb90"
+    "commit": "1e9f34517ee8199486a067b6e426882ce5246e47"
   },
   "extensions": [
     {
@@ -43,7 +43,7 @@
         "sha256": "c8aacc717669ce4ce6e0a58da64a7e2593bc8bc2533bb117d43258a9b9148320",
         "byteCount": 108066
       },
-      "updatedAt": "2026-09-13T23:35:26+08:00",
+      "updatedAt": "2026-09-13T23:47:08+08:00",
       "commands": [
         {
           "id": "lookup",
@@ -102,19 +102,21 @@
     },
     {
       "id": "translation",
-      "version": "0.1.5",
+      "version": "0.2.0",
       "toolbox": {
         "symbol": "translate",
         "name": "截屏翻译",
-        "subtitle": "框一块屏幕，识字并翻译",
+        "subtitle": "框一块屏幕，识字、翻译、查词",
         "keywords": [
           "ocr",
           "translate",
           "google",
-          "文字识别"
+          "文字识别",
+          "词典",
+          "dictionary"
         ]
       },
-      "description": "按一下快捷键框选屏幕上任意一块，Vision 识别文字、合并段落、检测语言，再经 Google 翻译；译文就贴着选区原地弹出。也能翻译剪贴板里的文字或图片。免费端点无需 key，填了 API key 走官方接口。",
+      "description": "按一下快捷键框选屏幕上任意一块，Vision 识别文字、合并段落、检测语言，再经 Google 翻译；译文就贴着选区原地弹出。框到的是一个词时，译文下面还有读音与按词性分行的全部词义。也能翻译剪贴板里的文字或图片。免费端点无需 key，填了 API key 走官方接口。",
       "author": {
         "name": "fusionseek",
         "github": "fusionseek"
@@ -140,8 +142,8 @@
       "path": "extensions/translation",
       "bundle": {
         "path": "extensions/translation/dist/extension.js",
-        "sha256": "f668039e5281fd1721d2b3f193718433504fd03a442662f03f765fe59248e2d8",
-        "byteCount": 68111
+        "sha256": "3b9e7320397cc3c7f64b1edbba26eb746f1f55cefa0758ce00b4ac4d29b78caf",
+        "byteCount": 73076
       },
       "updatedAt": "2026-09-13T18:42:02+08:00",
       "network": {

@@ -28,6 +28,28 @@ const SHOT = { file: { id: "shot-1", name: "shot.png", byteCount: 10, extension:
 const TRANSLATED = "扩展在 JavaScriptCore 上下文里运行。宿主用原生方式渲染节点树，因此悬停从不经过 JS 往返。";
 const gtx = (text, src = "en") => ({ status: 200, headers: {}, text: JSON.stringify({ sentences: [{ trans: text }], src }) });
 
+// 一个词的回应。**形状逐字取自一次真的回应**（2026-09-14 本机，`client=at`，`dt=t/bd/rm`）：
+// `sentences[1].src_translit` 是读音，`dict` 是按词性分组、按频率排好的词义。
+// 词义只留了前几个——这里要证的是"读得对、画得对"，不是把 16 个词义抄一遍。
+const WORD_LINES = [{ text: "found!", box: { x: 0.1, y: 0.1, width: 0.3, height: 0.05 }, confidence: 0.95 }];
+const gtxWord = (overrides = {}) => ({
+  status: 200,
+  headers: {},
+  text: JSON.stringify({
+    sentences: [{ trans: "成立！", orig: "found!" }, { translit: "Chénglì!", src_translit: "found" }],
+    dict: [
+      { pos: "verb", terms: ["创建", "创立", "成立"], base_form: "found", pos_enum: 2 },
+      { pos: "noun", terms: ["勘查", "勘探"], base_form: "found", pos_enum: 1 },
+    ],
+    src: "en",
+    ...overrides,
+  }),
+});
+const captureWord = () => {
+  captureBehaviour = () => ({ ...SHOT, ocr: { text: "", lines: WORD_LINES } });
+  fetchBehaviour = () => gtxWord();
+};
+
 let captureBehaviour;
 let fetchBehaviour;
 let apiKey;
@@ -460,4 +482,127 @@ test("记住上一次成功的候选：第二次翻译不再撞那个被限流�
   const before = fetches().length;
   await runCommand("capture-translate");
   assert.equal(fetches().length - before, 1, "第二次该直接从上次成功的那个开始");
+});
+
+test("单词：请求多要 bd / rm 两段，词性的语言钉在英文", async () => {
+  captureWord();
+  await runCommand("capture-translate");
+  const url = lastFetch().params.url;
+  // 三段各发一个 `dt`，缺一段就少一块：t 译文、bd 词典、rm 读音。
+  assert.match(url, /[?&]dt=t(&|$)/);
+  assert.match(url, /[?&]dt=bd(&|$)/);
+  assert.match(url, /[?&]dt=rm(&|$)/);
+  // `hl` 钉住词性的语言：缩写表按英文键查，跟着区域走的话整列缩写会失效。
+  assert.match(url, /[?&]hl=en(&|$)/);
+});
+
+test("单词：译文下面是音标与按词性分行的词义", async () => {
+  captureWord();
+  await runCommand("capture-translate");
+  await activate("popover");
+  assert.equal(byKey("translation").props.text, "成立！");
+  assert.equal(byKey("phonetic-label").props.title, "美");
+  assert.equal(byKey("phonetic-text").props.text, "/ found /");
+  assert.equal(byKey("pos-0").props.title, "v.");
+  assert.equal(byKey("terms-0").props.text, "创建; 创立; 成立");
+  assert.equal(byKey("pos-1").props.title, "n.");
+  assert.equal(byKey("terms-1").props.text, "勘查; 勘探");
+  // `found!` 与词条 `found` 归一之后是同一个词——不为它多说一句。
+  assert.equal(byKey("dict-base"), undefined);
+});
+
+test("单词：页面里画的是同一份词典", async () => {
+  captureWord();
+  await runCommand("capture-translate");
+  await activate("page");
+  assert.equal(byKey("phonetic-text").props.text, "/ found /");
+  assert.equal(byKey("terms-0").props.text, "创建; 创立; 成立");
+});
+
+test("整句：Google 一条词条都不给，就一行词典都不画", async () => {
+  await runCommand("capture-translate");
+  await activate("popover");
+  assert.equal(byKey("translation").props.text, TRANSLATED);
+  assert.equal(byKey("phonetic-label"), undefined, "整句不该有音标");
+  assert.equal(byKey("pos-0"), undefined, "整句不该有词性行");
+});
+
+test("整句也给了转写：没有词条就连音标一起丢掉，不把一整段拼音画进结果卡", async () => {
+  captureBehaviour = () => ({ ...SHOT, ocr: { text: "", lines: CHINESE_LINES } });
+  // 中文整句 Google 会给一整段拼音（`src_translit`），但一条 `dict` 都没有。
+  fetchBehaviour = () => ({
+    status: 200,
+    headers: {},
+    text: JSON.stringify({
+      sentences: [{ trans: "Extensions run..." }, { src_translit: "Kuòzhǎn zài JavaScriptCore shàngxiàwén lǐ yùnxíng." }],
+      src: "zh-CN",
+    }),
+  });
+  await runCommand("capture-translate");
+  await activate("popover");
+  assert.equal(byKey("phonetic-text"), undefined);
+});
+
+test("词形不同：说清词条按哪个词查", async () => {
+  captureBehaviour = () => ({
+    ...SHOT,
+    ocr: { text: "", lines: [{ text: "founded", box: { x: 0.1, y: 0.1, width: 0.3, height: 0.05 }, confidence: 0.95 }] },
+  });
+  fetchBehaviour = () => gtxWord({ sentences: [{ trans: "成立" }, { src_translit: "found" }] });
+  await runCommand("capture-translate");
+  await activate("popover");
+  assert.equal(byKey("dict-base").props.text, "词条按 found 查");
+});
+
+test("音标旁边那枚朗读读的是词条，不是整段原文", async () => {
+  captureBehaviour = () => ({
+    ...SHOT,
+    ocr: { text: "", lines: [{ text: "founded", box: { x: 0.1, y: 0.1, width: 0.3, height: 0.05 }, confidence: 0.95 }] },
+  });
+  fetchBehaviour = () => gtxWord({ sentences: [{ trans: "成立" }, { src_translit: "found" }] });
+  await runCommand("capture-translate");
+  await activate("popover");
+  await host.fire(byKey("speak-word"), "press");
+  assert.deepEqual(spoken.pop(), { text: "found", language: "en" });
+});
+
+test("中文词：标签是「拼音」不是「美」", async () => {
+  captureBehaviour = () => ({
+    ...SHOT,
+    ocr: { text: "", lines: [{ text: "学习", box: { x: 0.1, y: 0.1, width: 0.3, height: 0.05 }, confidence: 0.95 }] },
+  });
+  fetchBehaviour = () => ({
+    status: 200,
+    headers: {},
+    text: JSON.stringify({
+      sentences: [{ trans: "study" }, { src_translit: "Xuéxí" }],
+      dict: [{ pos: "verb", terms: ["learn", "study"], base_form: "学习" }],
+      src: "zh-CN",
+    }),
+  });
+  await runCommand("capture-translate");
+  await activate("popover");
+  assert.equal(byKey("phonetic-label").props.title, "拼音");
+  assert.equal(byKey("phonetic-text").props.text, "/ Xuéxí /");
+});
+
+test("词性认不出就原样写英文，不猜一个缩写出来", async () => {
+  captureWord();
+  fetchBehaviour = () => gtxWord({ dict: [{ pos: "classifier", terms: ["量词"], base_form: "found" }] });
+  await runCommand("capture-translate");
+  await activate("popover");
+  assert.equal(byKey("pos-0").props.title, "classifier");
+});
+
+test("填了 API key：官方接口没有词典这一段，也不为它偷偷补一个请求", async () => {
+  captureWord();
+  apiKey = "AIza-test";
+  // 覆盖 `captureWord()` 里那个 gtx 桩：这条走的是官方 v2。
+  fetchBehaviour = () => ({ status: 200, headers: {}, text: JSON.stringify({ data: { translations: [{ translatedText: "成立！", detectedSourceLanguage: "en" }] } }) });
+  const before = fetches().length;
+  await runCommand("capture-translate");
+  assert.equal(fetches().length, before + 1, "一次翻译只该有一个请求");
+  await activate("popover");
+  assert.equal(byKey("translation").props.text, "成立！");
+  assert.equal(byKey("phonetic-label"), undefined);
 });

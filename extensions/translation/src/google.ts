@@ -18,6 +18,83 @@ export interface Translation {
   /** Google 判定的源语言（它自己的代码，如 `en`、`zh-CN`）；判不出为 `null`。 */
   detectedSource: string | null;
   backend: "gtx" | "v2";
+  /**
+   * 词典。**只有免费端点、且 Google 自己判定原文是一个词时才有**，否则是 `null`。
+   *
+   * 这个"是不是一个词"的判断交给 Google，不在这里用长度或正则再判一次：实测
+   * `found!`（带标点）、`  found  `（带空格）都给词条，而 `Hello, world!`、
+   * `Save Changes`、`git commit -m` 一条都不给。自己再判一次只会与它打架——
+   * 要么把它给的词条藏掉，要么在它什么都没给的时候画一个空壳。
+   */
+  dictionary: Dictionary | null;
+}
+
+/** 一个词性下的全部词义（`v. 创建; 创立; 成立; …`）。 */
+export interface DictionarySense {
+  /** Google 给的词性原文（`hl=en`，如 `verb`）。 */
+  pos: string;
+  /** 词性缩写（`v.`）；目录里没有的原样用 `pos`——宁可长一点也不要猜错。 */
+  short: string;
+  /** 词义，按 Google 给的顺序：它是按使用频率排的，重排等于把最常用的那个挪走。 */
+  terms: string[];
+}
+
+export interface Dictionary {
+  /**
+   * 这条词典查的是哪个词。
+   *
+   * 与原文可能不同：`founded` 查到的是 `found`，而朗读、音标说的都是它。
+   */
+  baseForm: string | null;
+  /**
+   * 原文的读音。英文是 Google 的**美式重拼**（`həˈlō`，不是 IPA），中文是拼音。
+   *
+   * 与 `senses` 同生共死：Google 对整句也给 `src_translit`（一整段拼音），
+   * 那东西放进结果卡里是噪音。只在有词条时才读它，于是这一块要么整块在、要么整块不在。
+   */
+  phonetic: { text: string; label: string } | null;
+  senses: DictionarySense[];
+}
+
+/**
+ * 词性缩写。**与 Easydict 的那张卡片对齐**：`v.` / `n.` 比 `verb` / `noun` 省一行，
+ * 而 400pt 宽的弹窗里每一行都算数。
+ *
+ * 查不到的原样用英文原文——Google 的词性集合没有公开清单，猜一个缩写出来
+ * 是在用户读不懂和读到错的之间选了后者。
+ */
+const posAbbreviations: Record<string, string> = {
+  noun: "n.",
+  verb: "v.",
+  "auxiliary verb": "aux.",
+  adjective: "adj.",
+  adverb: "adv.",
+  pronoun: "pron.",
+  preposition: "prep.",
+  conjunction: "conj.",
+  interjection: "int.",
+  exclamation: "int.",
+  determiner: "det.",
+  article: "art.",
+  numeral: "num.",
+  particle: "part.",
+  abbreviation: "abbr.",
+  prefix: "pref.",
+  suffix: "suf.",
+};
+
+/**
+ * 读音那一枚标签。
+ *
+ * 英文写「美」：Google 给的是美式重拼，写成「英」会是一句假话。中文写「拼音」，
+ * 日韩写「罗马音」——它们与音标是两回事，混作一谈会让用户以为那是发音符号。
+ */
+function phoneticLabel(source: string | null): string {
+  const lower = (source ?? "").toLowerCase();
+  if (lower === "en" || lower.startsWith("en-")) return "美";
+  if (lower.startsWith("zh")) return "拼音";
+  if (lower.startsWith("ja") || lower.startsWith("ko")) return "罗马音";
+  return "读音";
 }
 
 /**
@@ -101,10 +178,9 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function form(params: Record<string, string>): string {
-  return Object.entries(params)
-    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-    .join("&");
+/** 查询串。**取 entries 而不是对象**：`dt` 要发好几个，对象装不下重复的键。 */
+function form(params: [string, string][]): string {
+  return params.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
 }
 
 function header(headers: Record<string, string>, name: string): string | null {
@@ -159,15 +235,30 @@ async function gtxOnce(
   // `dj=1` 把回应换成 JSON 对象（`{"sentences":[…],"src":…}`）。不加它拿到的是位置数组，
   // 要按 [0][1][2][8] 硬取下标——Easydict 的 webapp 路径就是那样，
   // 而 Google 一旦调整字段顺序，那种解析会安静地取到错误的东西。
-  const query = form({
-    client: candidate.client,
-    dj: "1",
-    dt: "t",
-    ie: "UTF-8",
-    q: text,
-    sl: source ?? "auto",
-    tl: target,
-  });
+  //
+  // **`dt` 发三个**（实测 2026-09-14 本机，四个候选形状一致）：
+  // - `t` 译文，一直都在；
+  // - `bd` 双语词典（`dict`：词性 + 按频率排的词义 + `base_form`）；
+  // - `rm` 转写（`sentences[].src_translit`：英文是美式重拼，中文是拼音）。
+  //
+  // 只有这一个词的时候 Google 才给后两个，整句它自己就不给——因此多要这两段
+  // 对整句翻译**一个字节的代价都没有**，而对单词是从"只有译文"到"有一张词典卡"。
+  //
+  // `hl=en` 钉住词性的语言。不写它拿到的也是英文，但那是**观察到的默认值不是承诺**；
+  // 而缩写表（`posAbbreviations`）是按英文键查的，默认值哪天变成跟随区域，
+  // 表现就是缩写整列失效、退回一串本地化词性——写死这一个参数比事后查那种问题便宜。
+  const query = form([
+    ["client", candidate.client],
+    ["dj", "1"],
+    ["dt", "t"],
+    ["dt", "bd"],
+    ["dt", "rm"],
+    ["hl", "en"],
+    ["ie", "UTF-8"],
+    ["q", text],
+    ["sl", source ?? "auto"],
+    ["tl", target],
+  ]);
   let response: Awaited<ReturnType<typeof jarvis.net.fetch>>;
   try {
     response = await jarvis.net.fetch(`https://${candidate.host}/translate_a/single?${query}`, {
@@ -190,12 +281,53 @@ async function gtxOnce(
   } catch {
     return { kind: "failed", reason: "Google 返回的不是 JSON，免费端点的格式可能变了" };
   }
-  const body = parsed as { sentences?: { trans?: string }[]; src?: string };
+  const body = parsed as GTXBody;
   const translated = (body.sentences ?? []).map((s) => s.trans ?? "").join("");
   if (translated.trim() === "") return { kind: "failed", reason: "Google 没有返回译文" };
+  const detectedSource = body.src ?? null;
   return {
     kind: "ok",
-    value: { text: translated, detectedSource: body.src ?? null, backend: "gtx" },
+    value: {
+      text: translated,
+      detectedSource,
+      backend: "gtx",
+      dictionary: readDictionary(body, detectedSource),
+    },
+  };
+}
+
+/** 免费端点的回应里我们读的那几段。没读的字段不写进来——写了就等于承诺会跟着它变。 */
+interface GTXBody {
+  sentences?: { trans?: string; src_translit?: string }[];
+  dict?: { pos?: string; terms?: string[]; base_form?: string }[];
+  src?: string;
+}
+
+/**
+ * 把 `dict` 与 `src_translit` 读成一张词典卡；Google 什么都没给时是 `null`。
+ *
+ * **词条是这一块的开关**：没有词条就整块不画，读音也一起丢掉（理由见 `Dictionary.phonetic`）。
+ */
+function readDictionary(body: GTXBody, detectedSource: string | null): Dictionary | null {
+  const senses: DictionarySense[] = [];
+  for (const entry of body.dict ?? []) {
+    const pos = typeof entry.pos === "string" ? entry.pos.trim() : "";
+    const terms = (entry.terms ?? []).filter((t): t is string => typeof t === "string" && t.trim() !== "");
+    if (terms.length === 0) continue;
+    // 查不到就原样用英文原文；`pos` 本来就是空串时这一步给回空串，`dictionary.ts` 据此不画徽章。
+    senses.push({ pos, short: posAbbreviations[pos.toLowerCase()] ?? pos, terms });
+  }
+  if (senses.length === 0) return null;
+  const translit = (body.sentences ?? [])
+    .map((s) => s.src_translit)
+    .find((t): t is string => typeof t === "string" && t.trim() !== "");
+  const baseForm = (body.dict ?? [])
+    .map((e) => e.base_form)
+    .find((f): f is string => typeof f === "string" && f.trim() !== "");
+  return {
+    baseForm: baseForm ?? null,
+    phonetic: translit ? { text: translit.trim(), label: phoneticLabel(detectedSource) } : null,
+    senses,
   };
 }
 
@@ -284,6 +416,9 @@ async function v2(
     text: first.translatedText,
     detectedSource: first.detectedSourceLanguage ?? null,
     backend: "v2",
+    // 官方 v2 **没有**词典这一段：它只翻译。填了 API key 的用户因此看不到词典卡，
+    // 这写在扩展设置的说明里，不在这里悄悄退回免费端点补一次——那等于背着用户多发一个请求。
+    dictionary: null,
   };
 }
 
@@ -328,6 +463,10 @@ export async function translate(
     text: results.map((r) => r.text).join("\n\n"),
     detectedSource: first.detectedSource,
     backend: first.backend,
+    // **分了块就没有词典。** 那时第一块的词条只描述前 1800 字里的一个词，
+    // 把它挂在整段译文上等于指着一段话说"这是它的词性"。分块只发生在长文本上，
+    // 而长文本 Google 本来也不给词条——这一行拦的是"万一它给了"。
+    dictionary: pieces.length === 1 ? first.dictionary : null,
   };
   remember(key, merged);
   return merged;

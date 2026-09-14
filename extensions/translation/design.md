@@ -68,6 +68,7 @@
 | 「识别为 英语」「♪ 朗读」「⎘ 复制」+ 右端「3 行 · 724×188」 | `stack`：`badge`（neutral）+ `button`（inline）+ `copy`（chip）+ `spacer` + `text`（footnote） | `detected.name` / `lines` / `imageSize` |
 | 「英语 · 自动检测 ▾」⇄「中文 ▾」 | `stack`：`picker`（`layout: "compact"`）+ `symbol`（`arrow.left.arrow.right`）+ `picker`（compact）；改哪一边都 `retranslate()` | `sourceOverride` / `target` |
 | 译文卡（`result-card`，青边） | `card`（`tint: "accent"`）› `result`（`copy: false`，青） | `translation.text` |
+| 词典（译文正下方，稿上没有——见「词典卡」一节） | `stack`（horizontal，**top 对齐 = 悬挂缩进**）：`badge` + `text`；读音那行末尾一颗 `button`（inline） | `translation.dictionary`（`dictionary.ts`） |
 | 「⎘ 复制译文」「♪ 朗读」「再截一块 ⌥⌘T」+ 右端「Google · 免费端点 · 0.8 s」 | `stack`：`copy`（chip）+ `button` ×2 + `spacer` + `text`（footnote） | `translation.backend` / `elapsedMs` |
 | 翻译中（`popover-01-translating`） | 译文卡里 `progress`（不确定）+ `text`（subtle）；动作 `disabled` | `phase === "translating"` |
 | 失败 | 译文卡里 `note`（danger）+ `failureActions`：重试 / 填 API key（`system.openExtensionSettings`） | `failure` |
@@ -100,6 +101,7 @@
 | 原文 | `editor`（`rows: 4`，`maxRows: 10`） | `source`；改动 → `dirty`，动作行换成「翻译」 |
 | 段「译文 · TRANSLATION」，右端「GOOGLE · 简体中文」，段动作 朗读译文 | `section` + `trailing` + `actions` | `translation.backend` + `targetTitle` |
 | 译文框（带复制钮） | `result`（`copy: true`，`tint: "accent"`） | `translation.text` |
+| 词典（与弹窗同一份） | `dictionaryRows(s)`，见「词典卡」一节 | `translation.dictionary` |
 | 「再截一块」+ 键帽 /「复制译文」 | `stack`：`button`（`primary`，`bar`）+ `keycap` + `copy`（chip） | 随状态变：没译文时第三颗是「翻译」，失败时是「复制原文」 |
 | 「已自动复制译文 · 0.8 s · translate.googleapis.com」 | `text`（`footnote`） | `autoCopied` / `elapsedMs` / `backend` |
 
@@ -128,6 +130,63 @@
 | 「翻译失败」+「重试」「填 API key 走官方接口」 | `note`（`danger`）+ `failureActions`：`network` → 重试 + `system.openExtensionSettings()`；`empty` / `clipboard` → 再截一块；`denied` → 授权 | `failure.kind` |
 | 「再截一块」「复制原文」 | `button` + `copy` | 原文留着，重试不用再截 |
 
+## 词典卡（`dictionary.ts`）
+
+### 为什么有这一块
+
+用户拿 ⌥⌘T 框一个词的时候，问的是"这个词什么意思"，而一行「成立」回答不了：
+`found` 在 Google 那边有 16 个动词义项加 2 个名词义项，只给排第一的那个等于替他选了一个，
+而他恰恰是因为拿不准才截的。Easydict 的 Google 卡片给的就是读音 + 词性 + 全部词义这一块。
+
+### 数据从哪来：多两个 `dt`，一个字节都不多花
+
+同一个 `translate_a/single`，`dt` 发三个（实测 2026-09-14 本机，四个候选形状一致）：
+
+| 参数 | 回应里的字段 | 内容 |
+|---|---|---|
+| `dt=t` | `sentences[].trans` | 译文，一直都在 |
+| `dt=bd` | `dict[]` | `pos` 词性、`terms[]` 按频率排好的词义、`base_form` 词条 |
+| `dt=rm` | `sentences[].src_translit` | 原文转写：英文是美式重拼（`hello` → `həˈlō`），中文是拼音 |
+
+加上 `hl=en` 钉住词性的语言——不写它拿到的也是英文，但那是**观察到的默认值不是承诺**，
+而缩写表按英文键查，默认值哪天跟随区域，表现就是缩写整列失效。
+
+**整句 Google 自己就不给 `dict`**，因此多要这两段对整句翻译没有任何代价：
+
+```
+found!           -> dict: [verb, noun]   src_translit: found
+  found          -> dict: [verb, noun]   src_translit: found
+commit           -> dict: [verb]         src_translit: kəˈmit
+学习             -> dict: [noun, verb]   src_translit: Xuéxí
+Hello, world!    -> dict: []             src_translit: —
+Save Changes     -> dict: []             src_translit: —
+git commit -m    -> dict: []             src_translit: —
+```
+
+### 三条边界
+
+1. **"这算不算一个词"只判一次，判在 Google 那边。** 这边不再按长度或正则筛一遍——
+   判两次只会互相打架：要么把它给的词条藏掉，要么在它什么都没给的时候画一个空壳。
+2. **没有词条就连读音一起丢掉。** 中文**整句**也有 `src_translit`（一整段拼音），
+   那东西放进结果卡里是噪音。于是这一块要么整块在、要么整块不在。
+3. **分了块就没有词典。** 长文本按句边界分块逐次请求，第一块的词条描述不了整段话。
+
+### 画成什么样
+
+| 行 | 节点 | 说明 |
+|---|---|---|
+| 读音 | `stack`（horizontal，center）：`badge`（neutral，「美」/「拼音」/「罗马音」）+ `text`（mono，`/ found /`）+ `button`（inline，朗读） | 标签按检测出的语言定；朗读读的是**词条**不是整段原文 |
+| 词性 × N | `stack`（horizontal，**不给 alignment = top**）：`badge`（accent，`v.`）+ `text`（body，`创建; 创立; …`） | top 对齐才是悬挂缩进：词义换行后仍缩在词性右边 |
+| 词形不同 | `text`（footnote，「词条按 found 查」） | 只在词条与原文归一后仍不同时出现（大小写与首尾标点不算） |
+
+词性缩写表（`v.` `n.` `adj.` `adv.` `pron.` `prep.` `conj.` `int.` `det.` `art.` `num.` `part.` `abbr.` `aux.` `pref.` `suf.`）
+查不到的**原样写英文**：Google 的词性集合没有公开清单，猜一个缩写是在"读不懂"和"读到错的"之间选了后者。
+
+### 填了 API key 就没有这一块
+
+官方 Translation API v2 只翻译、不给词典。不为词典再偷偷发一个免费端点的请求——
+那等于背着用户多打一次 Google，而他填 key 的目的正是不再走那条路。这一句写在设置项的说明里。
+
 ## 截图会话与授权（宿主画的三处）
 
 - **`capture-01-selection`**：`jarvis.screenshot.capture({ selectionOnly: true, recognizeText: true, ocr, hint: "松手即翻译" })`
@@ -151,6 +210,8 @@
    自动检测下"互换"没有确定的含义。
 3. **译文框的复制钮**：页面里用 `result.copy`（宿主的图标钮）+ 动作行的「复制译文」；弹窗里只用动作行那一颗。
 4. **快捷键读数**取自 `activate` 带来的 `context.commands[].hotkey`（用户改过的键），命令上下文里没有就沿用上一次的。
+5. **词典卡稿上没有**。画稿时这一块还不在范围内，是对着 Easydict 的 Google 卡片补的（下一节）。
+   它用的全是现成节点（`badge` + `text` + `button`），没有新控件，因此稿子补画即可，不涉及宿主。
 
 ## 宿主侧还缺的（期 B）
 
@@ -160,7 +221,7 @@
 
 ## Related Links
 
-- [README](README.md) · [`src/index.ts`](src/index.ts) · [`src/session.ts`](src/session.ts) · [`src/page.ts`](src/page.ts) · [`src/popover.ts`](src/popover.ts) · [`src/google.ts`](src/google.ts) · [`test/translation.test.mjs`](test/translation.test.mjs)
+- [README](README.md) · [`src/index.ts`](src/index.ts) · [`src/session.ts`](src/session.ts) · [`src/page.ts`](src/page.ts) · [`src/popover.ts`](src/popover.ts) · [`src/dictionary.ts`](src/dictionary.ts) · [`src/google.ts`](src/google.ts) · [`test/translation.test.mjs`](test/translation.test.mjs)
 - [docs/03 manifest](../../docs/03-manifest.md) · [docs/05 权限](../../docs/05-permissions.md) · [docs/06 能力](../../docs/06-capabilities.md) · [docs/07 UI 组件](../../docs/07-ui-components.md) · [docs/14 宿主方案](../../docs/14-host-integration-plan.md)
 - `jarvis-mac/CLAUDE.md`（Figma ↔ 代码规则）· `jarvis-mac/docs/uiux/floating-status/design-system.md`
 
@@ -224,7 +285,7 @@ client=webapp          -> 403（那条路要 tk 签名）
 | 项 | Easydict | 我们 |
 |---|---|---|
 | 方法 | 显式 `method: .get`，Alamofire 的 `URLEncoding.default` 对 GET 走查询串、从不设 body | 同 |
-| 参数 | `client` `dj` `dt` `ie` `q` `sl` `tl`（Alamofire 按键名排序） | 同一组、同一顺序 |
+| 参数 | `client` `dj` `dt=t` `ie` `q` `sl` `tl`（Alamofire 按键名排序） | 同一组、同一顺序，**另加 `dt=bd` `dt=rm` `hl=en`**（见「词典卡」） |
 | UA | `kGoogleUserAgent`，一个 2019 年的 Chrome 77 串 | 逐字照搬 |
 | `tk` 签名 | gtx 路径**一个都不发** | 同，不算 |
 | 超时 | 15s | 宿主 30s |
