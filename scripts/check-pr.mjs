@@ -11,7 +11,7 @@
  *    新扩展按 docs/13 从 `0.1.0` 或 `1.0.0` 起。
  * 2. **registry diff 范围**：`registry.json` 里变动的条目必须都属于本次改动的扩展。
  *    这份索引是生成物，一次 PR 改到别人的条目，只可能是拿了脏工作区重新生成的。
- *    `generatedAt` 与 `source.commit` 每次生成都变，不算。
+ *    `generatedAt`、`source.commit` 与每项的 `updatedAt` 每次生成都可能变，不算。
  * 3. **锁文件跟上**：扩展是 npm workspace，版本号记在 `package-lock.json` 里。升了版本却没跑
  *    `npm install`，CI 的 `npm ci` 会以一句 `Missing: jarvis-ext-… from lock file` 失败——
  *    那句话没有告诉任何人该做什么，所以这里先用人话拦一道。
@@ -102,7 +102,13 @@ if (existsSync(lockPath)) {
 const registryPath = "registry.json";
 const baseRegistryRaw = fileAtBase(registryPath);
 if (baseRegistryRaw !== null && changed.includes(registryPath)) {
-  const entriesOf = (raw) => new Map(JSON.parse(raw).extensions.map((e) => [e.id, JSON.stringify(e)]));
+  const entriesOf = (raw) =>
+    new Map(
+      JSON.parse(raw).extensions.map((entry) => {
+        const { updatedAt: _updatedAt, ...stableEntry } = entry;
+        return [entry.id, JSON.stringify(stableEntry)];
+      }),
+    );
   const before = entriesOf(baseRegistryRaw);
   const after = entriesOf(readFileSync(join(ROOT, registryPath), "utf8"));
   const moved = new Set();
