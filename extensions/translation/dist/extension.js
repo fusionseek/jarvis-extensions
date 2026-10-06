@@ -1,4 +1,4 @@
-// jarvis-extension bundle · translation@0.2.0 · sdk 1.5.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · translation@0.2.0 · sdk 1.6.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -103,7 +103,10 @@
     swatch: make("swatch"),
     dropzone: make("dropzone"),
     keycap: make("keycap"),
-    image: make("image")
+    image: make("image"),
+    markdown: make("markdown"),
+    chart: make("chart"),
+    dataTable: make("dataTable")
   };
 
   // sdk/src/ocr.ts
@@ -237,7 +240,7 @@
   var ocr = { isCJK, joiner, paragraphs, joinParagraph, mergeLines, chunk };
 
   // sdk/src/index.ts
-  var sdkVersion = "1.5.0";
+  var sdkVersion = "1.6.0";
   var Runtime = class {
     constructor() {
       this.definition = null;
@@ -454,6 +457,7 @@
     calendar: namespaced("calendar"),
     tasks: namespaced("tasks"),
     net: namespaced("net"),
+    bigquery: namespaced("bigquery"),
     files: namespaced("files"),
     system: namespaced("system")
   };
@@ -595,6 +599,11 @@
     },
     net: {
       fetch: (url, init) => call.net("fetch", { url, ...init })
+    },
+    bigquery: {
+      query: (request) => call.bigquery("query", request),
+      status: () => call.bigquery("status"),
+      login: () => call.bigquery("login")
     },
     files: {
       pick: (options) => call.files("pick", options),

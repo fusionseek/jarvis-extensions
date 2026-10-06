@@ -24,7 +24,9 @@ export type CapabilityID =
   | "files.pick"
   | "system.openURL"
   | "speech.speak"
-  | "hotkeys.register";
+  | "hotkeys.register"
+  /** 经宿主的 BigQuery 通道跑只读查询（SDK 1.6）。要配 `bigquery.projects`。 */
+  | "bigquery.query";
 
 /** 授权弹窗按风险分组；一档一个标签，颜色由宿主决定。 */
 export type CapabilityTier = "low" | "medium" | "high";
@@ -54,6 +56,7 @@ export const capabilityTiers: Readonly<Record<CapabilityID, CapabilityTier>> = {
   "quickTransfer.send": "high",
   "screenshot.capture": "high",
   "network.https": "high",
+  "bigquery.query": "high",
 };
 
 export interface CapabilityRequest {
@@ -158,6 +161,10 @@ export interface ExtensionManifest {
   minimumJarvisVersion: string;
   capabilities: CapabilityRequest[];
   network?: { hosts: string[] };
+  /** 声明了 `bigquery.query` 时必填：允许提交查询的项目（计费项目）。 */
+  bigquery?: { projects: string[] };
+  /** 从工具箱点开时在工作区新开标签（surface `tab`）。SDK 1.6。 */
+  workspace?: boolean;
   /** 第二部分的另一半：页面之外的入口。 */
   commands?: CommandSpec[];
   /** 第三部分：false = 不进设置页。 */

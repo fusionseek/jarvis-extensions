@@ -360,6 +360,58 @@ export interface ImageNode extends Keyed {
   size?: "small" | "medium" | "large";
 }
 
+/**
+ * 一段 Markdown（含 GFM 表格），宿主用速记同一套渲染器排版（SDK 1.6）。
+ * 扩展给原文，不给字号与颜色。适合指标说明、口径文档。
+ */
+export interface MarkdownNode extends Keyed {
+  kind: "markdown";
+  text: string;
+}
+
+/**
+ * 一张图（SDK 1.6）：`result` 是 `jarvis.bigquery.query()` 返回的句柄，行数据留在宿主，不经 JS 往返。
+ * `spec` 与 Jarvis 数据库标签的图表规格同形；不给或看不懂时宿主按列类型自动推荐。
+ * 图例开关与悬停读数由宿主处理，不回调扩展。
+ */
+export interface ChartNode extends Keyed {
+  kind: "chart";
+  result: string;
+  spec?: ChartSpec;
+  /** 160–600，默认 280。 */
+  height?: number;
+  title?: string;
+  /** 只画某一列等于某个值的行（按显示文字比较）。一份按维度展开的结果切成每维一张图，不必每维各查一次。 */
+  filter?: ResultFilter;
+}
+
+/** 结果切片。 */
+export interface ResultFilter {
+  column: string;
+  equals: string;
+}
+
+/** 图表规格 v1。 */
+export interface ChartSpec {
+  version: 1;
+  kind: "line" | "bar" | "area" | "point" | "kpi";
+  /** X 列；不给为行号。 */
+  x?: string;
+  /** Y 列（数值列），1–8 个。 */
+  y: string[];
+  /** 分组列：每个取值一条线 / 一组柱；超过 8 组时只默认显示总量最大的 8 组。 */
+  group?: string;
+  xTime?: "auto" | "unixSeconds" | "unixMilliseconds";
+  hiddenSeries?: string[];
+}
+
+/** 结果网格（SDK 1.6）：与 Jarvis 数据库标签同一个网格。 */
+export interface DataTableNode extends Keyed {
+  kind: "dataTable";
+  result: string;
+  filter?: ResultFilter;
+}
+
 export type UINode =
   | StackNode
   | ScrollNode
@@ -391,7 +443,10 @@ export type UINode =
   | SwatchNode
   | DropZoneNode
   | KeycapNode
-  | ImageNode;
+  | ImageNode
+  | MarkdownNode
+  | ChartNode
+  | DataTableNode;
 
 export type UINodeKind = UINode["kind"];
 
@@ -440,4 +495,7 @@ export const ui = {
   dropzone: make<DropZoneNode>("dropzone"),
   keycap: make<KeycapNode>("keycap"),
   image: make<ImageNode>("image"),
+  markdown: make<MarkdownNode>("markdown"),
+  chart: make<ChartNode>("chart"),
+  dataTable: make<DataTableNode>("dataTable"),
 } as const;

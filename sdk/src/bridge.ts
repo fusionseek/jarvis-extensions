@@ -24,7 +24,8 @@ export const bridgeProtocolVersion = 1 as const;
  * 原地结果弹窗（`popover`）。同一时刻只有一面开着；弹窗上的「在面板里打开」是宿主先 `deactivate` 弹窗
  * 再 `activate` 页面，扩展的状态自己留着。
  */
-export type Surface = "page" | "popover";
+/** `tab`：工作区里的一整个标签（manifest `workspace: true`，SDK 1.6）。 */
+export type Surface = "page" | "popover" | "tab";
 
 /** SDK → 宿主：一次能力调用。 */
 export interface InvokeRequest {

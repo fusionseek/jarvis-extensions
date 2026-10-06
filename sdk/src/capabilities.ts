@@ -452,6 +452,51 @@ export interface NetAPI {
   fetch(url: string, init?: { method?: "GET" | "POST" | "PUT" | "DELETE"; headers?: Record<string, string>; body?: string }): Promise<NetResponse>;
 }
 
+/** BigQuery 查询的一个命名参数（SQL 里写 `@name`）。 */
+export interface BigQueryParameter {
+  name: string;
+  /** `STRING` `INT64` `FLOAT64` `BOOL` `DATE` `TIMESTAMP` `DATETIME` `NUMERIC`，或 `ARRAY<…>`。 */
+  type: string;
+  /** 数组类型给数组；`null` 为 SQL NULL。 */
+  value: string | number | boolean | null | Array<string | number | boolean>;
+}
+
+/** 一次查询的结果。行数据同时留在宿主：`ui.chart` / `ui.dataTable` 只带 `result` 句柄。 */
+export interface BigQueryResult {
+  /** 结果句柄（`r1`…）。每个会话最多保留 20 个，最旧的先失效。 */
+  result: string;
+  columns: string[];
+  /** 最多 `maxRows` 行；`includeRows: false` 时不带。数字是 number，NUMERIC 是字符串（保精度），TIMESTAMP 是 UTC 文本。 */
+  rows?: Array<Array<string | number | null>>;
+  truncated: boolean;
+  cost?: { bytesProcessed: number; bytesBilled: number; cacheHit: boolean };
+  elapsedMs: number;
+}
+
+export interface BigQueryAPI {
+  /**
+   * `bigquery.query`。以用户在 Jarvis 里登录的 Google 身份（gcloud ADC）跑一条**只读** GoogleSQL。
+   *
+   * 宿主先 dry-run：只放行 SELECT，预计扫描超过用户设的扫描上限就拒绝（`invalid.argument`，message 是原因）；
+   * 正式执行带 `maximumBytesBilled` 由服务端兜底。`project` 必须在 manifest `bigquery.projects` 里。
+   * 未登录时以 `permission.unavailable` 拒绝——引导用户去 Jarvis 的数据库面板登录，或调 `login()`。
+   * 令牌永远不进扩展。频率上限 30 次/分钟。
+   */
+  query(request: {
+    project: string;
+    sql: string;
+    parameters?: BigQueryParameter[];
+    /** 是否把行交回扩展（默认 true）。只用来画图时给 false，省掉一次搬运。 */
+    includeRows?: boolean;
+    /** 最多留几行，1–20,000，默认 1,000。行留在宿主，图表与网格按句柄取。 */
+    maxRows?: number;
+  }): Promise<BigQueryResult>;
+  /** 登录状态（不出网）。 */
+  status(): Promise<{ signedIn: boolean; message: string; projects: string[] }>;
+  /** 让宿主启动 gcloud 登录（浏览器里授权）。返回时登录多半还没完成，之后再 `status()`。 */
+  login(): Promise<void>;
+}
+
 export interface FilesAPI {
   /** `files.pick`。宿主开系统文件选择器（面板在此期间不自动收回）。取消以 `cancelled` 拒绝。 */
   pick(options?: { accepts?: string[]; multiple?: boolean }): Promise<FileHandle[]>;
@@ -516,6 +561,7 @@ export interface Jarvis {
   readonly calendar: CalendarAPI;
   readonly tasks: TasksAPI;
   readonly net: NetAPI;
+  readonly bigquery: BigQueryAPI;
   readonly files: FilesAPI;
   readonly system: SystemAPI;
 }

@@ -81,6 +81,9 @@ export function checkExtension(dir) {
   const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
   if (dupes.length) problem(dir, `capabilities 里重复：${[...new Set(dupes)].join("、")}`);
   const has = (id) => ids.includes(id);
+  if (has("bigquery.query") !== Boolean(manifest.bigquery)) {
+    problem(dir, "bigquery.query 能力与 bigquery.projects 必须同时出现或同时缺席");
+  }
   if (has("network.https") !== Boolean(manifest.network)) {
     problem(dir, "network.https 能力与 network.hosts 必须同时出现或同时缺席");
   }

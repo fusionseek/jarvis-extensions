@@ -262,6 +262,29 @@ SDK 自己还带一组**不经宿主**的纯函数（`ocr.mergeLines` / `ocr.par
 - 走系统代理设置（国内访问 Google 一类端点靠它）；
 - 响应 ≤ 5 MB、30 秒超时；每扩展每分钟 ≤ 30 次。
 
+### `bigquery.query` — 查询 BigQuery（SDK 1.6，高风险）
+
+以用户在 Jarvis 里登录的 Google 身份（gcloud 应用默认凭证）跑**只读** GoogleSQL。要同时写 manifest `bigquery.projects`（1–8 个计费项目），
+授权弹窗会念出这几个项目。
+
+```ts
+const r = await jarvis.bigquery.query({
+  project: "my-gcp-project",
+  sql: "SELECT dt, platform, SUM(n) AS n FROM `ds.events` WHERE dt BETWEEN @start AND @end GROUP BY 1, 2",
+  parameters: [
+    { name: "start", type: "DATE", value: "2026-09-01" },
+    { name: "end", type: "DATE", value: "2026-09-30" },
+  ],
+});
+// r.result 是句柄，交给 ui.chart({ result: r.result }) / ui.dataTable({ result: r.result })
+```
+
+- **护栏在宿主**：每次先 dry-run，只放行 SELECT（多语句脚本、DML、DDL 一律拒绝）；预计扫描超过用户在 Jarvis 里设的扫描上限（默认 300 GiB）就拒绝，
+  `invalid.argument`，message 就是原因。正式执行带 `maximumBytesBilled`，由 BigQuery 兜底。**扩展调不高上限。**
+- 未登录：`permission.unavailable`。`jarvis.bigquery.status()` 查状态（不出网），`jarvis.bigquery.login()` 让宿主开 gcloud 登录。
+- 结果：句柄 + 列名 + 行（`maxRows` 1–20,000，默认 1,000；`includeRows: false` 可不要）+ 截断标志 + 成本。句柄每会话保留 20 个。结果超过一页时宿主自动翻页（不再计费）。
+- 令牌永远不进扩展；频率 30 次/分钟。
+
 ### `files.pick` — 选文件
 
 | 方法 | 说明 |

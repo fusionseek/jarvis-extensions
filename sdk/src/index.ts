@@ -22,7 +22,7 @@ export * from "./ocr.js";
 export type { ActivationContext, CommandContext, CommandSummary, CommandTrigger, HostEvent, SerializedNode, Surface } from "./bridge.js";
 export { bridgeProtocolVersion } from "./bridge.js";
 
-export const sdkVersion = "1.5.0";
+export const sdkVersion = "1.6.0";
 
 export interface PageDefinition {
   /** 进入扩展页面时调用一次。拿到已授予的能力、当前偏好与命令清单。 */
@@ -299,6 +299,7 @@ const call = {
   calendar: namespaced("calendar"),
   tasks: namespaced("tasks"),
   net: namespaced("net"),
+  bigquery: namespaced("bigquery"),
   files: namespaced("files"),
   system: namespaced("system"),
 };
@@ -443,6 +444,11 @@ export const jarvis: Jarvis = {
   },
   net: {
     fetch: (url, init) => call.net("fetch", { url, ...init }),
+  },
+  bigquery: {
+    query: (request) => call.bigquery("query", request),
+    status: () => call.bigquery("status"),
+    login: () => call.bigquery("login"),
   },
   files: {
     pick: (options) => call.files("pick", options),

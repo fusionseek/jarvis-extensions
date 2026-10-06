@@ -74,6 +74,14 @@
     "network": {
       "$ref": "#/$defs/network"
     },
+    "bigquery": {
+      "$ref": "#/$defs/bigquery"
+    },
+    "workspace": {
+      "type": "boolean",
+      "description": "从工具箱点开时在 Jarvis 工作区新开一个标签（surface tab），而不是面板里 400×520 的页面。给要大画布的扩展（指标页、报表）。旧宿主忽略它、按面板打开。默认 false。",
+      "default": false
+    },
     "commands": {
       "type": "array",
       "description": "第二部分的另一半：页面之外的入口。快捷键、页面按钮、快捷环、Inbox 卡片触发，落到 defineExtension({ commands }) 里同 id 的处理函数。",
@@ -204,7 +212,8 @@
         "system.openURL",
         "ocr.recognize",
         "speech.speak",
-        "hotkeys.register"
+        "hotkeys.register",
+        "bigquery.query"
       ]
     },
     "command": {
@@ -291,6 +300,26 @@
             "type": "string",
             "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$",
             "maxLength": 253
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "bigquery": {
+      "type": "object",
+      "description": "声明了 bigquery.query 能力时必填：允许提交查询的 Google Cloud 项目（计费项目）白名单。宿主只向这几个项目提交查询；授权弹窗把它们念给用户听。",
+      "required": [
+        "projects"
+      ],
+      "properties": {
+        "projects": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^(?:[a-z0-9.-]+:)?[a-z][a-z0-9-]{4,28}[a-z0-9]$"
           }
         }
       },
