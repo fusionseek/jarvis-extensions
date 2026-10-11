@@ -22,7 +22,7 @@ let count = 0;
 let lastCommand = null;
 
 defineExtension({
-  page: {
+  toolbox: {
     async activate() {
       count = (await jarvis.storage.get("count")) ?? 0;
     },
@@ -49,7 +49,7 @@ defineExtension({
 });
 
 test("activate 之后提交一棵树，异步取回的状态画进去了", async () => {
-  host.dispatch({ type: "activate", context: { entry: "toolbox", granted: [], preferences: {}, commands: [] } });
+  host.dispatch({ type: "activate", context: { entry: "toolbox", surface: "toolbox", granted: [], preferences: {}, commands: [] } });
   await host.settle();
   assert.ok(host.latest, "应该有一次提交");
   assert.equal(host.latest.kind, "scroll");
@@ -75,6 +75,14 @@ test("命令按 id 落到处理函数，带触发来源与偏好", async () => {
   assert.deepEqual(lastCommand.preferences, { a: 1 });
 });
 
+test("/ 指令带着参数与出处落到同一个处理函数", async () => {
+  host.dispatch({ type: "command", context: { id: "hello", trigger: "slash", scope: "memo", argument: "404", granted: [], preferences: {} } });
+  await host.settle();
+  assert.equal(lastCommand.trigger, "slash");
+  assert.equal(lastCommand.scope, "memo");
+  assert.equal(lastCommand.argument, "404");
+});
+
 test("manifest 里有、代码里没有的命令记一条错误日志而不是崩", async () => {
   host.dispatch({ type: "command", context: { id: "missing", trigger: "page", granted: [], preferences: {} } });
   await host.settle();
@@ -83,7 +91,7 @@ test("manifest 里有、代码里没有的命令记一条错误日志而不是�
 
 test("宿主拒绝变成 JarvisError，同步纯函数直接返回", async () => {
   await assert.rejects(jarvis.net.fetch("https://x"), (e) => e instanceof JarvisError && e.code === "permission.denied");
-  await assert.rejects(jarvis.memo.list(), (e) => e instanceof JarvisError && e.code === "capability.unknown");
+  await assert.rejects(jarvis.window.open(), (e) => e instanceof JarvisError && e.code === "capability.unknown");
   assert.equal(jarvis.text.language.detect("你好").code, "zh-Hans");
   assert.equal(await jarvis.clipboard.read(), "from clipboard");
 });

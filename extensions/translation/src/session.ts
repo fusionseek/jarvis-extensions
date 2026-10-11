@@ -1,9 +1,13 @@
 /**
  * 一次「截屏 → 识字 → 检测语言 → 翻译」的全部状态与编排。
  *
- * 页面（面板里那五屏）与原地弹窗只是它的两种画法，读的是同一个对象。宿主每次 `activate` 是新的一次，
+ * 工具箱页面（面板里那五屏）与原地弹窗只是它的两种画法，读的是同一个对象。宿主每次 `activate` 是新的一次，
  * 但状态留在这里——快捷键按下之后弹窗才出现，那时结果必须已经算好放在这里。
  * 截图、OCR、语言检测、朗读、网络全在宿主；这里只有编排与状态。
+ *
+ * **静默命令用另一个实例**（`new Session({ headless: true })`）：SDK 2 里 `silent` 命令跑在宿主的后台会话，
+ * 那是另一个 JSContext，页面的这份状态在那里根本不存在；`panel.*` / `ui.*` 也都以 `surface.unavailable` 拒绝。
+ * 让它从一开始就不碰页面那一份，单测里（同一个 JSContext）与真机上（两个 JSContext）才是同一种行为。
  */
 import {
   jarvis,
@@ -116,18 +120,52 @@ export function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** 把一次异常变成用户读得懂的一屏。 */
-export function failureFor(error: unknown): Failure {
+/**
+ * 把一次异常变成用户读得懂的一屏。
+ *
+ * `headless` = 这句话要写进一条横幅，而不是画在页面上：横幅上没有「授权」「重试」按钮，
+ * 后台会话里也没有"留在上面的原文"——照着页面的说法写，用户会去找一颗不存在的按钮。
+ * - Parameter error: 宿主拒绝或扩展自己抛出的异常。
+ * - Parameter headless: 是否写给静默命令的横幅。默认 `false`。
+ * - Returns: 失败的分类、标题与正文。
+ */
+export function failureFor(error: unknown, headless = false): Failure {
   if (error instanceof JarvisError && error.code === "permission.denied") {
-    return { kind: "denied", title: "没有这项授权", body: `${describe(error)}。点「授权」再问一次，或在 设置 › 扩展 里打开。` };
+    return {
+      kind: "denied",
+      title: "没有这项授权",
+      body: headless ? `${describe(error)}。在 设置 › 扩展 › 截屏翻译 里打开它。` : `${describe(error)}。点「授权」再问一次，或在 设置 › 扩展 里打开。`,
+    };
   }
   if (error instanceof JarvisError && error.code === "rate.limited") {
     return { kind: "network", title: "请求太频繁", body: "宿主限了这个扩展的调用频率，缓一缓再试。" };
   }
-  return { kind: "network", title: "翻译失败", body: `${describe(error)}。原文还留在上面，重试不用再截一次。` };
+  return {
+    kind: "network",
+    title: "翻译失败",
+    body: headless ? `${describe(error)}。再截一次试试；用「截屏翻译」能在弹窗里看到原文并重试。` : `${describe(error)}。原文还留在上面，重试不用再截一次。`,
+  };
+}
+
+/**
+ * 最近一次 `capture()` 是怎么收场的。
+ *
+ * 页面与弹窗用不上它（它们读 `phase` / `systemPermissionMissing` / `granted` 就够了）；
+ * 它是给静默命令的：后台会话里没有页面可以把"没有屏幕录制权限"画出来，
+ * 只能凭这一次的结局决定要不要弹一条横幅。按会话累积的那几个标志做不到这件事——
+ * 上一次缺权限、这一次按了 Esc，标志还亮着，横幅就会说错话。
+ */
+export type CaptureOutcome = "captured" | "cancelled" | "empty" | "systemPermission" | "denied" | "failed";
+
+/** `Session` 的构造选项。 */
+export interface SessionOptions {
+  /** 跑在后台会话里（静默命令）：不碰弹窗、不订阅偏好、失败的话写给横幅。 */
+  headless?: boolean;
 }
 
 export class Session {
+  /** 跑在后台会话里：见 `SessionOptions.headless`。 */
+  readonly headless: boolean;
   phase: Phase = "idle";
   source = "";
   origin: Origin = "typed";
@@ -156,6 +194,8 @@ export class Session {
   failure: Failure | null = null;
   /** `screenshot.capture` 抛过 `permission.unavailable`：Jarvis 自己还没有屏幕录制权限。 */
   systemPermissionMissing = false;
+  /** 最近一次 `capture()` 的结局；还没框过为 `null`。 */
+  captureOutcome: CaptureOutcome | null = null;
   granted = new Set<CapabilityID>();
   prefs = defaultPrefs;
   commands: CommandSummary[] = [];
@@ -164,6 +204,13 @@ export class Session {
   private alternateTouched = false;
   private ocrTouched = false;
   private prefsSubscribed = false;
+
+  /**
+   * - Parameter options: 构造选项；省略 = 前台会话（页面与弹窗）。
+   */
+  constructor(options: SessionOptions = {}) {
+    this.headless = options.headless ?? false;
+  }
 
   has(id: CapabilityID): boolean {
     return this.granted.has(id);
@@ -182,12 +229,17 @@ export class Session {
     return languageTitle(this.target);
   }
 
-  /** 每次进入页面 / 弹窗 / 命令都会拿到最新的授权与偏好；命令上下文没有命令清单，留着上一次的。 */
+  /**
+   * 每次进入页面 / 弹窗 / 命令都会拿到最新的授权与偏好；命令上下文没有命令清单，留着上一次的。
+   *
+   * 后台会话不订阅偏好：静默命令每一次的上下文都带着此刻的偏好，订阅只会在一个
+   * 空闲 60 秒就被收走的会话里多挂一条没人读的线。
+   */
   adopt(context: ActivationContext | CommandContext): void {
     this.granted = new Set(context.granted as CapabilityID[]);
     this.applyPrefs(context.preferences);
     if ("commands" in context) this.commands = context.commands;
-    if (!this.prefsSubscribed) {
+    if (!this.prefsSubscribed && !this.headless) {
       this.prefsSubscribed = true;
       jarvis.preferences.onChange((changes) => this.applyPrefs({ ...changes }));
     }
@@ -205,12 +257,13 @@ export class Session {
   // 编排
   // ---------------------------------------------------------------------------
 
-  /** 框选一块并识字。返回 true = 认出了文字，可以接着翻。 */
+  /** 框选一块并识字。返回 true = 认出了文字，可以接着翻；为什么没成看 `captureOutcome`。 */
   async capture(): Promise<boolean> {
     const previous: Phase = this.translation ? "done" : "idle";
     this.phase = "capturing";
     this.failure = null;
     this.ignoredRound = false;
+    this.captureOutcome = null;
     jarvis.ui.update();
     try {
       const shot = await jarvis.screenshot.capture({
@@ -226,30 +279,38 @@ export class Session {
       this.systemPermissionMissing = false;
       this.image = shot.file;
       this.imageSize = { width: shot.width, height: shot.height };
-      return this.adoptOCR(shot.ocr, "screenshot", previous);
+      const recognized = this.adoptOCR(shot.ocr, "screenshot", previous);
+      this.captureOutcome = recognized ? "captured" : "empty";
+      return recognized;
     } catch (error) {
       if (error instanceof JarvisError && error.code === "cancelled") {
+        this.captureOutcome = "cancelled";
         this.phase = previous;
         return false;
       }
       if (error instanceof JarvisError && error.code === "permission.unavailable") {
+        this.captureOutcome = "systemPermission";
         this.systemPermissionMissing = true;
         this.phase = previous;
         return false;
       }
       if (error instanceof JarvisError && error.code === "permission.denied") {
+        this.captureOutcome = "denied";
         this.granted.delete("screenshot.capture");
         this.phase = previous;
         return false;
       }
-      this.fail(failureFor(error));
+      this.captureOutcome = "failed";
+      this.fail(failureFor(error, this.headless));
       return false;
     } finally {
-      if (this.ignoredRound) {
+      if (this.ignoredRound && !this.headless) {
         // SDK 在命令处理函数结束后总会自动提交一次，因此"什么都不做"做不到"什么都不弹"。
         // 明说一句：这一轮不值得弹。宿主随即把等着开弹窗的那个锚点丢掉。
-        await jarvis.ui.dismissPopover();
+        // 拒绝（这一轮本来就没有弹窗）不该把"框空了"变成一次失败：吞掉。
+        await jarvis.ui.dismissPopover().catch(() => undefined);
       } else {
+        // 后台会话里没有哪一面开着，这一句是 SDK 本地的空操作，不上线缆。
         jarvis.ui.update();
       }
     }
@@ -311,6 +372,7 @@ export class Session {
     this.failure = null;
     jarvis.ui.update();
     // 翻译跨越指针离开：面板与弹窗在译文回来之前都不该被 15 秒倒计时收走。
+    // 后台会话里 hold 会被拒（那里没有面板可摁），SDK 吞掉那次拒绝——翻译照常往下走，不依赖它。
     const hold = jarvis.panel.hold("正在翻译");
     const started = Date.now();
     try {
@@ -336,7 +398,7 @@ export class Session {
       }
       return true;
     } catch (error) {
-      this.fail(failureFor(error));
+      this.fail(failureFor(error, this.headless));
       return false;
     } finally {
       hold.release();
@@ -372,23 +434,37 @@ export class Session {
         this.fail({ kind: "clipboard", title: "剪贴板是空的", body: "剪贴板里没有文字，也没有图片。先复制一段文字或一张图。" });
         return false;
       }
-      this.source = text;
-      this.origin = "clipboard";
-      this.lines = text.split(/\r?\n/).length;
-      this.image = null;
-      this.imageSize = null;
-      this.translation = null;
-      this.sourceOverride = null;
-      this.dirty = false;
-      this.detect(text);
-      this.phase = "recognizing";
+      this.adoptText(text, "clipboard");
       return true;
     } catch (error) {
-      this.fail(failureFor(error));
+      this.fail(failureFor(error, this.headless));
       return false;
     } finally {
       jarvis.ui.update();
     }
+  }
+
+  /**
+   * 拿一段现成的文字当新的原文：剪贴板里的字，或 `/translate` 后面跟的那一段。
+   *
+   * 与 `setSource`（用户在编辑框里打字）不同，这是**新的一次**：上一张截图、上一份译文、
+   * 手动指定的原文语言全部作废，否则页面上会出现"新原文配旧缩略图"的一屏。
+   * - Parameter text: 原文，原样保留（首尾空白由翻译时的 `trim()` 处理）。
+   * - Parameter origin: 从哪来的；只影响页面上那句「N 行」读数画不画。
+   * - Returns: 无。
+   */
+  adoptText(text: string, origin: Origin): void {
+    this.source = text;
+    this.origin = origin;
+    this.lines = text.split(/\r?\n/).length;
+    this.image = null;
+    this.imageSize = null;
+    this.translation = null;
+    this.sourceOverride = null;
+    this.dirty = false;
+    this.failure = null;
+    this.detect(text);
+    this.phase = "recognizing";
   }
 
   fail(failure: Failure): void {
@@ -396,14 +472,45 @@ export class Session {
     this.phase = "failed";
   }
 
-  /** 静默命令没成时也得让用户知道：横幅说清原因，点横幅展开到本扩展的页面（那里画着错误屏）。 */
+  /**
+   * 静默命令没成时也得让用户知道：横幅把原因说完整。
+   *
+   * 横幅是**唯一**的回音：静默命令跑在后台会话里，失败的那一屏状态只活在后台会话的内存里，
+   * 点横幅展开的页面是前台会话，画不出它——所以正文要自己说得通（`failureFor(…, headless)`），
+   * 不指向任何一颗按钮。没有横幅授权时只能记一条日志。
+   * - Returns: 无；横幅发不出去时也不抛（失败的回音再失败，没有第三条路）。
+   */
   async reportFailureSilently(): Promise<void> {
-    if (!this.failure) return;
+    const notice = this.failure ?? this.captureNotice();
+    if (!notice) return;
     if (!this.has("notifications.post")) {
-      jarvis.log.warn("静默命令失败，但没有横幅授权", this.failure);
+      jarvis.log.warn("静默命令失败，但没有横幅授权", notice);
       return;
     }
-    await jarvis.notifications.post({ title: this.failure.title, body: this.failure.body });
+    try {
+      await jarvis.notifications.post({ title: notice.title, body: notice.body });
+    } catch (error) {
+      jarvis.log.warn("静默命令失败的横幅没发出去", describe(error));
+    }
+  }
+
+  /**
+   * 框选那一步没成、但又不是"翻译失败"时，静默命令要说的那一句。
+   *
+   * Esc（`cancelled`）与框空了（`empty`）**不说**：前者是用户自己按的，后者几乎总是误拖——
+   * 与原地弹窗"当这一次没发生过"同一条规矩。缺权限要说：页面上那两张授权说明在后台会话里画不出来，
+   * 不说的话用户只会觉得快捷键坏了。
+   * - Returns: 横幅的标题与正文；不需要说时为 `null`。
+   */
+  captureNotice(): { title: string; body: string } | null {
+    switch (this.captureOutcome) {
+      case "systemPermission":
+        return { title: "Jarvis 还没有屏幕录制权限", body: "打开 系统设置 › 隐私与安全性 › 屏幕录制，把 Jarvis 拖进列表，再按一次快捷键。" };
+      case "denied":
+        return { title: "没有截图的授权", body: "这条命令要先框选屏幕。在 设置 › 扩展 › 截屏翻译 里打开「截取屏幕」。" };
+      default:
+        return null;
+    }
   }
 
   async requestCapabilities(ids: CapabilityID[]): Promise<void> {

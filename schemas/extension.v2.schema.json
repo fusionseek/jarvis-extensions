@@ -1,0 +1,795 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jarvis.fusionseek.ai/schemas/extension.v2.schema.json",
+  "title": "Jarvis extension manifest v2",
+  "description": "每个扩展目录里的 extension.json。v2 按「域」组织：扩展在 contributes 里声明它入驻工具箱、窗口、指令、设置、服务中的哪几个；悬浮球不是可入驻的域。跨字段规则（能力 ⇔ 声明对象、落点 ⇔ 域、键不重）由 scripts/validate.mjs 与宿主各查一遍，见 docs/03-manifest.md。",
+  "type": "object",
+  "required": [
+    "manifestVersion",
+    "id",
+    "version",
+    "name",
+    "symbol",
+    "description",
+    "author",
+    "main",
+    "sdk",
+    "minimumJarvisVersion",
+    "capabilities",
+    "contributes",
+    "inbox"
+  ],
+  "properties": {
+    "manifestVersion": {
+      "const": 2
+    },
+    "id": {
+      "type": "string",
+      "description": "扩展标识，同时是目录名。小写字母开头，只允许小写字母、数字与单个连字符。",
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+      "minLength": 3,
+      "maxLength": 40
+    },
+    "version": {
+      "$ref": "#/$defs/semver"
+    },
+    "name": {
+      "type": "string",
+      "description": "扩展的名字：工具箱那一行、窗口标签、面板 header、设置页那块面板的标题。header 留给标题的宽度只有 144pt。",
+      "minLength": 1,
+      "maxLength": 12
+    },
+    "symbol": {
+      "type": "string",
+      "description": "SF Symbol 名：工具箱那一行、header 徽标、商店卡片。不接受 emoji、图片或自绘路径。",
+      "pattern": "^[A-Za-z0-9.-]+$",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "description": {
+      "type": "string",
+      "description": "扩展商店卡片上的说明。回答「它替我做什么」，不写营销语。",
+      "minLength": 8,
+      "maxLength": 240
+    },
+    "author": {
+      "$ref": "#/$defs/author"
+    },
+    "repository": {
+      "type": "string",
+      "description": "源码地址；省略时指向本仓库里的扩展目录。",
+      "pattern": "^https://[^\\s]+$",
+      "maxLength": 256
+    },
+    "main": {
+      "type": "string",
+      "description": "构建产物：相对扩展目录的单文件 JS bundle，必须提交进仓库。",
+      "pattern": "^dist/[A-Za-z0-9._-]+\\.js$"
+    },
+    "sdk": {
+      "type": "string",
+      "description": "依赖的 SDK 主版本区间，形如 ^2.0.0。宿主只兼容同一主版本。",
+      "pattern": "^\\^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "minimumJarvisVersion": {
+      "$ref": "#/$defs/semver"
+    },
+    "capabilities": {
+      "type": "array",
+      "description": "要向用户申请的宿主能力。空数组表示这个扩展只用隐式能力（存储、偏好、纯函数工具）。",
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/capabilityRequest"
+      }
+    },
+    "network": {
+      "$ref": "#/$defs/network"
+    },
+    "process": {
+      "$ref": "#/$defs/process"
+    },
+    "files": {
+      "$ref": "#/$defs/files"
+    },
+    "contributes": {
+      "$ref": "#/$defs/contributes"
+    },
+    "inbox": {
+      "description": "往 Inbox 投不投消息、弹不弹系统横幅。false = 都不；对象 = 两条通路各开不开。",
+      "oneOf": [
+        {
+          "const": false
+        },
+        {
+          "$ref": "#/$defs/inboxParticipation"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+      "minLength": 2,
+      "maxLength": 40
+    },
+    "author": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://[^\\s]+$",
+          "maxLength": 256
+        },
+        "github": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "capabilityID": {
+      "type": "string",
+      "description": "能力目录见 docs/06-capabilities.md。只列宿主真的做得到的；隐式能力（panel.* / storage.* / preferences.* / text.* / time.* / color.* / window.open / service.* / host.* / log）不在这里声明。",
+      "enum": [
+        "clipboard.read",
+        "clipboard.write",
+        "quickTransfer.status",
+        "quickTransfer.control",
+        "quickTransfer.send",
+        "screenshot.capture",
+        "notifications.post",
+        "inbox.post",
+        "network.https",
+        "system.openURL",
+        "ocr.recognize",
+        "speech.speak",
+        "hotkeys.register",
+        "process.run",
+        "files.read",
+        "terminal.run"
+      ]
+    },
+    "capabilityRequest": {
+      "type": "object",
+      "required": [
+        "id",
+        "reason"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/capabilityID"
+        },
+        "reason": {
+          "type": "string",
+          "description": "授权屏里那一行的第二句：这个扩展拿它做什么。写给用户看，不写给审核看。",
+          "minLength": 4,
+          "maxLength": 60
+        }
+      },
+      "additionalProperties": false
+    },
+    "network": {
+      "type": "object",
+      "description": "声明了 network.https 时必填：允许访问的主机白名单。宿主只放行这几个主机上的 HTTPS 请求，且只认完全相等。",
+      "required": [
+        "hosts"
+      ],
+      "properties": {
+        "hosts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$",
+            "maxLength": 253
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "process": {
+      "type": "object",
+      "description": "受限执行（指令域）。executables 配 process.run，terminal 配 terminal.run。宿主只放行这里逐字写出的可执行文件、参数组合与脚本。",
+      "minProperties": 1,
+      "properties": {
+        "executables": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/executable"
+          }
+        },
+        "terminal": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/terminalScript"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "executable": {
+      "type": "object",
+      "required": [
+        "name",
+        "arguments"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "可执行文件的名字（不带路径）。宿主在 Homebrew、~/.local/bin、~/bin 与 Nix 的固定位置里找；用户填的绝对路径，文件名必须等于它。",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+        },
+        "arguments": {
+          "type": "array",
+          "description": "允许的参数组合。一次调用的参数必须与其中某一组逐项相等——不支持通配，读 manifest 就知道它会跑什么。",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[^\\s;&|`$<>]+$"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "terminalScript": {
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "script"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "title": {
+          "type": "string",
+          "description": "授权屏与按钮上的名字，例如「安装 Mole」。",
+          "minLength": 1,
+          "maxLength": 16
+        },
+        "script": {
+          "type": "array",
+          "description": "在终端里逐字执行的 sh 脚本，一行一个元素。扩展只能按 id 点名，不能传内容。",
+          "minItems": 1,
+          "maxItems": 80,
+          "items": {
+            "type": "string",
+            "maxLength": 240
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "files": {
+      "type": "object",
+      "description": "声明了 files.read 时必填：允许读的文件。绝对路径或 ~ 开头；不接受目录、通配与 ..。",
+      "required": [
+        "read"
+      ],
+      "properties": {
+        "read": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^~?/[^*?]*[^*?/]$",
+            "maxLength": 256
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "contributes": {
+      "type": "object",
+      "description": "扩展入驻的域。至少要有工具箱、窗口、指令、服务之一——只有设置的扩展没有入口。",
+      "anyOf": [
+        {
+          "required": [
+            "toolbox"
+          ]
+        },
+        {
+          "required": [
+            "window"
+          ]
+        },
+        {
+          "required": [
+            "commands"
+          ]
+        },
+        {
+          "required": [
+            "services"
+          ]
+        }
+      ],
+      "properties": {
+        "toolbox": {
+          "$ref": "#/$defs/toolbox"
+        },
+        "window": {
+          "$ref": "#/$defs/window"
+        },
+        "commands": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": {
+            "$ref": "#/$defs/command"
+          }
+        },
+        "settings": {
+          "$ref": "#/$defs/settings"
+        },
+        "services": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/service"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "keywords": {
+      "type": "array",
+      "description": "搜索时额外认的词。只装名字与说明里没有的词。",
+      "maxItems": 12,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 24
+      }
+    },
+    "toolbox": {
+      "type": "object",
+      "description": "工具箱域：目录里一行，点开是面板里 400×520 的一屏。",
+      "required": [
+        "subtitle"
+      ],
+      "properties": {
+        "subtitle": {
+          "type": "string",
+          "description": "列表排布下那一行说明。",
+          "minLength": 1,
+          "maxLength": 22
+        },
+        "keywords": {
+          "$ref": "#/$defs/keywords"
+        }
+      },
+      "additionalProperties": false
+    },
+    "window": {
+      "type": "object",
+      "description": "窗口域：在 Jarvis 工作区窗口里开一枚标签。入口是 presentation: window 的命令、全局搜索与页面里的 jarvis.window.open()。",
+      "required": [
+        "subtitle"
+      ],
+      "properties": {
+        "subtitle": {
+          "type": "string",
+          "description": "全局搜索那一行与标签副标题。",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "keywords": {
+          "$ref": "#/$defs/keywords"
+        }
+      },
+      "additionalProperties": false
+    },
+    "command": {
+      "type": "object",
+      "description": "指令域里的一条命令：/ 指令、全局快捷键、页面按钮都落到 defineExtension({ commands }) 里同 id 的处理函数。",
+      "required": [
+        "id",
+        "title",
+        "presentation"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "slash": {
+          "$ref": "#/$defs/slash"
+        },
+        "hotkey": {
+          "type": "string",
+          "description": "全局快捷键默认值：修饰键按 ⌃⌥⇧⌘ 顺序 + 一个主键；至少含 ⌃、⌥、⌘ 之一。要声明 hotkeys.register。",
+          "pattern": "^(?=.*[⌃⌥⌘])⌃?⌥?⇧?⌘?(?:[A-Z0-9]|F[1-9]|F1[0-2]|[-=\\[\\];',./])$"
+        },
+        "presentation": {
+          "enum": [
+            "toolbox",
+            "window",
+            "popover",
+            "silent"
+          ],
+          "description": "toolbox = 展开面板到它的页面（要工具箱域）；window = 在工作区开它的标签（要窗口域）；popover = 原地结果弹窗（要工具箱域）；silent = 后台会话里跑，不碰任何界面。"
+        }
+      },
+      "additionalProperties": false
+    },
+    "slash": {
+      "type": "object",
+      "description": "在全局搜索与速记输入框的 / 下拉里出现。关键词与内置指令撞了，这条不加载。",
+      "required": [
+        "keyword"
+      ],
+      "properties": {
+        "keyword": {
+          "type": "string",
+          "description": "/ 下拉里显示的那一个。",
+          "pattern": "^[a-z][a-z0-9-]{1,19}$"
+        },
+        "aliases": {
+          "type": "array",
+          "description": "也认的词，可以是中文。",
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[^\\s/]{1,12}$"
+          }
+        },
+        "argument": {
+          "type": "string",
+          "description": "参数提示；有它 = 这条指令要参数。",
+          "minLength": 1,
+          "maxLength": 24
+        },
+        "scopes": {
+          "type": "array",
+          "description": "出现在哪：launcher = 全局搜索（全局启动条与默认页搜索栏），memo = 速记输入框。省略 = 两处都要。",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "launcher",
+              "memo"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "settings": {
+      "type": "object",
+      "description": "设置域：设置页「扩展」区段里属于它的那块面板，控件由宿主画。",
+      "required": [
+        "preferences"
+      ],
+      "properties": {
+        "preferences": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/preference"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "service": {
+      "type": "object",
+      "description": "服务域：实现宿主开放的一个扩展点。没有独立界面；它的设置画在扩展点指定的那个内置区段里。",
+      "required": [
+        "point",
+        "id",
+        "title",
+        "subtitle"
+      ],
+      "properties": {
+        "point": {
+          "enum": [
+            "junkClean.engine"
+          ],
+          "description": "扩展点。junkClean.engine = 清理引擎：设置「清理」里出现它的开关与设置，开着时晃球、/clean 与工具箱清理都走它。"
+        },
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "title": {
+          "type": "string",
+          "description": "在那个内置能力里的名字，例如「深度清理（Mole）」。",
+          "minLength": 1,
+          "maxLength": 16
+        },
+        "subtitle": {
+          "type": "string",
+          "description": "一句话说它比内置的多做了什么。",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "notes": {
+          "type": "array",
+          "description": "须知：画在设置区段与工具页的范围说明里。",
+          "maxItems": 6,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        },
+        "preferences": {
+          "type": "array",
+          "description": "这个服务自己的设置，画在扩展点指定的区段里。键与 contributes.settings 的键共用一个命名空间，不能重。",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/preference"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "preferenceBase": {
+      "type": "object",
+      "required": [
+        "key",
+        "type",
+        "title"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[a-z][a-zA-Z0-9]*$",
+          "maxLength": 32
+        },
+        "type": {
+          "enum": [
+            "toggle",
+            "text",
+            "number",
+            "select",
+            "multiselect",
+            "secret",
+            "directory"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 120
+        }
+      }
+    },
+    "option": {
+      "type": "object",
+      "required": [
+        "value",
+        "title"
+      ],
+      "properties": {
+        "value": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]{1,32}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16
+        }
+      },
+      "additionalProperties": false
+    },
+    "preference": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/preferenceBase"
+        },
+        {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "toggle"
+                },
+                "default": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "default"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "text"
+                },
+                "default": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "placeholder": {
+                  "type": "string",
+                  "maxLength": 40
+                },
+                "maxLength": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 200
+                },
+                "monospaced": {
+                  "type": "boolean",
+                  "description": "路径、命令这类机器串用等宽字。"
+                }
+              },
+              "required": [
+                "default"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "number"
+                },
+                "default": {
+                  "type": "number"
+                },
+                "minimum": {
+                  "type": "number"
+                },
+                "maximum": {
+                  "type": "number"
+                },
+                "step": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                }
+              },
+              "required": [
+                "default",
+                "minimum",
+                "maximum"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "select"
+                },
+                "default": {
+                  "type": "string"
+                },
+                "options": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 8,
+                  "items": {
+                    "$ref": "#/$defs/option"
+                  }
+                }
+              },
+              "required": [
+                "default",
+                "options"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "multiselect"
+                },
+                "default": {
+                  "type": "array",
+                  "maxItems": 8,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "options": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 8,
+                  "items": {
+                    "$ref": "#/$defs/option"
+                  }
+                }
+              },
+              "required": [
+                "default",
+                "options"
+              ]
+            },
+            {
+              "type": "object",
+              "description": "机密：宿主存 Keychain、设置页遮罩显示、只交给这个扩展、不进日志。没有默认值。",
+              "properties": {
+                "type": {
+                  "const": "secret"
+                },
+                "placeholder": {
+                  "type": "string",
+                  "maxLength": 40
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "directory"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "inboxParticipation": {
+      "type": "object",
+      "required": [
+        "messages",
+        "notifications"
+      ],
+      "properties": {
+        "messages": {
+          "type": "boolean",
+          "description": "往 Inbox 投消息。为 true 时必须声明 inbox.post。"
+        },
+        "notifications": {
+          "type": "boolean",
+          "description": "弹系统横幅。为 true 时必须声明 notifications.post。"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

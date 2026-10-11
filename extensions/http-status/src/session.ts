@@ -1,17 +1,28 @@
 /**
- * 会话状态：页面、原地弹窗与两条命令共用的那一份。
+ * 会话状态：工具箱页面、窗口标签、原地弹窗与三条命令共用的那一份。
  *
  * 只有一个真源——**输入框里那串字**。详情屏不是另一个状态，而是"这串字恰好指向一条码"；
- * 点清单里的一行、点相关码的一枚 chip，做的都是同一件事：把 `query` 改成那个码。
- * 这样「在面板里打开」从弹窗切到页面时什么都不用同步，两棵树读的是同一个对象。
+ * 点清单里的一行、点相关码的一枚 chip、`/http 404`，做的都是同一件事：把 `query` 改成那个码。
+ * 这样「在面板里打开」从弹窗切到页面、「在窗口中打开」从面板切到窗口时什么都不用同步——
+ * 三面画的是同一个对象（它们都在宿主的前台会话里，同一个 JSContext）。
  *
  * 偏好与会话值分开：`copyFormat` / `specSource` 是偏好（在设置页改，页面里不许再画一份）；
  * 「含非标准码」与「只看 5xx」是**会话值**，从偏好初始化，清空搜索就回到偏好——
  * 它们是"这一次要看什么"，不是"我以后都想这样"。
  */
-import { jarvis, type ActivationContext, type CommandContext, type CommandSummary, type Unsubscribe } from "@fusionseek/jarvis-extension-sdk";
+import { jarvis, type ActivationContext, type CommandContext, type CommandSummary, type Surface, type Unsubscribe } from "@fusionseek/jarvis-extension-sdk";
 import { byCode, type StatusCode } from "./data.js";
 import { extractCode, search, type SearchOutcome, type StatusClass } from "./search.js";
+
+/**
+ * 原地弹窗这一轮在回答哪个问题。
+ *
+ * - `clipboard`：⌥⌘/——"剪贴板里那个码是什么"，弹窗顶上有读到的那一段给人核对；
+ * - `query`：`/http <码或关键词>`——"我敲的这个是什么"，用户刚亲手打过字，不必再给他看一遍原文。
+ *
+ * 两条命令落在同一扇弹窗里，这一个字段决定画哪一种；页面与窗口不读它（它们只看 `query`）。
+ */
+export type PopoverMode = "clipboard" | "query";
 
 /** ⌥⌘/ 那条命令这一轮的结果。页面与弹窗都按它画。 */
 export type ClipboardState =
@@ -43,8 +54,15 @@ export class Session {
   includeUnofficial = true;
   classFilter: StatusClass | null = null;
   clipboard: ClipboardState = { kind: "idle" };
+  /** 弹窗这一轮画哪一种：见 `PopoverMode`。 */
+  popoverMode: PopoverMode = "clipboard";
   /** 用户刚拒了「打开链接」：详情屏改成把地址交给他自己去开，而不是再问一次。 */
   urlDenied = false;
+  /**
+   * 此刻画在哪一面（最近一次 `activate` 带来的）；命令上下文不改它。
+   * 页面据此决定画不画「在窗口中打开」——已经在窗口里了，再画一颗就是让用户原地打开自己。
+   */
+  surface: Surface | null = null;
 
   private granted: string[] = [];
   private preferences: Record<string, unknown> = {};
@@ -56,6 +74,7 @@ export class Session {
     this.granted = context.granted;
     this.preferences = context.preferences;
     if ("commands" in context) this.commands = context.commands;
+    if ("surface" in context) this.surface = context.surface;
     this.includeUnofficial = this.preference("includeUnofficial", true);
     if (this.has("clipboard.read") && this.clipboard.kind === "denied") this.clipboard = { kind: "idle" };
     if (this.has("system.openURL")) this.urlDenied = false;
@@ -161,8 +180,40 @@ export class Session {
     return this.preference<SpecSource>("specSource", "rfc") === "mdn" ? [{ ...mdn, title: "打开 MDN" }, { ...rfc, title: entry.spec.split(" §")[0] }] : [rfc, mdn];
   }
 
+  // ── /http：查一段敲进来的字 ──────────────────────────────────────────
+  /**
+   * `/http <码或关键词>`：那段字就是输入框里的字，查法与页面搜索框一字不差（`search()`）。
+   *
+   * 先回到干净的一屏再赋值：上一次点进详情留下的「回到…」、手动关掉的「含非标准码」都属于上一次，
+   * 带进这一次会让同一条指令在不同时候查出不同的清单。
+   * - Parameter argument: `/` 指令后面那段字（宿主已去掉首尾空白）；没跟字为 `undefined`。
+   * - Returns: 无。
+   */
+  explain(argument: string | undefined): void {
+    this.clear();
+    this.popoverMode = "query";
+    this.query = (argument ?? "").trim();
+  }
+
+  // ── 窗口域 ────────────────────────────────────────────────────────────
+  /**
+   * 「在窗口中打开」：在工作区开这个扩展的标签（已开着就切过去）。
+   *
+   * 宿主随后把前台会话 activate 在窗口那一面，`query` 不动——窗口里接着显示刚才那一屏。
+   * 宿主拒绝（例如这一版宿主还没有窗口域）时只记一条日志：页面本身照常能用，没有可以补救的下一步。
+   * - Returns: 无；从不抛。
+   */
+  async openWindow(): Promise<void> {
+    try {
+      await jarvis.window.open();
+    } catch (error) {
+      jarvis.log.warn("在窗口中打开失败", (error as Error).message ?? String(error));
+    }
+  }
+
   // ── ⌥⌘/：读一次剪贴板 ────────────────────────────────────────────────
   async readClipboard(): Promise<void> {
+    this.popoverMode = "clipboard";
     if (!this.has("clipboard.read")) {
       this.clipboard = { kind: "denied" };
       return;

@@ -4,184 +4,153 @@
 
 三个东西、两条边界：
 
-- **仓库**（本仓库）：扩展的源码与产物、`registry.json`、schema、SDK。它是扩展库的**真源**，
-  宿主只读不写。
-- **宿主**（`jarvis-mac` 的 `Sources/Jarvis/Extensions/`）：把仓库快照拉到本机、罗列、安装、
-  跑扩展的 JS、把节点树画成 SwiftUI、把每一次能力调用拦在闸门上。
-- **扩展**（一个 `JSContext`）：只认识 `jarvis` 这一个全局对象与它自己的状态。
+- **仓库**（本仓库）：扩展的源码与产物、`registry.json`、schema、SDK。它是扩展商店的**真源**，宿主只读不写。
+- **宿主**（`jarvis-mac`）：把仓库快照拉到本机、罗列、安装、跑扩展的 JS、把节点树画成 SwiftUI、
+  把每一次能力调用拦在闸门上、把扩展的入口合进工具箱 / 工作区 / `/` 指令 / 设置 / 内置能力的扩展点。
+- **扩展**（一个或两个 `JSContext`）：只认识 `jarvis` 这一个全局对象与它自己的状态。
 
-边界一在**仓库与宿主之间**：宿主认的只有 `registry.json` 与 `extension.json` 两份 schema
-化的事实，产物按 SHA-256 校验。边界二在**宿主与扩展之间**：两边只交换 JSON 字符串，
-扩展没有 DOM、没有文件系统、没有网络，每一次调用都过能力闸门。
+边界一在**仓库与宿主之间**：宿主认的只有 `registry.json` 与 `extension.json` 两份 schema 化的事实
+（v2），产物按 SHA-256 校验。边界二在**宿主与扩展之间**：两边只交换 JSON 字符串（线缆协议 2），
+扩展没有 DOM、没有文件系统、没有网络、没有进程，每一次调用都过能力闸门。
 
 ## Architecture & Logic
 
 ```mermaid
 flowchart LR
     subgraph Repo["fusionseek/jarvis-extensions"]
-        Reg["registry.json"]
+        Reg["registry.json (v2, 每条带整份 manifest)"]
         Ext["extensions/<id>/extension.json + dist/extension.js"]
     end
-    subgraph Host["jarvis-mac · Sources/Jarvis/Extensions"]
-        Snap["RegistrySnapshotSync\n(HTTPS zipball → Caches)"]
-        Gallery["ExtensionGalleryModel"]
-        Installs["ExtensionStore\n(extension_* 表)"]
-        Runtime["ExtensionRuntime\n(JSContext / 串行队列)"]
-        Gate["ExtensionCapabilityGate"]
-        Renderer["ExtensionRenderer\n(节点树 → SwiftUI)"]
-        Consent["ExtensionConsentDialog"]
+    subgraph Host["jarvis-mac"]
+        Snap["RegistrySnapshotSync"]
+        Center["ExtensionCenterModel"]
+        Store["ExtensionStore (extension_* 表)"]
+        Fore["ExtensionRuntimeCenter\n前台会话 ×1"]
+        Back["ExtensionBackgroundCenter\n后台会话 ×N"]
+        Gate["ExtensionGatePolicy + ExtensionCapabilityHost"]
+        Cmd["ExtensionCommandRegistry"]
+        Engines["JunkCleanEngineRegistry"]
     end
-    subgraph Panel["浮窗面板 400×520"]
-        Toolbox["工具箱 + 虚化的「添加扩展」"]
-        Screen["扩展页面（header 由容器画）"]
-        Inbox["Inbox 卡片"]
+    subgraph Surfaces["用户看到的地方"]
+        Toolbox["工具箱目录 + 面板页面"]
+        Window["工作区标签"]
+        Popover["原地结果弹窗"]
+        Slash["全局搜索 / 速记的 / 下拉"]
+        Settings["设置 · 扩展 / 设置 · 清理"]
+        Clean["清理（悬浮球、/clean、工具箱）"]
     end
-    Reg --> Snap --> Gallery --> Toolbox
-    Ext --> Snap --> Installs
-    Installs --> Runtime
-    Runtime <-->|JSON| Gate
-    Gate --> AppModel["AppModel / QuickTransferModel / ClipboardHistoryModel …"]
-    Runtime -->|commit| Renderer --> Screen
-    Toolbox --> Screen
-    Consent --> Installs
-    Gate --> Inbox
+    Reg --> Snap --> Center
+    Ext --> Snap
+    Center --> Store
+    Center --> Cmd --> Slash
+    Center --> Engines --> Clean
+    Center --> Toolbox
+    Toolbox --> Fore
+    Window --> Fore
+    Popover --> Fore
+    Slash --> Fore
+    Slash --> Back
+    Engines --> Back
+    Fore <-->|JSON| Gate
+    Back <-->|JSON| Gate
+    Gate --> Existing["QuickTransferService / AppModel / ScreenshotCaptureCoordinator / 受限执行 …"]
+    Settings --> Store
 ```
 
 ### 分层落位（对齐 `jarvis-mac` 的项目边界）
 
-| 层 | 新增类型 | 职责 | 边界 |
+| 层 | 类型 | 职责 | 边界 |
 | --- | --- | --- | --- |
-| `Domain` | `ExtensionManifest`、`ExtensionRegistry`、`ExtensionCapability`、`ExtensionGrantPolicy`、`ExtensionCatalogPolicy`、`ExtensionCompatibilityPolicy`、`ExtensionUINode` / `ExtensionUIDiff`、`ExtensionRateLimitPolicy` | 纯值与纯函数：manifest 解析与校验、能力风险档位、授权判定、目录合并顺序、版本兼容、节点树 diff、频率限制 | **不 import SwiftUI、不碰 JavaScriptCore** |
-| `Infrastructure` | `RegistrySnapshotSync`、`ExtensionStore`（`extension_*` 五张表）、`ExtensionBundleVerifier`、`ExtensionJSContext`、`ExtensionNetClient` | 拉快照、解包、校验哈希、建 `JSContext`、SQLite 读写、HTTPS 白名单请求 | `OpaquePointer` 与 `JSContext` 不越出本层 |
-| `App` | `ExtensionCenterModel`（已装 / 可装 / 更新）、`ExtensionSessionModel`（一个活着的扩展）、`ExtensionCapabilityGate`、`ExtensionConsentCoordinator`、`ExtensionInboxBridge` | `@MainActor` 状态；把闸门后的调用转给既有模型（`QuickTransferModel.shared`、`ClipboardHistoryModel.shared`、`AppModel.shared` …） | 只调既有模型的公开方法，不复制它们的逻辑 |
-| `UI` | `FloatingExtensionGalleryView`、`FloatingExtensionHostView`、`ExtensionRenderer` + 30 个节点视图、`ExtensionConsentDialog`、设置页 `extensionsSection`、`JarvisDesign.Extensions` tokens | 画 | 不承载协议解析；节点视图只读 `JarvisDesign` |
-
-### 数据流：从仓库到工具箱那一行
-
-```mermaid
-sequenceDiagram
-    participant U as 用户
-    participant T as 工具箱
-    participant G as 扩展库页面
-    participant S as RegistrySnapshotSync
-    participant GH as GitHub
-    participant DB as ExtensionStore
-    U->>T: 点末尾那枚虚化的加号
-    T->>G: setPanelContentMode(.extensionGallery)
-    G->>S: 需要快照（若上次同步 > 30 分钟）
-    S->>GH: GET codeload zipball（带 If-None-Match）
-    GH-->>S: 304 或 200 + zip
-    S->>S: ZipArchiveReader 解包到 Caches/…/registry/<sha7>/
-    S-->>G: registry.json（校验 schema）
-    G-->>U: 罗列：图标 / 名称 / 描述 / 版本 / 作者 / 需要几项能力
-    U->>G: 安装
-    G->>S: 取 extension.json + dist/extension.js
-    S->>S: SHA-256 与 registry.bundle.sha256 比对
-    S->>DB: 拷到 Application Support/…/extensions/<id>/<version>/，写 extension_installs
-    DB-->>T: 目录多一行（在内置工具之后、加号之前）
-```
-
-### 数据流：进入一个扩展
-
-```mermaid
-sequenceDiagram
-    participant U as 用户
-    participant T as 工具箱
-    participant M as AppModel
-    participant C as ExtensionConsentCoordinator
-    participant R as ExtensionRuntime
-    participant V as ExtensionRenderer
-    U->>T: 点扩展那一行
-    T->>M: setPanelContentMode(.extension) + activeExtensionID
-    M->>C: 第一次进入？有未决的能力？
-    alt 有未决能力
-        C-->>U: 统一授权弹窗（逐条列出）
-        U->>C: 允许并打开 / 暂不
-        C->>DB: 写 extension_grants
-    end
-    M->>R: activate(context: granted, preferences)
-    R->>R: JSContext 执行 activate() → render()
-    R-->>V: commit(节点树)
-    V-->>U: 画出来（header 由容器画：徽标 = toolbox.symbol，标题 = toolbox.name）
-    U->>V: 点一颗按钮
-    V->>R: ui 事件（handlerId, payload）
-    R->>R: 回调 → jarvis.ui.update() → render()
-    R-->>V: commit(新树) → 按 key diff
-```
+| `Domain` | `ExtensionManifest`（+ 校验）、`ExtensionRegistry`、`ExtensionCapabilityMap`、`ExtensionGatePolicy`、`ExtensionCatalogPolicy`、`ExtensionCommandCatalog`、`ExtensionProcessPolicy`、`ExtensionJunkCleanContract`、`ExtensionSurfacePolicy`、`ExtensionBridgeMessage`、`ExtensionCompatibilityPolicy`、`ExtensionStorePolicy`、`ExtensionUINode`、`MemoSlashMenu`、`JunkCleanEngineDescriptor` | 纯值与纯函数：manifest 解析与跨字段校验、能力映射与档位、闸门六步、目录合并、指令表与冲突、受限执行的放行判定、服务载荷解码、三面的优先级 | **不 import SwiftUI、不碰 JavaScriptCore**，文件系统的问题由调用方注入 |
+| `Infrastructure` | `RegistrySnapshotSync`、`ExtensionStore`、`ExtensionInstallDirectory`、`ExtensionBundleVerifier`、`ExtensionJSContext`、`ExtensionNetworkClient`、`ExtensionProcessRunner`、`ExtensionFileReader`、`ExtensionKeychainSecretStore` | 拉快照、解包、校验哈希、建 `JSContext`、SQLite 读写、HTTPS 白名单请求、起外部进程、读声明过的文件、钥匙串 | `OpaquePointer` 与 `JSContext` 不越出本层 |
+| `App` | `ExtensionCenterModel`、`ExtensionSessionModel`、`ExtensionRuntimeCenter`、`ExtensionBackgroundCenter`、`ExtensionCommandDispatcher`、`ExtensionCapabilityHost`、`ExtensionHotKeyCenter`、`ExtensionCommandRegistry`、`JunkCleanEngineRegistry`、`ExtensionPreferencesModel`、`ExtensionGrantsModel`、`ExtensionWindowPresenter` | `@MainActor` 状态；把闸门后的调用转给既有模型；按落点分派命令；按扩展点调服务 | 只调既有模型的公开方法，不复制它们的逻辑 |
+| `UI` | `FloatingExtensionStoreView`、`ExtensionStoreDetailView`、`FloatingExtensionHostView`（工具箱与窗口两面共用）、`ExtensionWorkspacePage`、`ExtensionPopoverWindow`、`ExtensionRendererView`、`ExtensionConsentView`、`ExtensionSettingsSection`、`ExtensionPreferenceControls`、`JunkCleanSettingsSection` | 画 | 不承载协议解析；节点视图只读 `JarvisDesign` |
 
 ## Concepts
 
 ### 快照：宿主怎么"访问 git 仓库"
 
-宿主**不调用 `git`**。`/usr/bin/git` 在没装 Command Line Tools 的机器上会弹一扇「需要安装
-命令行开发者工具」的系统对话框——一个常驻的菜单栏应用不能在用户点开扩展库的那一下弹出这种东西
-（`jarvis-mac` 在 `adb` 上吃过同一种亏：`docs/uiux/floating-status/floating-panel.md`「不靠 PATH 找 adb」）。
-它也不走 SSH：`git@github.com:fusionseek/jarvis-extensions.git` 是给开发者提交用的地址，
-匿名读取走 HTTPS。
-
-快照的做法：
+宿主**不调用 `git`**：`/usr/bin/git` 在没装 Command Line Tools 的机器上会弹一扇系统对话框，
+一个常驻的菜单栏应用不能在用户点开扩展商店的那一下弹出这种东西。它也不走 SSH 与 `api.github.com`（匿名限流 60 次/小时）。
 
 | 项 | 值 | 为什么 |
 | --- | --- | --- |
-| 来源 | `https://codeload.github.com/fusionseek/jarvis-extensions/zip/refs/heads/main` | 一次请求拿到整份仓库（registry + 全部产物），不受 `api.github.com` 每小时 60 次的匿名限流 |
-| 落点 | `~/Library/Caches/<ProductIdentity.supportDirectoryName>/extensions/registry/<sha7>/` | 用户要的是「临时目录」：Caches 是可重建数据的语义位置，系统可清、清了再拉；调试渠道有自己的目录（`Jarvis Dev`） |
-| 解包 | `ZipArchiveReader`（既有，`mmap` + deflate） | 零新依赖；`Compression` 框架处理 deflate |
-| 条件请求 | `If-None-Match` + 上次的 `ETag` | 没变就 304，一个字节都不下 |
-| 节奏 | 打开扩展库时距上次同步 ≥ 30 分钟才拉；页面上有「刷新」 | 页面先画缓存里的那一份，再在后台换新；不让用户对着转圈等 |
-| 单值状态 | `UserDefaults`：`extensions.registry.lastSyncAt` / `.etag` / `.sha` | 标量偏好留在 UserDefaults，与本地持久化门禁一致 |
-| 大小上限 | 归档 ≤ 64 MB，解包后 ≤ 256 MB | 超过即拒绝并提示「扩展库快照超出上限」；不是安全边界，是不让一个失控的仓库把用户的磁盘吃掉 |
+| 来源 | `https://codeload.github.com/fusionseek/jarvis-extensions/zip/refs/heads/main` | 一次请求拿到整份仓库 |
+| 落点 | `~/Library/Caches/<渠道目录>/extensions/registry/` | Caches 是可重建数据的语义位置，系统可清、清了再拉 |
+| 条件请求 | `If-None-Match` 带上次的 ETag，原样回传 | 没变就 304，一个字节都不下 |
+| 节奏 | 打开扩展商店时距上次同步 ≥ 30 分钟才拉；页面上有「刷新」 | 先画缓存那一份，再在后台换新 |
+| 只解三类 | `registry.json`、`extensions/<id>/extension.json`、`extensions/<id>/dist/<file>.js` | `docs/`、`sdk/`、`scripts/` 对宿主没有意义 |
+| 上限 | 归档 ≤ 64 MB，解出 ≤ 256 MB | 不是安全边界，是不让一个失控的仓库吃掉磁盘 |
 
-**前提：仓库必须是 public。** 私有仓库匿名拉不到 zipball，而扩展库页面没有登录这一步。
+**前提：仓库必须是 public。** 私有仓库匿名拉不到 zipball，而扩展商店没有登录这一步。
 
-快照里的 `registry.json` 先过 `registry.v1.schema.json` 校验；校验失败整份快照作废，
-页面显示上一份能用的快照并写明「最新快照无法解析」——**不猜、不部分采用**。
+### 索引 v2：每一条带整份 manifest
 
-### 安装记录与运行时文件
+`registry.json` 的每一条是 `{ manifest, path, bundle, updatedAt }`——**整份 manifest 原样带着**，不是投影。
+商店要在安装之前就把它会跑的可执行文件、会读的文件、会执行的脚本念给用户听，投影出来的摘要做不到这一点。
 
-安装 = 把快照里那个扩展目录的 `extension.json` 与 `main` 指向的 bundle 拷到
+读取分两层，后果不同：
 
-```text
-~/Library/Application Support/<supportDirectoryName>/extensions/<id>/<version>/
-```
+| 层 | 读不出来时 |
+| --- | --- |
+| 索引本身（版本、`source`、条目的 id / 版本 / 路径 / 哈希） | **整份快照作废**，商店画上一份能用的，状态条写「最新快照无法解析」——不猜、不部分采用 |
+| 某一条的 manifest（用了这一版宿主还不认识的扩展点、落点） | **只有那一张卡**标成「这一版 Jarvis 读不懂它，更新之后再装」；名字、图标、说明照常画（宿主先按一份最小的头部读它） |
 
-并在 `extension_installs` 写一行。拷之前先算 bundle 的 SHA-256 与 `registry.json` 里的
-`bundle.sha256` 比对，不等就拒绝。**bundle 是不可执行的文本文件**，它只会被 `JSContext.evaluateScript`
-读进内存，永远不会被 `open`、不会被 `chmod +x`。
+本机缓存的那一份快照读不出来时（例如索引刚换代），宿主把快照整个删掉、ETag 一起清——留着 ETag，下一次同步会 304 在
+一份读不懂的快照上，商店永远空着。
 
-更新 = 装新版本到 `<id>/<newVersion>/`，切换 `extension_installs.version`，删旧目录。
-授权与偏好按 `extension_id` 存，跨版本保留；**新版本新增的能力回到未决状态**，下次进入再问一次。
+### 安装、更新、卸载
 
-卸载 = 删目录、删 `extension_installs` 行、级联删 `extension_grants` / `extension_inbox_cards`；
-`extension_preferences` 与 `extension_documents` 由用户在卸载确认里选「同时删除数据」才删——
-用户写下的东西没有任何后台任务有权替他删。
+安装 = 把快照里那个扩展的 `extension.json` 与 `main` 指向的 bundle 拷到
+`~/Library/Application Support/<渠道目录>/extensions/<id>/<version>/`，并写一行 `extension_installs`。
+拷之前先算 bundle 的 SHA-256 与索引里的 `bundle.sha256` 比对，**不等就一个字节都不留**。安装**不弹授权**。
 
-### 运行时：一个扩展一个 `JSContext`
+更新 = 装新版本目录、切记录里的版本、删旧目录；正跑着的前台与后台会话先收摊——新旧两份代码不能在同一个上下文里各说各的。
+授权按 `(extension_id, capability)` 存，跨版本保留；新版本新增的能力回到"还没问过"。
+
+卸载 = 删目录、删安装 / 授权 / Inbox 卡的行；用户选「卸载并删除数据」时，偏好、存储与钥匙串里的机密一起删。
+
+**读不出 manifest 的安装记录一律卸掉（连数据）。** 这是一条通用不变量：一条跑不起来、也画不出来的安装记录，
+在工具箱、指令表、设置页里都只能是一行"坏了"。它顺带清掉 v1 的安装、被用户手动删了目录的安装与已退役的原生扩展记录。
+
+### 运行时：前台会话与后台会话
+
+| | 前台会话（`ExtensionRuntimeCenter`） | 后台会话（`ExtensionBackgroundCenter`） |
+|---|---|---|
+| 数量 | **全应用至多一个**（两个 JSContext 各占几 MB，用户一次只看一块界面） | 每个扩展至多一个，互不影响，也不影响前台 |
+| 界面 | 三面：工具箱页面、原地结果弹窗、窗口标签；同一时刻只 activate 一面 | **没有**。`render` 永远不被调；`panel.*`、`ui.*`、`window.open` 以 `surface.unavailable` 拒绝 |
+| 跑什么 | 页面、落点是 `toolbox` / `window` / `popover` 的命令 | 服务扩展点的调用、落点是 `silent` 的命令 |
+| 何时起 | 用户打开那一面、或一条界面命令触发 | 第一次有调用时 |
+| 何时收 | 换成别的扩展、停用、卸载、更新、退出应用 | 没有进行中的服务调用、且 60 秒内没有动静；停用 / 卸载 / 更新 / 退出立即收 |
+| 授权 | 第一次进入时弹授权屏 | **不弹窗**（没有界面承载它）：没授权的能力照常 `permission.denied` |
+
+两种会话装的是**同一份 bundle**，各自一个 `JSVirtualMachine`，互相看不见对方的内存；共享的只有宿主那边的存储与偏好。
+静默命令放后台：它不需要界面，而在前台会话里跑会把用户正看着的另一个扩展页面收掉。
+
+一面 activate 的优先级是**弹窗 > 窗口 > 工具箱页面**（`ExtensionSurfacePolicy`）。面板里挂着页面、
+而它 activate 在窗口上时，面板那一页画「正开在窗口里 · 切到窗口」，不画一棵句柄已经不属于它的树。
 
 | 项 | 值 | 为什么 |
 | --- | --- | --- |
-| 隔离 | 每个扩展一个 `JSVirtualMachine` + `JSContext`，一条串行 `DispatchQueue` | 内存互不可见；一个扩展死循环不拖住另一个 |
-| 全局环境 | ES2020 标准库 + `__jarvisHost` + `setTimeout` / `clearTimeout`。**没有** `fetch`、`XMLHttpRequest`、`require`、DOM、文件系统 | 能做的每一件事都必须经过闸门 |
-| 定时器 | 只有 `setTimeout` / `clearTimeout`（SDK 1.4 起另有 `sleep(ms)`）。单次延时 ≤ 30 s、同时挂起 ≤ 64 个，会话结束时全部取消 | 退避重试、去抖都要它；而**没有 `setInterval`**——一个忘记 clear 的 interval 会在面板关掉之后继续醒着，直到应用退出 |
-| 同步预算 | 一次事件回调（含 `render()`）超过 200 ms 记一次警告，超过 2 s 终止上下文 | 主线程上等的是用户的一次点击 |
-| 内存 | `JSVirtualMachine` 单独计量；超过 128 MB 终止 | 同上 |
-| 加载 | 进入时 `evaluateScript(bundle)`；`background: false` 的扩展离开页面即 `deactivate` 并**销毁上下文** | 不常驻的扩展不该在后台占着任何东西 |
-| 常驻 | `background: true` 且被授予 `inbox.post` 或有 `observe` 订阅的扩展，离开页面后保留上下文 | 它要在后台投卡片；没有这两样却声明 `background` 的 manifest 审核不通过 |
-| 崩溃 | 未捕获异常 / 终止 → 扩展页面进**错误屏**（一张 `danger` 语义卡 + 「重新加载」+ 「查看日志」），Inbox 与设置照常 | 一个扩展坏了不能把面板变空白 |
-| JIT | 宿主开着 hardened runtime，进程内的 JavaScriptCore 要 JIT 得加 `com.apple.security.cs.allow-jit`；期 B 的 P-0 量过再决定 | 这个工作负载只有逻辑没有热循环，解释器多半也够；不凭感觉加权限 |
-| 输入框 | `field` / `editor` / `search` 的文本由宿主持有；`onChange` 送 JS，`value` 只在与宿主不一致时覆写 | 打字不经 JS 往返；中文输入法的组合态不会被一次异步回写打断 |
+| 隔离 | 每个会话一个 `JSVirtualMachine` + `JSContext`，一条串行 `DispatchQueue` | 一个扩展死循环卡住的是它自己那条队列，不是主线程 |
+| 全局环境 | ES2020 标准库 + `__jarvisHost` + `setTimeout` / `clearTimeout`；**没有** `fetch`、`XMLHttpRequest`、`require`、DOM、文件系统、`setInterval` | 能做的每一件事都必须经过闸门 |
+| 定时器 | 单次 ≤ 30 s、同时挂起 ≤ 64 个，会话结束时全部取消 | 忘记 clear 的 interval 会在面板关掉之后继续醒着 |
+| 慢调用 | 同步调用、提交、事件派发 ≥ 200 ms 记 warn、≥ 2 s 记 error | JavaScriptCore 没有公开的执行超时 API，能做的是看见它 |
+| 输入框 | `field` / `editor` / `search` 的文本由宿主持有 | 打字不经 JS 往返，中文输入法的组合态不被异步回写打断 |
 
-线缆协议（`sdk/src/bridge.ts`）：
+### 线缆（协议 2）
+
+真源是 `jarvis-mac/contracts/schemas/extensions/bridge.v2.schema.json`，SDK 的 `src/bridge.ts` 是它的投影。
 
 | 方向 | 消息 | 说明 |
 | --- | --- | --- |
-| SDK → 宿主 | `invoke(json)` | 异步能力调用；宿主回 `settle` |
-| SDK → 宿主 | `invokeSync(json) → json` | 纯函数工具（`text.*` / `time.*` / `color.*`）与 `host.info` / `host.environment`；不经事件循环 |
-| SDK → 宿主 | `commit(json)` | 一棵序列化的节点树，带 `generation` |
-| SDK → 宿主 | `log(level, message, data)` | 进设置页的扩展日志（只留最近 200 条） |
-| 宿主 → SDK | `dispatch(json)` | `activate` / `deactivate` / `settle` / `ui` / `subscription` / `preferencesChanged` / `permissionsChanged` / `inboxAction` / `notificationActivated` |
+| SDK → 宿主 | `invoke(json)` | 异步能力调用；宿主回 `settle`。服务的回话也走这里：`service.resolve` / `service.progress` |
+| SDK → 宿主 | `invokeSync(json) → json` | 纯函数工具（`text.*`：Base64、摘要、语言检测）与 `host.*`；不经事件循环 |
+| SDK → 宿主 | `commit(json)` | 一棵序列化的节点树，带 `generation` 与 `surface`（`toolbox` / `popover` / `window`）；后台会话的提交一律丢弃 |
+| SDK → 宿主 | `log(level, message, data)` | 进设置页那块扩展面板的日志（内存里，最近 200 条） |
+| 宿主 → SDK | `dispatch(json)` | `activate` / `deactivate` / `settle` / `ui` / `command` / `service` / `serviceCancel` / `preferencesChanged` / `permissionsChanged` / `subscription` |
 
-线缆协议有自己的版本号（`bridgeProtocolVersion`），与 SDK 主版本同步；不一致时宿主拒绝加载，
-扩展页面写明「这个扩展需要 SDK 2，当前 Jarvis 只支持 SDK 1」，扩展库卡片上同理。
+`protocol` 不是 2 的消息宿主一律拒绝，扩展页面写明原因。v1 的 `inboxAction` / `notificationActivated` 已删除。
 
 ### 静态面与动态面
 
@@ -189,105 +158,105 @@ manifest 声明的东西分两类，判据是**扩展的 JS 需不需要在跑**
 
 | 面 | 内容 | 谁持有 |
 | --- | --- | --- |
-| 静态面 | 工具箱那一行、全局快捷键、设置页的面板与偏好、Inbox 里落着的卡 | **宿主**按 manifest 与库里的记录画与注册，扩展的 JS 可以完全没加载 |
-| 动态面 | 页面（`render()` 出来的树）、命令的执行、订阅回调 | 扩展的 `JSContext` |
+| 静态面 | 工具箱那一行、窗口入口、`/` 指令表、全局快捷键、设置页面板与偏好控件、服务引擎在「清理」里的那一行 | **宿主**按 manifest 与库里的记录画与注册，扩展的 JS 可以完全没加载 |
+| 动态面 | 页面（`render()` 出来的树）、命令的执行、服务调用、订阅回调 | 扩展的 `JSContext` |
 
-因此快捷键在应用启动时就能用：宿主按 `extension_installs` 里启用的扩展注册全部 `commands[].hotkey`，
-按下时才建上下文、跑那一条命令、`background: false` 的跑完即销毁。一个从没打开过页面的扩展，
-它的快捷键照样响——这与 Inbox 动作的按需唤醒是同一条路。
+因此 `/http` 在应用启动后就出现在 `/` 下拉里、`⌥⌘H` 就能按，服务引擎就出现在设置 · 清理 里——
+都不需要扩展的 JS 在跑；真被用到的那一刻才起会话。
 
 ### 命令的生命周期
 
 ```mermaid
 sequenceDiagram
     participant U as 用户
-    participant H as 宿主
-    participant R as JSContext
-    U->>H: 按 ⌥⌘T（或页面按钮 / 快捷环 / Inbox 卡）
-    H->>H: 查 manifest：命令 id、presentation；热键算一次用户动作
-    H->>R: 没在跑就加载 bundle
-    H->>R: dispatch command { id, trigger, granted, preferences }
-    R->>H: 命令里调能力（截图 / OCR / 网络 …），每一次过闸门
-    alt presentation = panel
-        H->>H: 命令返回（或扩展调 panel.present()）后展开面板到该扩展
-        H->>R: dispatch activate（页面没开着时）→ render → commit
-    else presentation = silent
-        H->>H: 不碰面板；命令用剪贴板 / 横幅交结果
-        H->>R: background=false 则销毁上下文
-    else presentation = popover
-        H->>H: 命令里第一次 screenshot.capture 返回时，在选区旁开原地结果弹窗（面板不动）
-        H->>R: dispatch activate { surface: "popover" } → popover.render()（没给就 page.render()）→ commit
-        H->>H: Esc / 点外面 / 指针离开 15 秒后关；钉住常驻；「在面板里打开」= deactivate 弹窗 + activate 页面
+    participant D as ExtensionCommandDispatcher
+    participant F as 前台会话
+    participant B as 后台会话
+    U->>D: ⌥⌘T / 回车 /http 404 / 页面按钮
+    D->>D: 读 manifest：那条命令的 presentation
+    alt silent
+        D->>B: 没在跑就起；dispatch command
+        B->>B: 命令里调能力（每一次过闸门），用剪贴板 / 横幅 / Inbox 交结果
+    else toolbox / window
+        D->>F: 先把面板（或工作区标签）叫出来，再起会话
+        F->>F: 还没问过授权 → 那一面画授权屏，不跑命令
+        F->>F: dispatch command → 扩展改状态 → render → commit
+    else popover
+        D->>F: 起会话；不截图的扩展：弹窗先开在指针旁
+        F->>F: 截图的扩展：第一次 screenshot.capture 返回时弹窗开在选区旁
     end
 ```
 
-页面里的按钮触发命令走 `jarvis.commands.run(id)`，与快捷键同一条路（`trigger = "page"`），
-因此一条命令只有一份实现，不会出现"按钮能用、快捷键坏了"。
+页面里的按钮触发命令走 `jarvis.commands.run(id, argument?)`，与快捷键同一条路（`trigger = "page"`），
+落点不在当前这种会话时宿主替它转到对的那一种。一条命令只有一份实现。
+
+### 服务调用的生命周期
+
+```mermaid
+sequenceDiagram
+    participant H as 宿主（JunkCleanEngineRegistry）
+    participant B as 后台会话
+    participant P as 受限执行
+    H->>B: service {callId, point, service, method: status, params: {preferences, granted}}
+    B-->>H: service.resolve {callId, result}
+    H->>B: service {method: run}
+    B->>P: process.run / files.tail（每一次过闸门）
+    B-->>H: service.progress {callId, progress} × N
+    B-->>H: service.resolve {callId, result: report}
+    Note over H,B: 会话被收掉时进行中的调用以 cancelled 结束；宿主可发 serviceCancel {callId}
+```
 
 ### 能力闸门
 
-每一次 `invoke` 先走 `ExtensionCapabilityGate`：
+每一次 `invoke` 先过 `ExtensionSessionModel.authorize`：
 
+0. **后台会话里的界面类调用**（`panel.*`、`window.open`、`ui.dismissPopover`）直接 `surface.unavailable`——在六步之前；
 1. `namespace.method` 映射到一个 `CapabilityID`（或隐式）；映射不到 → `capability.unknown`；
-2. manifest 没声明 → `capability.undeclared`（**先查声明再查授权**：一个没声明的能力即使被授予也不放行，
-   否则审核时看到的清单就不是它真能用的清单）；
-3. `extension_grants` 里没有 `granted = 1` → `permission.denied`；
+2. manifest 没声明 → `capability.undeclared`（**先查声明再查授权**：没声明的能力即使被授予也不放行）；
+3. 用户没点头 → `permission.denied`；
 4. 依赖的系统权限不在 → `permission.unavailable`；
-5. 频率与体积（`ExtensionRateLimitPolicy`）→ `rate.limited`；
-6. 放行，转给对应的既有模型。
+5. 频率超限 → `rate.limited`；
+6. 放行，交给 `ExtensionCapabilityHost` 去做——受限执行还要再过一道「对象是不是声明过的那一个」（`ExtensionProcessPolicy`）。
 
 **闸门只认 `(extension_id, capability)`**，不认调用栈——扩展里不存在能绕过 `__jarvisHost.invoke` 的路径。
 
-需要用户动作的能力（`panel.collapse`、`permissions.request`、`screenshot.capture`、`files.pick`）
-还要求调用发生在一次 `ui` 事件回调之后 1 秒内，否则 `invalid.argument`：一个在后台自己弹选择器、
-自己收面板的扩展，用户看到的是"Jarvis 自己动了"。
+### 存储
 
-### 渲染器
+全部进 `jarvis.sqlite3`（v8 建的五张 `extension_*` 表，v2 **不加迁移**）：
 
-`commit` 的树先过 `ExtensionUINode` 解析（每种 `kind` 一个 `Codable` 结构，未知 kind 整棵拒绝，
-未知 prop 忽略并记警告），再与上一棵树按 `key` diff 成 `ExtensionUIDiff`，最后由 SwiftUI 视图树消费。
-节点数上限 500，文本单条 ≤ 20 000 字符，`list` 走 `LazyVStack`。每个节点视图**只读 `JarvisDesign`**，
-逐项对应表在 [07 · UI 组件目录](07-ui-components.md)。
-
-### 存储：五张表
-
-全部进 `jarvis.sqlite3`，同一个迁移版本（v8）加出来，每张表都写保留策略：
-
-| 表 | 一行是什么 | 保留策略 |
+| 表 | v2 里放什么 | 保留策略 |
 | --- | --- | --- |
-| `extension_installs` | 一个已安装的扩展：`extension_id`（UNIQUE）、`version`、`bundle_sha256`、`source`（`registry` / `local`）、`local_path`、`enabled`、`installed_at`、`updated_at`、`created_at` | 永不自动删除；用户卸载时删 |
-| `extension_grants` | 一项授权决定：`extension_id`、`capability`、`granted`、`decided_at`、`created_at`；UNIQUE(`extension_id`, `capability`) | 永不自动删除；随卸载级联 |
-| `extension_preferences` | 一条偏好值：`extension_id`、`key`、`value`（JSON 文本）、`updated_at`、`created_at`；UNIQUE(`extension_id`, `key`) | 永不自动删除；卸载时由用户选是否删 |
-| `extension_documents` | 扩展自己存的一条：`extension_id`、`key`、`value`（JSON 文本）、`byte_count`、`updated_at`、`created_at`；UNIQUE(`extension_id`, `key`) | **上限：每扩展 2 MB / 2000 条，超出拒绝写入**（不淘汰——扩展的数据不该被悄悄删）；卸载同上 |
-| `extension_inbox_cards` | 一张活动卡：`extension_id`、`card_id`、`title`、`body`、`tint`、`symbol`、`actions`（JSON）、`posted_at`、`created_at`；UNIQUE(`extension_id`, `card_id`) | **上限：每扩展 1 张活动卡**，新的替换旧的；用户处理或扩展 `dismiss` 即删除；随卸载级联 |
+| `extension_installs` | 一个已安装的扩展：id、版本、产物哈希、来源、启用、安装时刻 | 永不自动删除；卸载时删；读不出 manifest 的整批卸掉 |
+| `extension_grants` | 一项授权决定（允许与拒绝都记） | 永不自动删除；随卸载级联 |
+| `extension_preferences` | 偏好值（`extension_id = <id>`，设置域与服务的偏好共用一个命名空间）与扩展自己的存储（`extension_id = <id>#storage`） | 永不自动删除；卸载时由用户选是否删 |
+| `extension_documents` | v2 不写（保留） | — |
+| `extension_inbox_cards` | v2 不写：`inbox.post` 投的是一条 Inbox 消息，不是带动作的卡片 | — |
 
-标量状态（上次同步时间、ETag、开发者模式开关、本地目录路径）留在 `UserDefaults`。
-扩展**没有**别的落盘途径：没有文件、没有 plist、没有 Keychain（v1 不支持机密存储，manifest 里
-也没有 `secret` 类型的偏好——一个明文存在库里的 API key 比不支持更糟）。
+机密（`secret` 偏好）**不进库**，进钥匙串（服务 `ai.fusionseek.jarvis.extension-secret`、账户 `<id>.<key>`）。
+清理选中的引擎是一个单值标量（`UserDefaults` `junkClean.engine`）。
 
 ### 版本与兼容
 
 | 维度 | 谁说了算 | 不兼容时 |
 | --- | --- | --- |
-| SDK 主版本 | manifest `sdk: "^1.0.0"` vs 宿主 `ExtensionRuntime.sdkMajor` | 扩展库卡片灰化并写「需要 SDK 2」；已装的拒绝加载进错误屏 |
-| 宿主最低版本 | manifest `minimumJarvisVersion` vs `CFBundleShortVersionString`（`AppVersion` 比较） | 卡片灰化并写「需要 Jarvis ≥ 2.1.0」，安装按钮不可点但不隐藏 |
-| 扩展版本 | registry 的 `version` vs `extension_installs.version` | 卡片显示「更新到 x.y.z」 |
-| 线缆协议 | `bridgeProtocolVersion` | 同 SDK 主版本 |
-
-宿主升级**不会**悄悄让已装扩展失效：加载失败一律进错误屏并写明原因，扩展库卡片同步标注。
+| SDK 主版本 | manifest `sdk: "^2.0.0"` vs 宿主 `ExtensionRuntime.sdkMajor`（2） | 卡片灰化并写「需要 SDK N」；已装的进不兼容屏 |
+| 宿主最低版本 | manifest `minimumJarvisVersion` vs `CFBundleShortVersionString` | 卡片灰化并写「需要 Jarvis ≥ x」，chip 失效但不隐藏 |
+| manifest 读不懂 | 这一版宿主的 `ExtensionManifest` 解码 | 卡片写「这一版 Jarvis 读不懂它，更新之后再装」 |
+| 扩展版本 | 索引 `version` vs 安装记录 | 卡片显示「更新到 x.y.z」 |
+| 线缆协议 | `bridgeProtocolVersion`（2） | 同 SDK 主版本 |
 
 ### 安全边界一览
 
 | 威胁 | 挡在哪 |
 | --- | --- |
-| 仓库里混进恶意扩展 | PR 审核（[13 · 审核清单](13-review-checklist.md)）+ CI 校验 + 用户逐条授权 + 卡片上写明作者与源码地址 |
-| 中间人替换产物 | HTTPS + registry 里的 SHA-256 + 安装时比对 |
-| 扩展读别的扩展的数据 | 表按 `extension_id` 隔离，闸门只认自己的 id |
-| 扩展偷读剪贴板 / 偷开快传 | 没点头拿不到；快传的配对码只给 `quickTransfer.control` |
-| 扩展外传数据 | `net.fetch` 只放行白名单主机、只走 HTTPS、响应 ≤ 5 MB、30 s 超时；白名单在授权弹窗里逐条列出 |
-| 扩展卡死主线程 | 串行队列 + 同步预算 + 内存上限 + 终止后进错误屏 |
-| 扩展冒充 Jarvis 弹窗 | 扩展没有窗口：授权弹窗、文件选择器、系统横幅全部由宿主发起，且横幅带扩展名作来源标签 |
-| 扩展在用户背后动面板 | `panel.collapse` / `permissions.request` / `files.pick` 只在用户动作 1 秒内放行 |
+| 仓库里混进恶意扩展 | PR 审核（[13](13-review-checklist.md)）+ CI 校验 + 用户逐条授权 + 商店详情把受限执行的对象逐字念出来 |
+| 中间人替换产物 | HTTPS + 索引里的 SHA-256 + 安装时比对 |
+| 扩展读别的扩展的数据 | 表与钥匙串按 `extension_id` 隔离，闸门只认自己的 id |
+| 扩展跑任意命令 | `process.run` 只放行声明的可执行文件名与逐项相等的参数组合，不经 shell；`terminal.run` 只按 id 执行 manifest 里逐字写着的脚本 |
+| 扩展读任意文件 | `files.read` 只放行声明的路径（展开 `~`、规整之后逐字相等，`..` 绕不过去），不读目录 |
+| 扩展外传数据 | `net.fetch` 只放行白名单主机（完全相等）、只走 HTTPS、响应 ≤ 5 MB、30 s 超时 |
+| 扩展在测试进程里真的删东西 | 测试进程里 `process.run` 一律拒绝（与清理的另两道闸同一位） |
+| 扩展冒充 Jarvis | 扩展没有窗口：授权屏、横幅、Inbox 消息由宿主发起；Inbox 标题前缀扩展名 |
 
 ## Lifecycle / Disposal
 
@@ -295,33 +264,29 @@ sequenceDiagram
 stateDiagram-v2
     [*] --> Listed: 出现在快照里
     Listed --> Installed: 安装（校验哈希，写 extension_installs）
-    Installed --> Consented: 第一次进入，授权弹窗
-    Consented --> Active: activate → render
-    Active --> Idle: 离开页面（background=false 销毁上下文；true 保留）
-    Idle --> Active: 再次进入 / Inbox 动作唤醒
-    Active --> Errored: 未捕获异常 / 超预算
-    Errored --> Active: 重新加载
-    Installed --> Disabled: 设置页关掉开关（上下文销毁、目录行消失、卡片撤走）
+    Installed --> Consented: 第一次进入（或第一次启用它的服务）时授权
+    Consented --> Active: 某一面 activate / 服务被调用
+    Active --> Idle: 那一面离开（前台不销毁，换别的扩展才销毁）/ 后台空闲 60 秒收掉
+    Idle --> Active: 再次进入 / 命令 / 服务调用
+    Installed --> Disabled: 设置页关掉开关（前后台会话收摊、所有入口撤下）
     Disabled --> Installed: 再打开
-    Installed --> [*]: 卸载（级联删除，数据按用户选择）
+    Installed --> [*]: 卸载（数据按用户选择）或读不出 manifest（连数据一起删）
 ```
 
-应用退出：所有上下文销毁、活动的 `hold` 释放、订阅撤销。快照目录留着，下次启动直接可用。
+应用退出：前台会话、全部后台会话销毁，进行中的外部进程随之中断；快照目录留着，下次启动直接可用。
 
 ## Gotchas
 
-- 扩展库页面与扩展页面都是 `FloatingPanelContentMode` 的 case，属于工具箱那条主线；
-  `jarvis-web` 的派生脚本会把它们数成工具——宿主侧实施时必须一并更新
-  `sync-from-mac.mjs`（见 [14](14-host-integration-plan.md)）。
-- `background: true` 不是"启动时加载"：常驻只在用户至少进入过一次并授权之后才成立。
-- 快照目录里的 bundle 与已安装的 bundle 是两份：前者会随刷新整份换掉，后者只在用户点更新时换。
-- 扩展不能感知面板是收起还是展开；它只知道自己 `activate` 了没有。要"面板收起了还在跑"的，
-  走 `panel.hold` 与 `background`，不要猜。
+- 扩展商店与扩展页面是 `FloatingPanelContentMode` 的 case，属于工具箱主线；窗口标签是工作区的 `.extension` 标签，
+  不是面板内容模式。
+- 前台会话"同一时刻只有一个"：面板里开着 A、按了 B 的快捷键，A 的页面画「已让给 B · 重新打开」，不自动抢回。
+- 快照目录里的 bundle 与已安装的 bundle 是两份：前者随刷新整份换掉，后者只在用户点更新时换。
+- 扩展不能感知面板是收起还是展开；它只知道自己 activate 了没有。
 
 ## Related Links
 
 - [03 · manifest 规范](03-manifest.md)
 - [05 · 能力授权模型](05-permissions.md)
 - [06 · 能力接口目录](06-capabilities.md)
-- [07 · UI 组件目录](07-ui-components.md)
-- [14 · jarvis-mac 侧实施方案](14-host-integration-plan.md)
+- [14 · jarvis-mac 侧实施记录](14-host-integration-plan.md)
+- `jarvis-mac/contracts/schemas/extensions/bridge.v2.schema.json`

@@ -1,177 +1,606 @@
 {
-  "registryVersion": 1,
-  "generatedAt": "2026-10-06T06:51:01.579Z",
+  "registryVersion": 2,
+  "generatedAt": "2026-10-11T12:51:34.304Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "094ba348c4bf676a91ab3c3e41ca535a8c802254"
+    "commit": "2fad3535cd81b008862e29c623061711ebd2d2f5"
   },
   "extensions": [
     {
-      "id": "http-status",
-      "version": "0.1.1",
-      "toolbox": {
-        "symbol": "number.circle",
+      "manifest": {
+        "manifestVersion": 2,
+        "id": "http-status",
+        "version": "1.0.0",
         "name": "HTTP 状态码",
-        "subtitle": "查一个码：含义、成因、怎么处理",
-        "keywords": [
-          "status",
-          "code",
-          "rfc",
-          "nginx",
-          "cloudflare",
-          "接口调试"
-        ]
+        "symbol": "number.circle",
+        "description": "输入状态码或关键词，给出这个码的读法、语义、常见成因、怎么处理、相关的码与 RFC 出处。/http 404 或 ⌥⌘/（从剪贴板里抓码）的结果贴着指针原地弹出；也能在工作区窗口里开一枚标签。62 个标准码与 12 个常见非标准码都编在扩展里，不联网。",
+        "author": {
+          "name": "fusionseek",
+          "github": "fusionseek"
+        },
+        "main": "dist/extension.js",
+        "sdk": "^2.0.0",
+        "minimumJarvisVersion": "3.0.3",
+        "capabilities": [
+          {
+            "id": "clipboard.read",
+            "reason": "⌥⌘/ 按下时读一次剪贴板，从里面找状态码"
+          },
+          {
+            "id": "system.openURL",
+            "reason": "点「打开原文」时用默认浏览器打开 RFC / MDN"
+          },
+          {
+            "id": "hotkeys.register",
+            "reason": "两条命令的全局快捷键"
+          }
+        ],
+        "contributes": {
+          "toolbox": {
+            "subtitle": "查一个码：含义、成因、怎么处理",
+            "keywords": [
+              "status",
+              "code",
+              "rfc",
+              "nginx",
+              "cloudflare",
+              "接口调试"
+            ]
+          },
+          "window": {
+            "subtitle": "在窗口里查状态码：含义、成因、怎么处理、出处",
+            "keywords": [
+              "status",
+              "code",
+              "rfc",
+              "nginx",
+              "cloudflare",
+              "接口调试"
+            ]
+          },
+          "commands": [
+            {
+              "id": "lookup",
+              "title": "查状态码",
+              "description": "打开面板，落在这个扩展的页面上",
+              "hotkey": "⌥⌘H",
+              "presentation": "toolbox"
+            },
+            {
+              "id": "explain-clipboard",
+              "title": "解释剪贴板里的码",
+              "description": "读一次剪贴板，抓出状态码，结果贴着指针弹出",
+              "hotkey": "⌥⌘/",
+              "presentation": "popover"
+            },
+            {
+              "id": "explain",
+              "title": "解释状态码",
+              "description": "查 / 后面那个码或关键词，结果贴着指针弹出",
+              "slash": {
+                "keyword": "http",
+                "aliases": [
+                  "状态码"
+                ],
+                "argument": "状态码或关键词"
+              },
+              "presentation": "popover"
+            }
+          ],
+          "settings": {
+            "preferences": [
+              {
+                "key": "copyFormat",
+                "type": "select",
+                "title": "复制格式",
+                "description": "复制钮与弹窗里那颗 chip 写进剪贴板的形状",
+                "default": "name",
+                "options": [
+                  {
+                    "value": "code",
+                    "title": "404"
+                  },
+                  {
+                    "value": "name",
+                    "title": "404 Not Found"
+                  },
+                  {
+                    "value": "line",
+                    "title": "整行含协议"
+                  }
+                ]
+              },
+              {
+                "key": "specSource",
+                "type": "select",
+                "title": "出处打开哪一边",
+                "description": "点「打开原文」时去 rfc-editor.org，还是 MDN 的中文页",
+                "default": "rfc",
+                "options": [
+                  {
+                    "value": "rfc",
+                    "title": "RFC 原文"
+                  },
+                  {
+                    "value": "mdn",
+                    "title": "MDN 中文"
+                  }
+                ]
+              },
+              {
+                "key": "includeUnofficial",
+                "type": "toggle",
+                "title": "搜索包含非标准码",
+                "description": "nginx、IIS、Cloudflare 自己造的码；命中时界面上会标出来",
+                "default": true
+              }
+            ]
+          }
+        },
+        "inbox": false
       },
-      "description": "输入状态码或关键词，给出这个码的读法、语义、常见成因、怎么处理、相关的码与 RFC 出处。⌥⌘/ 还能从剪贴板里抓出状态码，结果贴着指针原地弹出。62 个标准码与 12 个常见非标准码都编在扩展里，不联网。",
-      "author": {
-        "name": "fusionseek",
-        "github": "fusionseek"
-      },
-      "sdk": "^1.5.0",
-      "minimumJarvisVersion": "2.0.0",
-      "capabilities": [
-        "clipboard.read",
-        "system.openURL",
-        "hotkeys.register"
-      ],
-      "settings": true,
-      "inbox": false,
-      "background": false,
       "path": "extensions/http-status",
       "bundle": {
         "path": "extensions/http-status/dist/extension.js",
-        "sha256": "a7e907bd7b1aa3cccad9586049a5eafb5b6056d5a23c3e1c0cd6a809c3baab12",
-        "byteCount": 108365
+        "sha256": "949bece6423e6c7ad4962005c38691fe280dec59f84ef44c15aa24ed77b06a3f",
+        "byteCount": 116182
       },
-      "updatedAt": "2026-09-13T23:47:08+08:00",
-      "commands": [
-        {
-          "id": "lookup",
-          "title": "查状态码",
-          "hotkey": "⌥⌘H",
-          "presentation": "panel"
-        },
-        {
-          "id": "explain-clipboard",
-          "title": "解释剪贴板里的码",
-          "hotkey": "⌥⌘/",
-          "presentation": "popover"
-        }
-      ]
+      "updatedAt": "2026-10-06T14:51:08+08:00"
     },
     {
-      "id": "send-to-phone",
-      "version": "1.0.0",
-      "toolbox": {
-        "symbol": "iphone.and.arrow.forward",
+      "manifest": {
+        "manifestVersion": 2,
+        "id": "mole-clean",
+        "version": "1.0.0",
+        "name": "Mole 深度清理",
+        "symbol": "bubbles.and.sparkles",
+        "description": "给 Jarvis 清理换一台更深的引擎：开着时，晃球、/clean 与工具箱清理改走你装好的 Mole（mo clean），覆盖浏览器、开发工具、云盘、已卸载应用残留等更多类别，并读 Mole 的操作日志逐项显示正在删什么。没装 mo 时可以一键在终端里安装。",
+        "author": {
+          "name": "fusionseek",
+          "github": "fusionseek"
+        },
+        "main": "dist/extension.js",
+        "sdk": "^2.0.0",
+        "minimumJarvisVersion": "3.0.3",
+        "capabilities": [
+          {
+            "id": "process.run",
+            "reason": "调用你装好的 mo clean 与 mo --version，它继承 Jarvis 的完全磁盘访问"
+          },
+          {
+            "id": "files.read",
+            "reason": "读 Mole 的操作日志，逐项显示正在删什么"
+          },
+          {
+            "id": "terminal.run",
+            "reason": "没装 mo 时在终端里替你安装"
+          }
+        ],
+        "process": {
+          "executables": [
+            {
+              "name": "mo",
+              "arguments": [
+                [
+                  "clean"
+                ],
+                [
+                  "--version"
+                ]
+              ]
+            }
+          ],
+          "terminal": [
+            {
+              "id": "install",
+              "title": "安装 Mole",
+              "script": [
+                "# Generated by Jarvis to install Mole (https://github.com/tw93/mole). Safe to delete.",
+                "export PATH=\"/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH\"",
+                "printf '\\n=== Jarvis · 安装 Mole（深度清理用的 mo 命令）===\\n\\n'",
+                "if command -v brew >/dev/null 2>&1; then",
+                "    printf '用 Homebrew 安装：\\n  $ %s\\n\\n' 'brew install mole'",
+                "    brew install mole",
+                "    status=$?",
+                "else",
+                "    printf 'PATH 里没有 brew，改用 Mole 官方安装脚本，装到 %s（不需要管理员密码）：\\n  $ %s\\n\\n' '~/.local/bin' 'curl -fsSL https://raw.githubusercontent.com/tw93/mole/main/install.sh | bash -s -- --prefix ~/.local/bin'",
+                "    mkdir -p \"$HOME/.local/bin\"",
+                "    dir=$(mktemp -d)",
+                "    if curl -fsSL --connect-timeout 15 --max-time 120 'https://raw.githubusercontent.com/tw93/mole/main/install.sh' -o \"$dir/install.sh\"; then",
+                "        bash \"$dir/install.sh\" --prefix \"$HOME/.local/bin\"",
+                "        status=$?",
+                "    else",
+                "        status=$?",
+                "        printf '\\n没能下载官方安装脚本（curl 退出码 %s）。检查网络后再点一次「在终端中安装」。\\n' \"$status\"",
+                "    fi",
+                "    rm -rf \"$dir\"",
+                "fi",
+                "printf '\\n'",
+                "if [ \"$status\" -eq 0 ]; then",
+                "    printf '已装好。Jarvis 会自动发现它；没有的话重新打开设置页「清理」看一眼。\\n'",
+                "else",
+                "    printf '安装没有完成（退出码 %s）。上面是原始输出。\\n' \"$status\"",
+                "fi",
+                "printf '\\n按回车关闭。'",
+                "read -r _",
+                "exit \"$status\""
+              ]
+            }
+          ]
+        },
+        "files": {
+          "read": [
+            "~/Library/Logs/mole/operations.log"
+          ]
+        },
+        "contributes": {
+          "services": [
+            {
+              "point": "junkClean.engine",
+              "id": "mole",
+              "title": "深度清理（Mole）",
+              "subtitle": "改走你装好的 mo clean：覆盖浏览器、开发工具、云盘与已卸载应用残留等更多类别",
+              "notes": [
+                "系统级那一段需要管理员权限：Mole 不会要密码，没有现成的 sudo 会话时直接跳过",
+                "白名单 ~/.config/mole/whitelist 与 Jarvis 清理共用，写进去的路径两边都不删",
+                "永久删除，不经过废纸篓；Mole 还会清空废纸篓",
+                "读 Mole 的操作日志，逐项显示正在删什么；读不到时只看 mo 的输出",
+                "mo 在 Jarvis 里运行，继承 Jarvis 的完全磁盘访问权限"
+              ],
+              "preferences": [
+                {
+                  "key": "command",
+                  "type": "text",
+                  "title": "mo 命令",
+                  "description": "填 mo 自动在 Homebrew、~/.local/bin 与 Nix 的位置里找；也可以填可执行文件的完整路径",
+                  "default": "mo",
+                  "placeholder": "mo",
+                  "monospaced": true
+                }
+              ]
+            }
+          ]
+        },
+        "inbox": false
+      },
+      "path": "extensions/mole-clean",
+      "bundle": {
+        "path": "extensions/mole-clean/dist/extension.js",
+        "sha256": "2022044a3d43d1552a78174df9209f34f0267d5318a593692f49dbb5bd5190ba",
+        "byteCount": 50231
+      },
+      "updatedAt": "2026-10-11T12:51:34.010Z"
+    },
+    {
+      "manifest": {
+        "manifestVersion": 2,
+        "id": "send-to-phone",
+        "version": "2.0.0",
         "name": "发到手机",
-        "subtitle": "把剪贴板里的东西推到手机",
-        "keywords": [
-          "phone",
-          "push",
-          "快传"
-        ]
+        "symbol": "iphone.and.arrow.forward",
+        "description": "读一次剪贴板，经 Jarvis 快传把文字或链接推到已配对的手机上；快传没开时给一颗按钮替你打开，发完在 Inbox 留一条消息。/phone 后面跟一段字，不开面板直接发。",
+        "author": {
+          "name": "fusionseek",
+          "github": "fusionseek"
+        },
+        "main": "dist/extension.js",
+        "sdk": "^2.0.0",
+        "minimumJarvisVersion": "3.0.3",
+        "capabilities": [
+          {
+            "id": "clipboard.read",
+            "reason": "读取要发送的文字或链接"
+          },
+          {
+            "id": "quickTransfer.status",
+            "reason": "知道快传开没开、有没有手机连着"
+          },
+          {
+            "id": "quickTransfer.control",
+            "reason": "快传没开时，你按了按钮才替你打开"
+          },
+          {
+            "id": "quickTransfer.send",
+            "reason": "把内容推到手机"
+          },
+          {
+            "id": "inbox.post",
+            "reason": "发完（或没发出去）在 Inbox 留一条消息"
+          }
+        ],
+        "contributes": {
+          "toolbox": {
+            "subtitle": "把剪贴板里的东西推到手机",
+            "keywords": [
+              "phone",
+              "push",
+              "快传"
+            ]
+          },
+          "commands": [
+            {
+              "id": "send-text",
+              "title": "发到手机",
+              "description": "把 / 后面那段字推到手机，不开面板；没跟字就发剪贴板",
+              "slash": {
+                "keyword": "phone",
+                "aliases": [
+                  "发到手机"
+                ],
+                "argument": "要发送的文字"
+              },
+              "presentation": "silent"
+            }
+          ],
+          "settings": {
+            "preferences": [
+              {
+                "key": "trimWhitespace",
+                "type": "toggle",
+                "title": "去掉首尾空白",
+                "default": true
+              },
+              {
+                "key": "confirmBeforeSend",
+                "type": "toggle",
+                "title": "发送前确认",
+                "description": "点「发到手机」后先看一眼再发",
+                "default": false
+              }
+            ]
+          }
+        },
+        "inbox": {
+          "messages": true,
+          "notifications": false
+        }
       },
-      "description": "读一次剪贴板，经 Jarvis 快传把文字或链接推到已配对的手机上；快传没开时给一颗按钮替你打开，发完在 Inbox 留一张卡。",
-      "author": {
-        "name": "fusionseek",
-        "github": "fusionseek"
-      },
-      "sdk": "^1.0.0",
-      "minimumJarvisVersion": "2.0.0",
-      "capabilities": [
-        "clipboard.read",
-        "quickTransfer.status",
-        "quickTransfer.control",
-        "quickTransfer.send",
-        "inbox.post"
-      ],
-      "settings": true,
-      "inbox": {
-        "cards": true,
-        "notifications": false
-      },
-      "background": false,
       "path": "extensions/send-to-phone",
       "bundle": {
         "path": "extensions/send-to-phone/dist/extension.js",
-        "sha256": "a6adcd331310b05ac8fad1f96ddcf93452688c631868f9191059a992c121b9d2",
-        "byteCount": 27863
+        "sha256": "a52c8eaa66a9f0e4237f8b396581d8d6fa9dd4c1a47eef4c6e1ec4408170d7eb",
+        "byteCount": 35219
       },
-      "updatedAt": "2026-09-13T16:43:49+08:00"
+      "updatedAt": "2026-10-06T14:51:08+08:00"
     },
     {
-      "id": "translation",
-      "version": "0.2.0",
-      "toolbox": {
-        "symbol": "translate",
+      "manifest": {
+        "manifestVersion": 2,
+        "id": "translation",
+        "version": "1.0.0",
         "name": "截屏翻译",
-        "subtitle": "框一块屏幕，识字、翻译、查词",
-        "keywords": [
-          "ocr",
-          "translate",
-          "google",
-          "文字识别",
-          "词典",
-          "dictionary"
-        ]
+        "symbol": "translate",
+        "description": "按一下快捷键框选屏幕上任意一块，Vision 识别文字、合并段落、检测语言，再经 Google 翻译；译文就贴着选区原地弹出。框到的是一个词时，译文下面还有读音与按词性分行的全部词义。也能翻译剪贴板里的文字或图片，或 /translate 后面跟的一段字。免费端点无需 key，填了 API key 走官方接口。",
+        "author": {
+          "name": "fusionseek",
+          "github": "fusionseek"
+        },
+        "main": "dist/extension.js",
+        "sdk": "^2.0.0",
+        "minimumJarvisVersion": "3.0.3",
+        "capabilities": [
+          {
+            "id": "screenshot.capture",
+            "reason": "框选屏幕上要翻译的那一块"
+          },
+          {
+            "id": "ocr.recognize",
+            "reason": "识别剪贴板里图片上的文字"
+          },
+          {
+            "id": "clipboard.read",
+            "reason": "把剪贴板里的文字或图片拿来翻译"
+          },
+          {
+            "id": "clipboard.write",
+            "reason": "静默命令把译文直接放进剪贴板"
+          },
+          {
+            "id": "network.https",
+            "reason": "把文字发给 Google 翻译"
+          },
+          {
+            "id": "notifications.post",
+            "reason": "静默命令完成或失败时弹一条横幅"
+          },
+          {
+            "id": "speech.speak",
+            "reason": "朗读原文或译文"
+          },
+          {
+            "id": "hotkeys.register",
+            "reason": "全局快捷键随时触发截屏翻译"
+          }
+        ],
+        "network": {
+          "hosts": [
+            "translate.googleapis.com",
+            "translate.google.com",
+            "translation.googleapis.com"
+          ]
+        },
+        "contributes": {
+          "toolbox": {
+            "subtitle": "框一块屏幕，识字、翻译、查词",
+            "keywords": [
+              "ocr",
+              "translate",
+              "google",
+              "文字识别",
+              "词典",
+              "dictionary"
+            ]
+          },
+          "commands": [
+            {
+              "id": "capture-translate",
+              "title": "截屏翻译",
+              "description": "框选一块，识字并翻译，译文原地弹出",
+              "hotkey": "⌥⌘T",
+              "presentation": "popover"
+            },
+            {
+              "id": "capture-copy",
+              "title": "截屏译文入剪贴板",
+              "description": "框选一块，翻译后直接复制，不开面板",
+              "hotkey": "⌥⌘O",
+              "presentation": "silent"
+            },
+            {
+              "id": "translate-clipboard",
+              "title": "翻译剪贴板",
+              "description": "把剪贴板里的文字或图片翻译出来",
+              "presentation": "toolbox"
+            },
+            {
+              "id": "translate-text",
+              "title": "翻译这段文字",
+              "description": "把 / 后面那段字翻译出来；没跟字就翻译剪贴板",
+              "slash": {
+                "keyword": "translate",
+                "aliases": [
+                  "翻译"
+                ],
+                "argument": "要翻译的文字"
+              },
+              "presentation": "toolbox"
+            }
+          ],
+          "settings": {
+            "preferences": [
+              {
+                "key": "targetLanguage",
+                "type": "select",
+                "title": "翻译成",
+                "default": "zh-CN",
+                "options": [
+                  {
+                    "value": "zh-CN",
+                    "title": "简体中文"
+                  },
+                  {
+                    "value": "zh-TW",
+                    "title": "繁體中文"
+                  },
+                  {
+                    "value": "en",
+                    "title": "English"
+                  },
+                  {
+                    "value": "ja",
+                    "title": "日本語"
+                  },
+                  {
+                    "value": "ko",
+                    "title": "한국어"
+                  },
+                  {
+                    "value": "fr",
+                    "title": "Français"
+                  },
+                  {
+                    "value": "de",
+                    "title": "Deutsch"
+                  },
+                  {
+                    "value": "es",
+                    "title": "Español"
+                  }
+                ]
+              },
+              {
+                "key": "alternateLanguage",
+                "type": "select",
+                "title": "原文已是目标语言时",
+                "description": "截到的本来就是目标语言时，改翻成这一种",
+                "default": "en",
+                "options": [
+                  {
+                    "value": "en",
+                    "title": "English"
+                  },
+                  {
+                    "value": "zh-CN",
+                    "title": "简体中文"
+                  },
+                  {
+                    "value": "ja",
+                    "title": "日本語"
+                  }
+                ]
+              },
+              {
+                "key": "ocrLanguages",
+                "type": "multiselect",
+                "title": "识别语言",
+                "description": "Vision 的识别语言；选得越多越慢",
+                "default": [
+                  "zh-Hans",
+                  "en-US"
+                ],
+                "options": [
+                  {
+                    "value": "zh-Hans",
+                    "title": "简体中文"
+                  },
+                  {
+                    "value": "zh-Hant",
+                    "title": "繁體中文"
+                  },
+                  {
+                    "value": "en-US",
+                    "title": "English"
+                  },
+                  {
+                    "value": "ja-JP",
+                    "title": "日本語"
+                  },
+                  {
+                    "value": "ko-KR",
+                    "title": "한국어"
+                  },
+                  {
+                    "value": "fr-FR",
+                    "title": "Français"
+                  },
+                  {
+                    "value": "de-DE",
+                    "title": "Deutsch"
+                  },
+                  {
+                    "value": "es-ES",
+                    "title": "Español"
+                  }
+                ]
+              },
+              {
+                "key": "apiKey",
+                "type": "secret",
+                "title": "Google API key",
+                "description": "留空走免费端点；填了走官方 API v2（只翻译，没有词典那一块）。存 Keychain，不进日志",
+                "placeholder": "AIza…"
+              },
+              {
+                "key": "autoCopy",
+                "type": "toggle",
+                "title": "翻译完自动复制",
+                "default": false
+              }
+            ]
+          }
+        },
+        "inbox": {
+          "messages": false,
+          "notifications": true
+        }
       },
-      "description": "按一下快捷键框选屏幕上任意一块，Vision 识别文字、合并段落、检测语言，再经 Google 翻译；译文就贴着选区原地弹出。框到的是一个词时，译文下面还有读音与按词性分行的全部词义。也能翻译剪贴板里的文字或图片。免费端点无需 key，填了 API key 走官方接口。",
-      "author": {
-        "name": "fusionseek",
-        "github": "fusionseek"
-      },
-      "sdk": "^1.5.0",
-      "minimumJarvisVersion": "2.0.0",
-      "capabilities": [
-        "screenshot.capture",
-        "ocr.recognize",
-        "clipboard.read",
-        "clipboard.write",
-        "network.https",
-        "notifications.post",
-        "speech.speak",
-        "hotkeys.register"
-      ],
-      "settings": true,
-      "inbox": {
-        "cards": false,
-        "notifications": true
-      },
-      "background": false,
       "path": "extensions/translation",
       "bundle": {
         "path": "extensions/translation/dist/extension.js",
-        "sha256": "0eec1e37334b7b176e29c5df29a591501b28f68a70fb60c8ed1f744aa576cb7e",
-        "byteCount": 73375
+        "sha256": "48a91ecddcbf78f29195d719ee094a7e202a84e044fcf3ab401b6651a17959dc",
+        "byteCount": 80441
       },
-      "updatedAt": "2026-09-14T16:25:18+08:00",
-      "network": {
-        "hosts": [
-          "translate.googleapis.com",
-          "translate.google.com",
-          "translation.googleapis.com"
-        ]
-      },
-      "commands": [
-        {
-          "id": "capture-translate",
-          "title": "截屏翻译",
-          "hotkey": "⌥⌘T",
-          "presentation": "popover"
-        },
-        {
-          "id": "capture-copy",
-          "title": "截屏译文入剪贴板",
-          "hotkey": "⌥⌘O",
-          "presentation": "silent"
-        },
-        {
-          "id": "translate-clipboard",
-          "title": "翻译剪贴板",
-          "presentation": "panel"
-        }
-      ]
+      "updatedAt": "2026-10-06T14:51:08+08:00"
     }
   ]
 }

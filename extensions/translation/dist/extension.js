@@ -1,4 +1,4 @@
-// jarvis-extension bundle · translation@0.2.0 · sdk 1.6.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · translation@1.0.0 · sdk 2.0.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -12,7 +12,7 @@
   };
 
   // sdk/src/bridge.ts
-  var bridgeProtocolVersion = 1;
+  var bridgeProtocolVersion = 2;
   function eventName(propName) {
     return propName.length > 2 && propName.startsWith("on") ? propName[2].toLowerCase() + propName.slice(3) : propName;
   }
@@ -103,10 +103,7 @@
     swatch: make("swatch"),
     dropzone: make("dropzone"),
     keycap: make("keycap"),
-    image: make("image"),
-    markdown: make("markdown"),
-    chart: make("chart"),
-    dataTable: make("dataTable")
+    image: make("image")
   };
 
   // sdk/src/ocr.ts
@@ -240,7 +237,30 @@
   var ocr = { isCJK, joiner, paragraphs, joinParagraph, mergeLines, chunk };
 
   // sdk/src/index.ts
-  var sdkVersion = "1.6.0";
+  var sdkVersion = "2.0.0";
+  var Cancellation = class {
+    constructor() {
+      this.listeners = [];
+      this.fired = false;
+    }
+    get cancelled() {
+      return this.fired;
+    }
+    onCancel(listener) {
+      if (this.fired) {
+        listener();
+        return;
+      }
+      this.listeners.push(listener);
+    }
+    cancel() {
+      if (this.fired) return;
+      this.fired = true;
+      const listeners = this.listeners;
+      this.listeners = [];
+      for (const listener of listeners) listener();
+    }
+  };
   var Runtime = class {
     constructor() {
       this.definition = null;
@@ -249,8 +269,9 @@
       this.pending = /* @__PURE__ */ new Map();
       this.handlers = /* @__PURE__ */ new Map();
       this.subscriptions = /* @__PURE__ */ new Map();
+      this.serviceSignals = /* @__PURE__ */ new Map();
       this.updateQueued = false;
-      /** 此刻开着的那一面；`null` = 既没有页面也没有弹窗，`render()` 不会被调。 */
+      /** 此刻开着的那一面；`null` = 一面都没有，`render()` 不会被调。 */
       this.activeSurface = null;
       this.commandSummaries = [];
       this.hostRef = null;
@@ -265,7 +286,7 @@
       this.hostRef = host;
       return host;
     }
-    /** 把 `dispatch` 挂到全局。幂等；`defineExtension` 与任何一次能力调用都会确保它挂上了。 */
+    /** 把 `dispatch` 挂到全局。幂等。 */
     ensureRegistered() {
       if (this.registered) return;
       globalThis.__jarvisRuntime = { dispatch: (json) => this.dispatch(json) };
@@ -278,7 +299,7 @@
       this.definition = definition;
       this.ensureRegistered();
     }
-    /** 让宿主再调一次 render。同一拍里的多次请求合并成一次提交；页面与弹窗都没开着时是空操作。 */
+    /** 让宿主再调一次 render。同一拍里的多次请求合并成一次提交；一面都没开着时是空操作。 */
     requestUpdate() {
       if (this.updateQueued || !this.activeSurface) return;
       this.updateQueued = true;
@@ -302,32 +323,45 @@
       if (result.ok) return result.value;
       throw new JarvisError(result.error);
     }
+    /** 新的订阅 token。 */
+    token(namespace, method) {
+      return `${namespace}.${method}#${this.nextRequestId++}`;
+    }
+    /** 收这个 token 上的订阅事件。 */
+    listen(token, listener) {
+      this.subscriptions.set(token, listener);
+    }
+    /** 不再收这个 token 上的事件。 */
+    forget(token) {
+      this.subscriptions.delete(token);
+    }
     /**
      * 订阅宿主事件。宿主拒绝订阅（没授权、没这个能力）时**不抛到扩展里**：一条被拒的订阅只是收不到事件，
-     * 让它变成未处理的 rejection 会把整个上下文拖垮。拒绝记一条 warn 日志，开发者模式看得见。
+     * 让它变成未处理的 rejection 会把整个上下文拖垮。拒绝记一条 warn 日志。
      */
     subscribe(namespace, method, listener) {
-      const token = `${namespace}.${method}#${this.nextRequestId++}`;
-      this.subscriptions.set(token, listener);
+      const token = this.token(namespace, method);
+      this.listen(token, listener);
       this.invoke(namespace, method, { token }).catch((error) => {
-        this.subscriptions.delete(token);
+        this.forget(token);
         this.log("warn", `\u8BA2\u9605 ${namespace}.${method} \u88AB\u5BBF\u4E3B\u62D2\u7EDD`, error instanceof Error ? error.message : String(error));
       });
       return () => {
-        this.subscriptions.delete(token);
+        this.forget(token);
         this.invoke(namespace, "unsubscribe", { token }).catch(() => void 0);
       };
     }
     log(level, message, data) {
       this.host().log(level, message, data === void 0 ? null : JSON.stringify(data));
     }
-    /** 开着的那一面的定义：弹窗（没给时退回页面）或页面。 */
+    /** 开着的那一面的定义：弹窗与窗口没给时退回工具箱页面。 */
     surfaceDefinition(surface) {
       const definition = this.definition;
       if (surface === "popover" && definition?.popover) return definition.popover;
-      return definition?.page;
+      if (surface === "window" && definition?.window) return definition.window;
+      return definition?.toolbox;
     }
-    /** 此刻那一面的树：弹窗、自定义页面，或按命令清单画的默认页。 */
+    /** 此刻那一面的树：自定义的那一面，或按命令清单画的默认页。 */
     renderSurface() {
       const page = this.surfaceDefinition(this.activeSurface);
       if (page) return page.render();
@@ -340,10 +374,10 @@
                 key: command.id,
                 symbol: command.presentation === "silent" ? "bolt" : "rectangle.and.text.magnifyingglass",
                 title: command.title,
-                subtitle: command.hotkey ? `\u5FEB\u6377\u952E ${command.hotkey}` : command.description ?? "\u6CA1\u6709\u5FEB\u6377\u952E\uFF0C\u5728\u8FD9\u91CC\u8FD0\u884C",
+                subtitle: command.hotkey ? `\u5FEB\u6377\u952E ${command.hotkey}` : command.slash ? `\u6307\u4EE4 ${command.slash}` : command.description ?? "\u5728\u8FD9\u91CC\u8FD0\u884C",
                 onPress: () => void jarvis.commands.run(command.id)
               })
-            ) : [ui.empty({ symbol: "bolt.slash", title: "\u8FD9\u4E2A\u6269\u5C55\u6CA1\u6709\u547D\u4EE4", hint: "\u5B83\u7684 manifest \u91CC\u65E2\u6CA1\u6709\u9875\u9762\u4E5F\u6CA1\u6709\u547D\u4EE4\u3002" })]
+            ) : [ui.empty({ symbol: "bolt.slash", title: "\u8FD9\u4E2A\u6269\u5C55\u6CA1\u6709\u547D\u4EE4", hint: "\u5B83\u65E2\u6CA1\u6709\u9875\u9762\u4E5F\u6CA1\u6709\u547D\u4EE4\u3002" })]
           })
         ]
       });
@@ -365,12 +399,64 @@
       this.generation += 1;
       this.host().commit(JSON.stringify({ protocol: bridgeProtocolVersion, generation: this.generation, surface, root }));
     }
+    /** 宿主调一次服务。结果与进度都经隐式调用交回去；这里不抛任何东西。 */
+    handleService(call2) {
+      const implementation = this.definition?.services?.[call2.service];
+      const respond = (result) => {
+        this.serviceSignals.delete(call2.callId);
+        this.invoke("service", "resolve", { callId: call2.callId, result }).catch(() => void 0);
+      };
+      if (!implementation) {
+        respond({ ok: false, error: { code: "capability.unknown", message: `defineExtension \u91CC\u6CA1\u6709\u670D\u52A1\u300C${call2.service}\u300D\u7684\u5B9E\u73B0\u3002` } });
+        return;
+      }
+      const context = { preferences: call2.params.preferences, granted: call2.params.granted };
+      const signal = new Cancellation();
+      this.serviceSignals.set(call2.callId, signal);
+      const work = () => {
+        switch (call2.point) {
+          case "junkClean.engine": {
+            const engine = implementation;
+            switch (call2.method) {
+              case "status":
+                return Promise.resolve(engine.status(context));
+              case "run":
+                return engine.run(
+                  context,
+                  (progress) => {
+                    if (signal.cancelled) return;
+                    this.invoke("service", "progress", { callId: call2.callId, progress }).catch(() => void 0);
+                  },
+                  signal
+                );
+              case "action":
+                return Promise.resolve(engine.action ? engine.action(call2.params.actionId ?? "", context) : {});
+            }
+          }
+        }
+        return Promise.reject(new JarvisError({ code: "capability.unknown", message: `\u4E0D\u8BA4\u8BC6\u7684\u670D\u52A1\u65B9\u6CD5 ${call2.point}.${call2.method}` }));
+      };
+      let pending;
+      try {
+        pending = work();
+      } catch (error) {
+        pending = Promise.reject(error);
+      }
+      pending.then(
+        (value) => respond({ ok: true, value: value ?? {} }),
+        (error) => {
+          const shape = error instanceof JarvisError ? { code: error.code, message: error.message, ...error.detail !== void 0 ? { detail: error.detail } : {} } : { code: "host.failure", message: error instanceof Error ? error.message : String(error) };
+          this.log("error", `\u670D\u52A1\u300C${call2.service}\u300D\u7684 ${call2.method} \u629B\u51FA\u4E86\u5F02\u5E38`, shape.message);
+          respond({ ok: false, error: shape });
+        }
+      );
+    }
     dispatch(json) {
       const event = JSON.parse(json);
       const definition = this.definition;
       switch (event.type) {
         case "activate": {
-          const surface = event.context.surface ?? "page";
+          const surface = event.context.surface;
           this.activeSurface = surface;
           this.commandSummaries = event.context.commands ?? [];
           void Promise.resolve(this.surfaceDefinition(surface)?.activate?.(event.context)).then(() => this.commit());
@@ -410,6 +496,14 @@
           );
           return;
         }
+        case "service": {
+          this.handleService(event.call);
+          return;
+        }
+        case "serviceCancel": {
+          this.serviceSignals.get(event.callId)?.cancel();
+          return;
+        }
         case "subscription": {
           this.subscriptions.get(event.token)?.(event.payload);
           return;
@@ -417,14 +511,6 @@
         case "preferencesChanged":
         case "permissionsChanged": {
           this.requestUpdate();
-          return;
-        }
-        case "inboxAction": {
-          void definition?.onInboxAction?.(event.cardId, event.actionId);
-          return;
-        }
-        case "notificationActivated": {
-          void definition?.onNotificationActivated?.();
           return;
         }
       }
@@ -442,6 +528,7 @@
   }
   var call = {
     panel: namespaced("panel"),
+    window: namespaced("window"),
     commands: namespaced("commands"),
     storage: namespaced("storage"),
     preferences: namespaced("preferences"),
@@ -453,20 +540,33 @@
     speech: namespaced("speech"),
     notifications: namespaced("notifications"),
     inbox: namespaced("inbox"),
-    memo: namespaced("memo"),
-    calendar: namespaced("calendar"),
-    tasks: namespaced("tasks"),
     net: namespaced("net"),
-    bigquery: namespaced("bigquery"),
+    process: namespaced("process"),
     files: namespaced("files"),
+    terminal: namespaced("terminal"),
     system: namespaced("system")
   };
   var sync = {
     text: syncNamespaced("text"),
-    time: syncNamespaced("time"),
-    color: syncNamespaced("color"),
     host: syncNamespaced("host")
   };
+  function runProcess(options) {
+    const token = runtime.token("process", "run");
+    runtime.listen(token, (payload) => {
+      const lines = payload.lines ?? [];
+      for (const line of lines) options.onLine?.(line);
+    });
+    const result = runtime.invoke("process", "run", { executable: options.executable, arguments: options.arguments, token }).finally(() => runtime.forget(token));
+    let cancelled = false;
+    return {
+      result,
+      cancel() {
+        if (cancelled) return;
+        cancelled = true;
+        call.process("cancel", { token }).catch(() => void 0);
+      }
+    };
+  }
   var jarvis = {
     sdk: { version: sdkVersion },
     get host() {
@@ -483,19 +583,23 @@
       hold(reason) {
         let released = false;
         const id = runtime.invoke("panel", "hold", { reason });
+        id.catch(() => void 0);
         return {
           release() {
             if (released) return;
             released = true;
-            void id.then((handle) => call.panel("release", { handle }));
+            void id.then((handle) => call.panel("release", { handle })).catch(() => void 0);
           }
         };
       },
       collapse: () => call.panel("collapse"),
       present: () => call.panel("present")
     },
+    window: {
+      open: () => call.window("open")
+    },
     commands: {
-      run: (id) => call.commands("run", { id })
+      run: (id, argument) => call.commands("run", argument === void 0 ? { id } : { id, argument })
     },
     storage: {
       get: (key2) => call.storage("get", { key: key2 }),
@@ -527,46 +631,22 @@
       hash: {
         digest: (algorithm, text, options) => sync.text("hash.digest", { algorithm, text, ...options })
       },
-      json: {
-        format: (text, options) => sync.text("json.format", { text, ...options }),
-        minify: (text, options) => sync.text("json.minify", { text, ...options })
-      },
-      url: {
-        parse: (text) => sync.text("url.parse", { text }),
-        build: (parts) => sync.text("url.build", parts)
-      },
-      regex: {
-        test: (pattern, text, flags) => sync.text("regex.test", { pattern, text, flags })
-      },
       language: {
         detect: (text, options) => sync.text("language.detect", { text, ...options }),
         displayName: (code) => sync.text("language.displayName", { code })
       }
     },
-    time: {
-      parse: (text, unit) => sync.time("parse", { text, unit }),
-      format: (epochMilliseconds, pattern, timeZone) => sync.time("format", { epochMilliseconds, pattern, timeZone }),
-      timeZones: () => sync.time("timeZones")
-    },
-    color: {
-      convert: (hex) => sync.color("convert", { hex })
-    },
     clipboard: {
       read: () => call.clipboard("read"),
       readImage: () => call.clipboard("readImage"),
-      write: (text) => call.clipboard("write", { text }),
-      history: (options) => call.clipboard("history", options),
-      entryText: (id) => call.clipboard("entryText", { id }),
-      observe: (listener) => runtime.subscribe("clipboard", "observe", listener)
+      write: (text) => call.clipboard("write", { text })
     },
     quickTransfer: {
       status: () => call.quickTransfer("status"),
       observe: (listener) => runtime.subscribe("quickTransfer", "observe", listener),
       start: () => call.quickTransfer("start"),
       stop: () => call.quickTransfer("stop"),
-      sendText: (text) => call.quickTransfer("sendText", { text }),
-      sendFile: (file) => call.quickTransfer("sendFile", { file }),
-      records: (options) => call.quickTransfer("records", options)
+      sendText: (text) => call.quickTransfer("sendText", { text })
     },
     screenshot: {
       capture: (options) => call.screenshot("capture", options)
@@ -582,34 +662,21 @@
       post: (content) => call.notifications("post", content)
     },
     inbox: {
-      post: (card) => call.inbox("post", card),
-      dismiss: (cardId) => call.inbox("dismiss", { cardId })
-    },
-    memo: {
-      list: (options) => call.memo("list", options),
-      create: (body) => call.memo("create", { body }),
-      complete: (id) => call.memo("complete", { id })
-    },
-    calendar: {
-      runs: (range) => call.calendar("runs", range)
-    },
-    tasks: {
-      recent: () => call.tasks("recent"),
-      observe: (listener) => runtime.subscribe("tasks", "observe", listener)
+      post: (message) => call.inbox("post", message)
     },
     net: {
       fetch: (url, init) => call.net("fetch", { url, ...init })
     },
-    bigquery: {
-      query: (request) => call.bigquery("query", request),
-      status: () => call.bigquery("status"),
-      login: () => call.bigquery("login")
+    process: {
+      locate: (executable) => call.process("locate", { executable }),
+      run: runProcess
     },
     files: {
-      pick: (options) => call.files("pick", options),
-      readText: (file) => call.files("readText", { file }),
-      readBytes: (file) => call.files("readBytes", { file }),
-      reveal: (file) => call.files("reveal", { file })
+      stat: (path) => call.files("stat", { path }),
+      tail: (path, offset) => call.files("tail", { path, offset })
+    },
+    terminal: {
+      run: (scriptId) => call.terminal("run", { id: scriptId })
     },
     system: {
       openURL: (url) => call.system("openURL", { url }),
@@ -914,17 +981,28 @@
     if (error instanceof JarvisError) return error.detail ?? error.message;
     return error instanceof Error ? error.message : String(error);
   }
-  function failureFor(error) {
+  function failureFor(error, headless = false) {
     if (error instanceof JarvisError && error.code === "permission.denied") {
-      return { kind: "denied", title: "\u6CA1\u6709\u8FD9\u9879\u6388\u6743", body: `${describe2(error)}\u3002\u70B9\u300C\u6388\u6743\u300D\u518D\u95EE\u4E00\u6B21\uFF0C\u6216\u5728 \u8BBE\u7F6E \u203A \u6269\u5C55 \u91CC\u6253\u5F00\u3002` };
+      return {
+        kind: "denied",
+        title: "\u6CA1\u6709\u8FD9\u9879\u6388\u6743",
+        body: headless ? `${describe2(error)}\u3002\u5728 \u8BBE\u7F6E \u203A \u6269\u5C55 \u203A \u622A\u5C4F\u7FFB\u8BD1 \u91CC\u6253\u5F00\u5B83\u3002` : `${describe2(error)}\u3002\u70B9\u300C\u6388\u6743\u300D\u518D\u95EE\u4E00\u6B21\uFF0C\u6216\u5728 \u8BBE\u7F6E \u203A \u6269\u5C55 \u91CC\u6253\u5F00\u3002`
+      };
     }
     if (error instanceof JarvisError && error.code === "rate.limited") {
       return { kind: "network", title: "\u8BF7\u6C42\u592A\u9891\u7E41", body: "\u5BBF\u4E3B\u9650\u4E86\u8FD9\u4E2A\u6269\u5C55\u7684\u8C03\u7528\u9891\u7387\uFF0C\u7F13\u4E00\u7F13\u518D\u8BD5\u3002" };
     }
-    return { kind: "network", title: "\u7FFB\u8BD1\u5931\u8D25", body: `${describe2(error)}\u3002\u539F\u6587\u8FD8\u7559\u5728\u4E0A\u9762\uFF0C\u91CD\u8BD5\u4E0D\u7528\u518D\u622A\u4E00\u6B21\u3002` };
+    return {
+      kind: "network",
+      title: "\u7FFB\u8BD1\u5931\u8D25",
+      body: headless ? `${describe2(error)}\u3002\u518D\u622A\u4E00\u6B21\u8BD5\u8BD5\uFF1B\u7528\u300C\u622A\u5C4F\u7FFB\u8BD1\u300D\u80FD\u5728\u5F39\u7A97\u91CC\u770B\u5230\u539F\u6587\u5E76\u91CD\u8BD5\u3002` : `${describe2(error)}\u3002\u539F\u6587\u8FD8\u7559\u5728\u4E0A\u9762\uFF0C\u91CD\u8BD5\u4E0D\u7528\u518D\u622A\u4E00\u6B21\u3002`
+    };
   }
   var Session = class {
-    constructor() {
+    /**
+     * - Parameter options: 构造选项；省略 = 前台会话（页面与弹窗）。
+     */
+    constructor(options = {}) {
       this.phase = "idle";
       this.source = "";
       this.origin = "typed";
@@ -953,6 +1031,8 @@
       this.failure = null;
       /** `screenshot.capture` 抛过 `permission.unavailable`：Jarvis 自己还没有屏幕录制权限。 */
       this.systemPermissionMissing = false;
+      /** 最近一次 `capture()` 的结局；还没框过为 `null`。 */
+      this.captureOutcome = null;
       this.granted = /* @__PURE__ */ new Set();
       this.prefs = defaultPrefs;
       this.commands = [];
@@ -960,6 +1040,7 @@
       this.alternateTouched = false;
       this.ocrTouched = false;
       this.prefsSubscribed = false;
+      this.headless = options.headless ?? false;
     }
     has(id) {
       return this.granted.has(id);
@@ -974,12 +1055,17 @@
     get targetTitle() {
       return languageTitle(this.target);
     }
-    /** 每次进入页面 / 弹窗 / 命令都会拿到最新的授权与偏好；命令上下文没有命令清单，留着上一次的。 */
+    /**
+     * 每次进入页面 / 弹窗 / 命令都会拿到最新的授权与偏好；命令上下文没有命令清单，留着上一次的。
+     *
+     * 后台会话不订阅偏好：静默命令每一次的上下文都带着此刻的偏好，订阅只会在一个
+     * 空闲 60 秒就被收走的会话里多挂一条没人读的线。
+     */
     adopt(context) {
       this.granted = new Set(context.granted);
       this.applyPrefs(context.preferences);
       if ("commands" in context) this.commands = context.commands;
-      if (!this.prefsSubscribed) {
+      if (!this.prefsSubscribed && !this.headless) {
         this.prefsSubscribed = true;
         jarvis.preferences.onChange((changes) => this.applyPrefs({ ...changes }));
       }
@@ -993,12 +1079,13 @@
     // ---------------------------------------------------------------------------
     // 编排
     // ---------------------------------------------------------------------------
-    /** 框选一块并识字。返回 true = 认出了文字，可以接着翻。 */
+    /** 框选一块并识字。返回 true = 认出了文字，可以接着翻；为什么没成看 `captureOutcome`。 */
     async capture() {
       const previous = this.translation ? "done" : "idle";
       this.phase = "capturing";
       this.failure = null;
       this.ignoredRound = false;
+      this.captureOutcome = null;
       jarvis.ui.update();
       try {
         const shot = await jarvis.screenshot.capture({
@@ -1014,27 +1101,33 @@
         this.systemPermissionMissing = false;
         this.image = shot.file;
         this.imageSize = { width: shot.width, height: shot.height };
-        return this.adoptOCR(shot.ocr, "screenshot", previous);
+        const recognized = this.adoptOCR(shot.ocr, "screenshot", previous);
+        this.captureOutcome = recognized ? "captured" : "empty";
+        return recognized;
       } catch (error) {
         if (error instanceof JarvisError && error.code === "cancelled") {
+          this.captureOutcome = "cancelled";
           this.phase = previous;
           return false;
         }
         if (error instanceof JarvisError && error.code === "permission.unavailable") {
+          this.captureOutcome = "systemPermission";
           this.systemPermissionMissing = true;
           this.phase = previous;
           return false;
         }
         if (error instanceof JarvisError && error.code === "permission.denied") {
+          this.captureOutcome = "denied";
           this.granted.delete("screenshot.capture");
           this.phase = previous;
           return false;
         }
-        this.fail(failureFor(error));
+        this.captureOutcome = "failed";
+        this.fail(failureFor(error, this.headless));
         return false;
       } finally {
-        if (this.ignoredRound) {
-          await jarvis.ui.dismissPopover();
+        if (this.ignoredRound && !this.headless) {
+          await jarvis.ui.dismissPopover().catch(() => void 0);
         } else {
           jarvis.ui.update();
         }
@@ -1113,7 +1206,7 @@
         }
         return true;
       } catch (error) {
-        this.fail(failureFor(error));
+        this.fail(failureFor(error, this.headless));
         return false;
       } finally {
         hold.release();
@@ -1147,36 +1240,79 @@
           this.fail({ kind: "clipboard", title: "\u526A\u8D34\u677F\u662F\u7A7A\u7684", body: "\u526A\u8D34\u677F\u91CC\u6CA1\u6709\u6587\u5B57\uFF0C\u4E5F\u6CA1\u6709\u56FE\u7247\u3002\u5148\u590D\u5236\u4E00\u6BB5\u6587\u5B57\u6216\u4E00\u5F20\u56FE\u3002" });
           return false;
         }
-        this.source = text;
-        this.origin = "clipboard";
-        this.lines = text.split(/\r?\n/).length;
-        this.image = null;
-        this.imageSize = null;
-        this.translation = null;
-        this.sourceOverride = null;
-        this.dirty = false;
-        this.detect(text);
-        this.phase = "recognizing";
+        this.adoptText(text, "clipboard");
         return true;
       } catch (error) {
-        this.fail(failureFor(error));
+        this.fail(failureFor(error, this.headless));
         return false;
       } finally {
         jarvis.ui.update();
       }
     }
+    /**
+     * 拿一段现成的文字当新的原文：剪贴板里的字，或 `/translate` 后面跟的那一段。
+     *
+     * 与 `setSource`（用户在编辑框里打字）不同，这是**新的一次**：上一张截图、上一份译文、
+     * 手动指定的原文语言全部作废，否则页面上会出现"新原文配旧缩略图"的一屏。
+     * - Parameter text: 原文，原样保留（首尾空白由翻译时的 `trim()` 处理）。
+     * - Parameter origin: 从哪来的；只影响页面上那句「N 行」读数画不画。
+     * - Returns: 无。
+     */
+    adoptText(text, origin) {
+      this.source = text;
+      this.origin = origin;
+      this.lines = text.split(/\r?\n/).length;
+      this.image = null;
+      this.imageSize = null;
+      this.translation = null;
+      this.sourceOverride = null;
+      this.dirty = false;
+      this.failure = null;
+      this.detect(text);
+      this.phase = "recognizing";
+    }
     fail(failure) {
       this.failure = failure;
       this.phase = "failed";
     }
-    /** 静默命令没成时也得让用户知道：横幅说清原因，点横幅展开到本扩展的页面（那里画着错误屏）。 */
+    /**
+     * 静默命令没成时也得让用户知道：横幅把原因说完整。
+     *
+     * 横幅是**唯一**的回音：静默命令跑在后台会话里，失败的那一屏状态只活在后台会话的内存里，
+     * 点横幅展开的页面是前台会话，画不出它——所以正文要自己说得通（`failureFor(…, headless)`），
+     * 不指向任何一颗按钮。没有横幅授权时只能记一条日志。
+     * - Returns: 无；横幅发不出去时也不抛（失败的回音再失败，没有第三条路）。
+     */
     async reportFailureSilently() {
-      if (!this.failure) return;
+      const notice = this.failure ?? this.captureNotice();
+      if (!notice) return;
       if (!this.has("notifications.post")) {
-        jarvis.log.warn("\u9759\u9ED8\u547D\u4EE4\u5931\u8D25\uFF0C\u4F46\u6CA1\u6709\u6A2A\u5E45\u6388\u6743", this.failure);
+        jarvis.log.warn("\u9759\u9ED8\u547D\u4EE4\u5931\u8D25\uFF0C\u4F46\u6CA1\u6709\u6A2A\u5E45\u6388\u6743", notice);
         return;
       }
-      await jarvis.notifications.post({ title: this.failure.title, body: this.failure.body });
+      try {
+        await jarvis.notifications.post({ title: notice.title, body: notice.body });
+      } catch (error) {
+        jarvis.log.warn("\u9759\u9ED8\u547D\u4EE4\u5931\u8D25\u7684\u6A2A\u5E45\u6CA1\u53D1\u51FA\u53BB", describe2(error));
+      }
+    }
+    /**
+     * 框选那一步没成、但又不是"翻译失败"时，静默命令要说的那一句。
+     *
+     * Esc（`cancelled`）与框空了（`empty`）**不说**：前者是用户自己按的，后者几乎总是误拖——
+     * 与原地弹窗"当这一次没发生过"同一条规矩。缺权限要说：页面上那两张授权说明在后台会话里画不出来，
+     * 不说的话用户只会觉得快捷键坏了。
+     * - Returns: 横幅的标题与正文；不需要说时为 `null`。
+     */
+    captureNotice() {
+      switch (this.captureOutcome) {
+        case "systemPermission":
+          return { title: "Jarvis \u8FD8\u6CA1\u6709\u5C4F\u5E55\u5F55\u5236\u6743\u9650", body: "\u6253\u5F00 \u7CFB\u7EDF\u8BBE\u7F6E \u203A \u9690\u79C1\u4E0E\u5B89\u5168\u6027 \u203A \u5C4F\u5E55\u5F55\u5236\uFF0C\u628A Jarvis \u62D6\u8FDB\u5217\u8868\uFF0C\u518D\u6309\u4E00\u6B21\u5FEB\u6377\u952E\u3002" };
+        case "denied":
+          return { title: "\u6CA1\u6709\u622A\u56FE\u7684\u6388\u6743", body: "\u8FD9\u6761\u547D\u4EE4\u8981\u5148\u6846\u9009\u5C4F\u5E55\u3002\u5728 \u8BBE\u7F6E \u203A \u6269\u5C55 \u203A \u622A\u5C4F\u7FFB\u8BD1 \u91CC\u6253\u5F00\u300C\u622A\u53D6\u5C4F\u5E55\u300D\u3002" };
+        default:
+          return null;
+      }
     }
     async requestCapabilities(ids) {
       const result = await jarvis.permissions.request(ids);
@@ -1321,7 +1457,7 @@
   }
 
   // extensions/translation/src/page.ts
-  var FOOTNOTE = "Vision \u8BC6\u522B\u6587\u5B57\u3001\u5408\u5E76\u6BB5\u843D\u3001\u68C0\u6D4B\u8BED\u8A00\uFF0C\u518D\u7ECF Google \u7FFB\u8BD1\uFF1B\u514D\u8D39\u7AEF\u70B9\u65E0\u9700 key\uFF0C\u586B\u4E86 API key \u8D70\u5B98\u65B9\u63A5\u53E3\u3002";
+  var FOOTNOTE = "Vision \u8BC6\u522B\u6587\u5B57\u3001\u5408\u5E76\u6BB5\u843D\u3001\u68C0\u6D4B\u8BED\u8A00\uFF0C\u518D\u7ECF Google \u7FFB\u8BD1\uFF1B\u514D\u8D39\u7AEF\u70B9\u65E0\u9700 key\uFF0C\u586B\u4E86 API key \u8D70\u5B98\u65B9\u63A5\u53E3\u3002\u5168\u5C40\u641C\u7D22\u91CC /translate \u540E\u9762\u8DDF\u4E00\u6BB5\u5B57\u4E5F\u80FD\u76F4\u63A5\u7FFB\u3002";
   function renderPage(s) {
     const children = [];
     const fresh = s.phase === "idle" && s.source === "" && s.translation === null;
@@ -1732,38 +1868,62 @@
 
   // extensions/translation/src/index.ts
   var session = new Session();
+  var background = new Session({ headless: true });
   async function captureTranslate(context) {
     session.adopt(context);
     if (!await session.capture()) return;
     await session.translate();
   }
   async function captureCopy(context) {
-    session.adopt(context);
-    if (!await session.capture()) return;
-    if (!await session.translate() || !session.translation) {
-      await session.reportFailureSilently();
+    const s = background;
+    s.adopt(context);
+    if (!await s.capture()) {
+      await s.reportFailureSilently();
       return;
     }
+    if (!await s.translate() || !s.translation) {
+      await s.reportFailureSilently();
+      return;
+    }
+    const translated = s.translation.text;
     try {
-      await jarvis.clipboard.write(session.translation.text);
-      session.autoCopied = true;
-      if (session.has("notifications.post")) {
-        await jarvis.notifications.post({ title: "\u5DF2\u590D\u5236\u8BD1\u6587", body: session.translation.text.slice(0, 120) });
-      }
+      await jarvis.clipboard.write(translated);
+      s.autoCopied = true;
     } catch (error) {
-      session.fail(failureFor(error));
-      await session.reportFailureSilently();
+      s.fail(
+        error instanceof JarvisError && error.code === "permission.denied" ? failureFor(error, true) : { kind: "other", title: "\u8BD1\u6587\u6CA1\u653E\u8FDB\u526A\u8D34\u677F", body: `${describe2(error)}\u3002\u7528\u300C\u622A\u5C4F\u7FFB\u8BD1\u300D\u80FD\u5728\u5F39\u7A97\u91CC\u770B\u5230\u8BD1\u6587\u5E76\u590D\u5236\u3002` }
+      );
+      await s.reportFailureSilently();
+      return;
+    }
+    if (s.has("notifications.post")) {
+      try {
+        await jarvis.notifications.post({ title: "\u5DF2\u590D\u5236\u8BD1\u6587", body: translated.slice(0, 120) });
+      } catch (error) {
+        jarvis.log.warn("\u300C\u5DF2\u590D\u5236\u8BD1\u6587\u300D\u6A2A\u5E45\u6CA1\u53D1\u51FA\u53BB", error instanceof Error ? error.message : String(error));
+      }
     }
   }
   async function translateClipboard(context) {
     session.adopt(context);
     if (await session.readClipboard()) await session.translate();
   }
+  async function translateText(context) {
+    session.adopt(context);
+    const text = context.argument?.trim() ?? "";
+    if (text === "") {
+      if (await session.readClipboard()) await session.translate();
+      return;
+    }
+    session.adoptText(text, "typed");
+    await session.translate();
+  }
+  var toolbox = {
+    activate: (context) => session.adopt(context),
+    render: () => renderPage(session)
+  };
   defineExtension({
-    page: {
-      activate: (context) => session.adopt(context),
-      render: () => renderPage(session)
-    },
+    toolbox,
     popover: {
       activate: (context) => session.adopt(context),
       render: () => renderPopover(session)
@@ -1771,9 +1931,8 @@
     commands: {
       "capture-translate": captureTranslate,
       "capture-copy": captureCopy,
-      "translate-clipboard": translateClipboard
-    },
-    // 点了静默命令失败时那条横幅：宿主已经把面板展开到本扩展，错误屏在页面里，这里只要确保重画。
-    onNotificationActivated: () => jarvis.ui.update()
+      "translate-clipboard": translateClipboard,
+      "translate-text": translateText
+    }
   });
 })();

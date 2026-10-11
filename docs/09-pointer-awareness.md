@@ -7,6 +7,8 @@ Jarvis 的浮窗对指针有一整套反应：指针靠近贴边的细条，整�
 这些反应有**一份**实现、**一套**数值，扩展页面上的每一颗控件与内置工具的控件逐帧同一种光。
 
 扩展不实现任何一层——它只需要知道每一层什么时候会发生、自己能触发什么、不能做什么。
+这份文档以工具箱面板为主：窗口标签不会自己收回，层 0 与层 1 对它不适用；原地弹窗点外面就撤，同样尊重层 1 的旗。
+服务与静默命令跑在后台会话里，没有任何一面，与本文无关。
 
 ## Architecture & Logic
 
@@ -33,7 +35,7 @@ Jarvis 的浮窗对指针有一整套反应：指针靠近贴边的细条，整�
 | 指针压在球 / 面板上 | `isPointerFocused = true`，**15 秒倒计时挂起**；离开后重新给满一个周期 | 用户读你的页面时不会被收走；指针离开 15 秒后会 |
 | 面板外按下 / 切走应用 / 15 秒到点 | 三条自动收回路径，都只读 `holdsPanelOpen` | 见层 1 |
 | Esc / 点球 | 用户**明确**要收回，不读 `holdsPanelOpen` | 你举的旗挡不住用户自己的手 |
-| 面板收回 | `background: false` 的扩展被 `deactivate` 并销毁上下文 | 没保存的状态就没了——用 `storage` 存该记住的 |
+| 面板收回 | 工具箱那一面 `deactivate`；前台会话的 JS 上下文**留着**，直到用户打开另一个扩展、或它被停用 / 卸载 | 收起再展开不丢内存里的状态；换一个扩展再回来就丢了——该跨越的东西用 `storage` 存 |
 
 ### 层 1 · 面板级：举旗
 
@@ -47,12 +49,12 @@ Jarvis 的浮窗对指针有一整套反应：指针靠近贴边的细条，整�
 
 扩展只能举第一面，两条路：
 
-- **自动**：`field` / `editor` / `search` 有焦点时宿主替你举；`files.pick` 与 `screenshot.capture` 期间宿主替你举。
+- **自动**：`field` / `editor` / `search` 有焦点时宿主替你举；`screenshot.capture` 期间宿主替你举。
 - **手动**：`jarvis.panel.hold(reason)` → `release()`。判据是"这件事跨越指针离开"——文件在读、
   传输在跑、用户在盯一条进度。内置的哈希（读文件）、APK 扫描（拉几百 MB）、快传（有传输在跑）就是这三种。
 
 **不要为了"别收回"而 hold。** 一个从进入就 hold 到离开的扩展等于把常驻开关从用户手里拿走；审核不通过。
-宿主对超过 10 分钟的 hold 记警告，开发者模式里可见。
+审核时按「`hold` 与 `release` 是否成对、包住的是不是一件真的跨越指针离开的事」来读。
 
 ### 层 2 · 控件级：悬停光与选中光
 
@@ -108,8 +110,8 @@ Jarvis 的浮窗对指针有一整套反应：指针靠近贴边的细条，整�
 
 ```ts
 // 1. 跨越指针离开的事：举旗、放旗
-const hold = jarvis.panel.hold("正在把文件推到手机");
-try { await jarvis.quickTransfer.sendFile(file); } finally { hold.release(); }
+const hold = jarvis.panel.hold("正在查询");
+try { await jarvis.net.fetch(url); } finally { hold.release(); }
 
 // 2. 想让一行"可点"：给 onPress。宿主自动挂光；不给就不亮
 ui.row({ key: r.id, title: r.name, onPress: () => open(r) });
@@ -121,9 +123,9 @@ ui.row({ key: r.id, title: r.name, hoverCard: ui.card({ children: [ui.text({ tex
 ## Gotchas
 
 - `disabled: true` 的按钮**不亮**也**不隐藏**——这是同一条规则的两半。
-- `hold` 忘了 `release` 会在离开扩展时被宿主兜底释放，但页面停留期间面板永不收回；
-  开发者模式的日志会写「hold 已持续 N 分钟」。
-- 面板收起再展开，你的页面是新的一次 `activate`；上一次的 hoverCard、两步确认态、聚焦全部不跨越一次收回。
+- `hold` 忘了 `release` 会在离开扩展时被宿主兜底释放，但页面停留期间面板永不收回。
+- 后台会话里 `panel.hold` 被拒（`surface.unavailable`），SDK 把这次拒绝吞掉：服务与静默命令不需要摁住什么。
+- 面板收起再展开，那一面是新的一次 `activate`（JS 状态还在）；宿主那边的 hoverCard、两步确认态、聚焦全部不跨越一次收回。
 
 ## Related Links
 

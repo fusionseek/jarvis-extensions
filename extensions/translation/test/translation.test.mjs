@@ -1,7 +1,11 @@
 /**
  * 对着构建产物跑：宿主替身在线缆另一端扮演 Jarvis，断言的是"按下 ⌥⌘T 之后线缆上发生了什么、
- * 弹窗与页面里画了什么"。截图、OCR、Google 全是桩——这里证明的是编排与两棵树，不是 Vision 与 Google。
+ * 弹窗与工具箱页面里画了什么"。截图、OCR、Google 全是桩——这里证明的是编排与两棵树，不是 Vision 与 Google。
  * 每条测试开始前把桩与会话都归零，因此可以单独跑任意一条。
+ *
+ * 静默命令（⌥⌘O）在真机上跑在**后台会话**：`panel.*` 与 `ui.*` 都以 `surface.unavailable` 拒绝。
+ * `runSilent` 在跑它的那段时间里把这几个桩换成拒绝，模拟的就是那个环境。
+ * 静默测试的原文都是**各自独有**的一句：后台那份会话不碰页面，`beforeEach` 的「清空」清不到它写进的译文缓存。
  */
 import test, { beforeEach } from "node:test";
 import assert from "node:assert/strict";
@@ -55,16 +59,27 @@ let fetchBehaviour;
 let apiKey;
 let clipboardText;
 let clipboardImage;
+/** 非空时写剪贴板以它拒绝。 */
+let clipboardWriteError = null;
 const written = [];
 const posted = [];
 const spoken = [];
 const dismissedPopovers = [];
+/** `false` = 此刻在后台会话里：界面类调用一律 `surface.unavailable`。 */
+let surfaceAvailable = true;
+const surfaceOnly = (stub) => async (params) => {
+  if (!surfaceAvailable) throw { code: "surface.unavailable", message: "后台会话里没有界面" };
+  return stub(params);
+};
 
 const host = createTestHost({
   async: {
     "screenshot.capture": async (params) => captureBehaviour(params),
     "net.fetch": async (params) => fetchBehaviour(params),
-    "clipboard.write": async ({ text }) => void written.push(text),
+    "clipboard.write": async ({ text }) => {
+      if (clipboardWriteError) throw clipboardWriteError;
+      written.push(text);
+    },
     "clipboard.read": async () => clipboardText,
     "clipboard.readImage": async () => clipboardImage,
     "ocr.recognize": async () => ({ text: "", lines: LINES }),
@@ -75,11 +90,12 @@ const host = createTestHost({
     "preferences.get": async ({ key }) => (key === "apiKey" ? apiKey : undefined),
     "preferences.observe": async () => undefined,
     "preferences.unsubscribe": async () => undefined,
-    "panel.hold": async () => "hold-1",
-    "panel.release": async () => undefined,
+    "panel.hold": surfaceOnly(async () => "hold-1"),
+    "panel.release": surfaceOnly(async () => undefined),
+    "panel.present": surfaceOnly(async () => undefined),
     "commands.run": async () => undefined,
     "system.openExtensionSettings": async () => undefined,
-    "ui.dismissPopover": async () => void dismissedPopovers.push(true),
+    "ui.dismissPopover": surfaceOnly(async () => void dismissedPopovers.push(true)),
   },
   sync: {
     "text.language.detect": ({ text }) => ({ code: /[一-鿿]/.test(text) ? "zh-Hans" : "en", confidence: 0.9, candidates: [] }),
@@ -94,13 +110,32 @@ const PREFS = { targetLanguage: "zh-CN", alternateLanguage: "en", ocrLanguages: 
 const COMMANDS = [
   { id: "capture-translate", title: "截屏翻译", hotkey: "⌥⌘T", presentation: "popover" },
   { id: "capture-copy", title: "截屏译文入剪贴板", hotkey: "⌥⌘O", presentation: "silent" },
-  { id: "translate-clipboard", title: "翻译剪贴板", presentation: "panel" },
+  { id: "translate-clipboard", title: "翻译剪贴板", presentation: "toolbox" },
+  { id: "translate-text", title: "翻译这段文字", slash: "/translate", presentation: "toolbox" },
 ];
 
-const runCommand = async (id, granted = ALL, preferences = PREFS) => {
-  host.dispatch({ type: "command", context: { id, trigger: "hotkey", granted, preferences } });
+const runCommand = async (id, granted = ALL, preferences = PREFS, extra = {}) => {
+  host.dispatch({ type: "command", context: { id, trigger: "hotkey", granted, preferences, ...extra } });
   await host.settle();
 };
+/** 像宿主那样在后台会话里跑一条静默命令：跑的这段时间里界面类调用全被拒。 */
+const runSilent = async (id, granted = ALL, preferences = PREFS) => {
+  surfaceAvailable = false;
+  try {
+    await runCommand(id, granted, preferences);
+  } finally {
+    surfaceAvailable = true;
+  }
+};
+/** `/translate <argument>`：宿主已经去掉了首尾空白；没跟字时 `argument` 是 `undefined`。 */
+const runSlash = async (argument, scope = "launcher") => {
+  await runCommand("translate-text", ALL, PREFS, { trigger: "slash", scope, ...(argument === undefined ? {} : { argument }) });
+};
+/** 这一句只用在一条静默测试里：缓存键里有原文，各用各的就互不串。 */
+const silentShot = (text) => () => ({
+  ...SHOT,
+  ocr: { text: "", lines: [{ text, box: { x: 0.1, y: 0.1, width: 0.6, height: 0.05 }, confidence: 0.9 }] },
+});
 const activate = async (surface, granted = ALL) => {
   host.dispatch({ type: "deactivate" });
   host.dispatch({ type: "activate", context: { entry: "command", surface, granted, preferences: PREFS, commands: COMMANDS } });
@@ -132,12 +167,14 @@ beforeEach(async () => {
   apiKey = null;
   clipboardText = null;
   clipboardImage = null;
+  clipboardWriteError = null;
   written.length = 0;
   posted.length = 0;
   spoken.length = 0;
   dismissedPopovers.length = 0;
+  surfaceAvailable = true;
   // 会话状态跨测试留着（宿主也这样）：用页面上的「清空」回到空屏。
-  await activate("page");
+  await activate("toolbox");
   const source = byKey("source-section");
   if (source) await pressAction(source, "clear");
 });
@@ -191,8 +228,8 @@ test("弹窗里换目标语言立刻重翻", async () => {
 test("「在面板里打开」：页面画的是同一份结果——原文、缩略图、译文、再截一块", async () => {
   await runCommand("capture-translate");
   await activate("popover");
-  await activate("page");
-  assert.equal(host.latestSurface, "page");
+  await activate("toolbox");
+  assert.equal(host.latestSurface, "toolbox");
   assert.equal(byKey("shot").props.label, "刚截到的那一块 · 724×188");
   assert.equal(byKey("source-section").props.trailing, "英语 · 3 行");
   assert.equal(byKey("translation").props.text, TRANSLATED);
@@ -228,17 +265,85 @@ test("填了 API key 就走官方 Translation API v2", async () => {
 });
 
 test("⌥⌘O：静默命令写剪贴板、弹一条「已复制译文」，不碰面板", async () => {
+  captureBehaviour = silentShot("Silent copy goes straight to the clipboard.");
   fetchBehaviour = () => gtx("静默的译文");
-  await runCommand("capture-copy");
+  const before = host.invocations.length;
+  await runSilent("capture-copy");
   assert.deepEqual(written, ["静默的译文"]);
   assert.deepEqual(posted, [{ title: "已复制译文", body: "静默的译文" }]);
-  assert.ok(!host.invocations.some((i) => i.namespace === "panel" && i.method === "present"));
+  const calls = host.invocations.slice(before);
+  assert.ok(!calls.some((i) => i.namespace === "panel" && i.method === "present"));
+  // hold 在后台会话里被拒，SDK 吞掉；翻译照常走完，不依赖它。
+  assert.ok(calls.some((i) => i.namespace === "panel" && i.method === "hold"), "翻译期间照常请求 hold");
+  assert.ok(!calls.some((i) => i.namespace === "ui"), "后台会话里没有弹窗可撤");
+  assert.equal(host.logs.filter((l) => l.level === "error").length, 0, "被拒的 hold 不该变成一条命令异常");
+});
+
+test("⌥⌘O 读不到页面的状态：页面里手动改过的目标语言不影响它", async () => {
+  // 页面那一份：翻过一次，又在弹窗里把目标语言改成日语（会话值，只改这一次）。
+  await runCommand("capture-translate");
+  await activate("popover");
+  await host.fire(byKey("to"), "change", "ja");
+  assert.match(lastFetch().params.url, /tl=ja/);
+  // 静默命令跑在后台会话：那里只有偏好，没有这次手动改过的日语。
+  captureBehaviour = silentShot("The background session never sees the page.");
+  fetchBehaviour = () => gtx("后台会话的译文");
+  await runSilent("capture-copy");
+  assert.match(lastFetch().params.url, /tl=zh-CN/);
+  assert.deepEqual(written, ["后台会话的译文"]);
+  // 反过来也一样：静默命令不会把它那一次写进页面。
+  await activate("popover");
+  assert.equal(byKey("translation").props.text, TRANSLATED);
+  assert.equal(byKey("to").props.value, "ja");
+});
+
+test("⌥⌘O 框空了：什么都不说，也不去撤一扇不存在的弹窗", async () => {
+  captureBehaviour = () => ({ ...SHOT, ocr: { text: "", lines: [] } });
+  const beforeFetches = fetches().length;
+  const before = host.invocations.length;
+  await runSilent("capture-copy");
+  assert.equal(fetches().length, beforeFetches);
+  assert.deepEqual(written, []);
+  assert.deepEqual(posted, [], "框空了几乎总是误拖，与原地弹窗同一条规矩：当这一次没发生过");
+  assert.ok(!host.invocations.slice(before).some((i) => i.namespace === "ui"), "后台会话里不调 dismissPopover");
+});
+
+test("⌥⌘O 按 Esc：不弹横幅", async () => {
+  captureBehaviour = () => {
+    throw { code: "cancelled", message: "用户取消" };
+  };
+  await runSilent("capture-copy");
+  assert.deepEqual(posted, []);
+  assert.deepEqual(written, []);
+});
+
+test("⌥⌘O 缺屏幕录制权限 / 截图授权：横幅说清去哪开——后台会话里没有页面能画那张说明", async () => {
+  captureBehaviour = () => {
+    throw { code: "permission.unavailable", message: "没有屏幕录制权限" };
+  };
+  await runSilent("capture-copy");
+  assert.equal(posted.length, 1);
+  assert.equal(posted[0].title, "Jarvis 还没有屏幕录制权限");
+  assert.match(posted[0].body, /系统设置 › 隐私与安全性 › 屏幕录制/);
+
+  captureBehaviour = () => {
+    throw { code: "permission.denied", message: "没有授权" };
+  };
+  await runSilent("capture-copy");
+  assert.equal(posted[1].title, "没有截图的授权");
+
+  // 上一次缺权限、这一次按 Esc：横幅不能跟着上一次的结局说话。
+  captureBehaviour = () => {
+    throw { code: "cancelled", message: "用户取消" };
+  };
+  await runSilent("capture-copy");
+  assert.equal(posted.length, 2);
 });
 
 test("翻译完自动复制的偏好", async () => {
   await runCommand("capture-translate", ALL, { ...PREFS, autoCopy: true });
   assert.deepEqual(written, [TRANSLATED]);
-  await activate("page");
+  await activate("toolbox");
   assert.match(byKey("footnote").props.text, /^已自动复制译文 · /);
 });
 
@@ -249,7 +354,7 @@ test("Esc 取消框选：不翻译、不报错，页面还是空屏", async () =
   const before = fetches().length;
   await runCommand("capture-translate");
   assert.equal(fetches().length, before);
-  await activate("page");
+  await activate("toolbox");
   assert.ok(host.find((n) => n.kind === "empty"), "空屏上是那块虚线占位");
   assert.equal(host.find((n) => n.kind === "note"), undefined);
 });
@@ -259,7 +364,7 @@ test("Jarvis 自己没有屏幕录制权限：多一张「打开系统设置」�
     throw { code: "permission.unavailable", message: "没有屏幕录制权限" };
   };
   await runCommand("capture-translate");
-  await activate("page");
+  await activate("toolbox");
   const note = byKey("system-permission");
   assert.equal(note.props.title, "Jarvis 还没有屏幕录制权限");
   await pressAction(note, "system-settings");
@@ -268,7 +373,7 @@ test("Jarvis 自己没有屏幕录制权限：多一张「打开系统设置」�
 });
 
 test("没有截图授权：页面画拒绝态与「授权」，按下去再问一次", async () => {
-  await activate("page", ALL.filter((id) => id !== "screenshot.capture"));
+  await activate("toolbox", ALL.filter((id) => id !== "screenshot.capture"));
   const note = byKey("capture-denied");
   assert.equal(note.props.title, "没有截图的授权");
   assert.ok(byKey("fallback"), "还能做的：翻译剪贴板");
@@ -329,7 +434,7 @@ test("翻译剪贴板：是图先 OCR，页面里标成「剪贴板里的图片�
   fetchBehaviour = () => gtx("剪贴板图片的译文");
   await runCommand("translate-clipboard");
   assert.ok(host.invocations.some((i) => i.namespace === "ocr" && i.method === "recognize"));
-  await activate("page");
+  await activate("toolbox");
   assert.equal(byKey("shot").props.label, "剪贴板里的图片");
   assert.equal(byKey("translation").props.text, "剪贴板图片的译文");
 });
@@ -337,21 +442,90 @@ test("翻译剪贴板：是图先 OCR，页面里标成「剪贴板里的图片�
 test("翻译剪贴板：空剪贴板说清「剪贴板是空的」", async () => {
   clipboardText = "   ";
   await runCommand("translate-clipboard");
-  await activate("page");
+  await activate("toolbox");
   assert.equal(byKey("failure").props.title, "剪贴板是空的");
 });
 
-test("静默命令失败时用横幅说原因，点横幅展开的页面画着错误屏", async () => {
+test("静默命令失败：横幅自己把话说完，不指向页面上的按钮；页面那一份不受影响", async () => {
+  captureBehaviour = silentShot("This silent translation is going to fail.");
   fetchBehaviour = () => {
     throw new Error("Google 返回 503");
   };
-  await runCommand("capture-copy");
+  await runSilent("capture-copy");
   assert.equal(posted.length, 1);
   assert.equal(posted[0].title, "翻译失败");
+  assert.match(posted[0].body, /Google 返回 503/);
+  // 后台会话里没有"留在上面的原文"，横幅上也没有「授权」「重试」——照着页面的说法写会让用户去找按钮。
+  assert.equal(posted[0].body.includes("原文还留在上面"), false);
+  assert.match(posted[0].body, /截屏翻译/);
   assert.deepEqual(written, []);
-  host.dispatch({ type: "notificationActivated" });
-  await activate("page");
-  assert.equal(byKey("failure").props.title, "翻译失败");
+  // 失败只活在后台那一份里：点横幅展开的工具箱页面还是空屏，不是错误屏。
+  await activate("toolbox");
+  assert.equal(byKey("failure"), undefined);
+  assert.ok(host.find((n) => n.kind === "empty"));
+});
+
+test("静默命令：剪贴板写不进去时不说「翻译失败」——译文是出来了的", async () => {
+  captureBehaviour = silentShot("The clipboard refuses this one.");
+  fetchBehaviour = () => gtx("写不进剪贴板的译文");
+  clipboardWriteError = { code: "host.failure", message: "剪贴板被别的应用占着" };
+  await runSilent("capture-copy");
+  assert.equal(posted.length, 1);
+  assert.equal(posted[0].title, "译文没放进剪贴板");
+  assert.match(posted[0].body, /剪贴板被别的应用占着/);
+
+  // 写剪贴板的授权被撤了：说的是授权，并指到设置里那一块。
+  captureBehaviour = silentShot("The clipboard permission was revoked.");
+  clipboardWriteError = { code: "permission.denied", message: "没有写剪贴板的授权" };
+  await runSilent("capture-copy");
+  assert.equal(posted[1].title, "没有这项授权");
+  assert.match(posted[1].body, /设置 › 扩展 › 截屏翻译/);
+  assert.deepEqual(written, []);
+});
+
+test("/translate <文字>：那段字就是原文，结果画在工具箱页面上", async () => {
+  const argument = "Slash commands carry their own text.";
+  fetchBehaviour = () => gtx("斜杠指令自带原文。");
+  const before = host.invocations.length;
+  await runSlash(argument);
+  assert.ok(decodeURIComponent(lastFetch().params.url).includes(`q=${argument}`), "原文该是 / 后面那段字");
+  assert.match(lastFetch().params.url, /tl=zh-CN/);
+  assert.equal(host.invocations.slice(before).some((i) => i.namespace === "clipboard"), false, "跟了字就不读剪贴板");
+  await activate("toolbox");
+  assert.equal(byKey("source").props.value, argument);
+  assert.equal(byKey("translation").props.text, "斜杠指令自带原文。");
+  assert.equal(byKey("source-section").props.trailing, "英语", "打字进来的不报行数");
+  assert.equal(byKey("shot"), undefined, "不配上一张截图");
+});
+
+test("/翻译 从速记输入框来：同一个处理函数，换一段新原文时把上一次的截图丢掉", async () => {
+  await runCommand("capture-translate");
+  await activate("toolbox");
+  assert.ok(byKey("shot"), "先有一张截图");
+  fetchBehaviour = () => gtx("速记里的译文");
+  await runSlash("Typed in the memo composer.", "memo");
+  await activate("toolbox");
+  assert.equal(byKey("source").props.value, "Typed in the memo composer.");
+  assert.equal(byKey("translation").props.text, "速记里的译文");
+  assert.equal(byKey("shot"), undefined, "新原文不该配旧缩略图");
+});
+
+test("/translate 没跟字：与「翻译剪贴板」同一条路", async () => {
+  clipboardText = "Nothing after the slash, so read the clipboard.";
+  fetchBehaviour = () => gtx("没跟字就翻剪贴板。");
+  const before = host.invocations.length;
+  await runSlash(undefined);
+  assert.ok(host.invocations.slice(before).some((i) => i.namespace === "clipboard" && i.method === "read"));
+  assert.ok(decodeURIComponent(lastFetch().params.url).includes(`q=${clipboardText}`));
+  await activate("toolbox");
+  assert.equal(byKey("translation").props.text, "没跟字就翻剪贴板。");
+});
+
+test("/translate 没跟字、剪贴板也是空的：页面说清「剪贴板是空的」", async () => {
+  clipboardText = null;
+  await runSlash("");
+  await activate("toolbox");
+  assert.equal(byKey("failure").props.title, "剪贴板是空的");
 });
 
 test("朗读走 speech.speak，带上检测出的语言", async () => {
@@ -514,7 +688,7 @@ test("单词：译文下面是音标与按词性分行的词义", async () => {
 test("单词：页面里画的是同一份词典", async () => {
   captureWord();
   await runCommand("capture-translate");
-  await activate("page");
+  await activate("toolbox");
   assert.equal(byKey("phonetic-text").props.text, "/ found /");
   assert.equal(byKey("terms-0").props.text, "创建; 创立; 成立");
 });

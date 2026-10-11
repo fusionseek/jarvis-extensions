@@ -1,48 +1,63 @@
-# @fusionseek/jarvis-extension-sdk
+# @fusionseek/jarvis-extension-sdk（2.x）
 
-Jarvis 扩展的 SDK：manifest 类型、命令与页面、声明式 UI 节点、宿主能力接口、OCR 段落合并，
-以及跑在 JavaScriptCore 里的那条桥。
+Jarvis 扩展的 SDK：manifest v2 类型、按域交实现的 `defineExtension`、声明式 UI 节点、宿主能力接口、
+服务扩展点的契约、OCR 段落合并，以及跑在 JavaScriptCore 里的那条桥（协议 2）。
 
 ```ts
-import { defineExtension, jarvis, ui } from "@fusionseek/jarvis-extension-sdk";
+import { defineExtension, jarvis, ui, type CommandContext } from "@fusionseek/jarvis-extension-sdk";
 
 let text = "";
 
 defineExtension({
-  page: {
+  // 工具箱域：面板里那一页（window / popover 没给时也画这一份）
+  toolbox: {
     render() {
-      return ui.stack({
-        spacing: "loose",
+      return ui.scroll({
         children: [
           ui.section({
             title: "输入 · INPUT",
-            children: [ui.field({ value: text, label: "要发送的文字", onChange: (v) => (text = v) })],
+            children: [ui.field({ key: "text", value: text, label: "要发送的文字", onChange: (v) => (text = v) })],
           }),
           ui.button({ title: "发到手机", variant: "primary", disabled: text.trim() === "", onPress: () => void jarvis.commands.run("send") }),
         ],
       });
     },
   },
+  // 指令域：manifest commands[] 里同 id 的那一条；/ 指令的参数在 context.argument
   commands: {
-    send: async () => jarvis.quickTransfer.sendText(text),   // manifest commands[] 里 id 为 send 的那一条，可带快捷键
+    send: async (context: CommandContext) => jarvis.quickTransfer.sendText(context.argument ?? text),
   },
 });
 ```
 
+服务扩展只交 `services`，按 manifest `contributes.services[].id` 对上：
+
+```ts
+import { defineExtension, type JunkCleanEngine } from "@fusionseek/jarvis-extension-sdk";
+
+const engine: JunkCleanEngine = {
+  status: async () => ({ ready: true, summary: "mo 1.2.0 · /opt/homebrew/bin/mo", actions: [] }),
+  run: async (context, progress, signal) => ({ sections: [], notes: [] }),
+};
+defineExtension({ services: { mole: engine } });
+```
+
 | 文件 | 管什么 |
 | --- | --- |
-| `src/manifest.ts` | `extension.json` 的类型、命令与快捷键、能力风险档位 |
+| `src/manifest.ts` | `extension.json` v2 的类型：域（`contributes`）、命令与落点、受限执行的声明对象、偏好、能力风险档位 |
 | `src/ui.ts` | 31 种节点与 `ui.*` 构造器；输入框的文本由宿主持有 |
-| `src/capabilities.ts` | 全局 `jarvis` 的接口与错误码 |
-| `src/bridge.ts` | 宿主 ⇄ 扩展的线缆协议、节点序列化、事件类型 |
+| `src/capabilities.ts` | 全局 `jarvis` 的接口（含 `process` / `files` / `terminal` / `window` / `inbox`）与错误码（含 `surface.unavailable`） |
+| `src/services.ts` | 服务扩展点的契约：`junkClean.engine`（`status` / `run` / `action`，取消信号） |
+| `src/bridge.ts` | 宿主 ⇄ 扩展的线缆协议 2：三面、命令上下文、`service` / `serviceCancel`、节点序列化 |
 | `src/ocr.ts` | 行 → 段落合并、按句分块（纯函数，node 里可测） |
-| `src/index.ts` | `defineExtension`（页面、命令、原地弹窗）、`jarvis` 实现、运行时（对宿主延迟绑定；`activate` 的 `surface` 决定画页面还是弹窗） |
-| `src/testing.ts` | 宿主替身：`createTestHost()`，让扩展逻辑在 node 里跑单测 |
+| `src/index.ts` | `defineExtension`、`jarvis` 实现、运行时（对宿主延迟绑定；前台的三面与后台的服务调用走同一条桥） |
+| `src/testing.ts` | 宿主替身：`createTestHost()`；`dispatch` 宿主事件、`callService` 调一次服务、`find` / `fire` 断言节点树 |
 
 ```bash
 npm run check   # tsc --noEmit
 npm run build   # → dist/
-npm test        # 在仓库根跑：构建 + node --test sdk/test/
+npm test        # 在仓库根跑：构建 + node --test sdk/test/ + 各扩展测试
 ```
 
-真源与手册在仓库根的 `docs/`；schema 在 `schemas/`。SDK 主版本与宿主运行时主版本必须一致。
+真源与手册在仓库根的 `docs/`；schema 在 `schemas/`。SDK 主版本与宿主运行时主版本必须一致（2）：
+宿主不读 SDK 1.x 的产物，SDK 2 的产物也不在旧宿主上跑。

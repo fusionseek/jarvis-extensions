@@ -1,324 +1,250 @@
-# 能力接口目录（`jarvis.*` API 参考）
+# 能力接口目录（`jarvis.*` API 参考，SDK 2）
 
 ## Overview
 
-扩展里那个全局对象 `jarvis` 的每一个命名空间，对应宿主里一个**已经存在**的模型：
-闸门放行之后调的是 `QuickTransferModel.shared`、`ClipboardHistoryModel.shared`、`AppModel.shared`、
-`MemoModel.shared`、`ScreenshotCaptureCoordinator.shared` 这些既有入口，**不复制它们的逻辑**。
-因此扩展拿到的行为与用户在内置面板里做同一件事逐字相同：快传没开就是没开，剪贴板里的机密就是读不到。
+扩展里那个全局对象 `jarvis` 的每一个命名空间，对应宿主里一个**已经存在**的模型：闸门放行之后调的是
+`QuickTransferService.shared`、`AppModel.shared`、`ScreenshotCaptureCoordinator.shared`、系统剪贴板这些既有入口，
+**不复制它们的逻辑**。因此扩展拿到的行为与用户在内置面板里做同一件事逐字相同：快传没开就是没开，剪贴板里的机密就是读不到。
 
-类型真源是 [`sdk/src/capabilities.ts`](../sdk/src/capabilities.ts)。全部方法返回 Promise，
-只有标了「同步」的纯函数工具例外。错误一律是 `JarvisError`，`code` 见文末。
+v2 的目录**只列宿主真的做得到的**：声明得到、调不到的能力会让用户在授权屏上点了头，扩展却永远走不到那条路，
+而两边都不会报错。v1 的粘贴板历史、速记、日历、任务、文件选择、BigQuery 因此全部删掉。
 
-约定：字符串里的时间一律 ISO 8601（UTC），字节数一律整数，句柄只在本次会话内有效。
+类型真源是 [`sdk/src/capabilities.ts`](../sdk/src/capabilities.ts)。全部方法返回 Promise，只有标了「同步」的纯函数工具例外。
+错误一律是 `JarvisError`，`code` 见文末。
 
-## 隐式能力（不需要点头）
+## Concepts
 
-### `jarvis.sdk` / `jarvis.host` / `jarvis.environment`
+### 隐式能力（不需要点头）
+
+#### `jarvis.sdk` / `jarvis.host` / `jarvis.environment`
 
 | 属性 | 值 |
 | --- | --- |
-| `sdk.version` | SDK 版本，`1.0.0` |
-| `host.version` | 宿主版本（`CFBundleShortVersionString`），`host.channel` = `release` / `development` |
-| `environment.reduceMotion` / `reduceTransparency` / `increaseContrast` / `locale` | 三档辅助功能与区域。**界面上的适配由宿主做**；这里给出来是让扩展自己的逻辑（比如要不要每秒刷新一次进度文案）也能跟着让步 |
+| `sdk.version` | SDK 版本，`2.0.0` |
+| `host.version` / `host.channel` | 宿主版本（`CFBundleShortVersionString`）、`release` / `development` |
+| `environment` | `reduceMotion` / `reduceTransparency` / `increaseContrast` / `locale`。界面上的适配由宿主做；这里给出来是让扩展自己的逻辑也能让步 |
 
-### `jarvis.ui.update()`
-
-让宿主再调一次 `render()`。同一拍里的多次调用合并成一次提交。`ui` 事件回调之后宿主会自动更新，
-只有**异步**回来的数据（能力调用的结果、定时器）需要手动调它。
-
-### `jarvis.ui.dismissPopover()`（SDK 1.5）
-
-撤掉这一轮的弹窗。
-
-`presentation: "popover"` 的命令截完一块之后，宿主立刻把弹窗挂到选区旁边——**它必须立刻开**，
-因为扩展要有一面活着的界面才会提交，而快捷键触发时面板多半收着、一面都没有。
-
-这一轮没什么可给用户看的（比如框到的那块里根本没有文字）时，在命令返回之前 `await` 它一次。
-弹窗出场的第一拍（40ms）特意压住不显示，因此这句话通常赶得上，用户什么都不会看到；
-赶不上时弹窗会闪一下再收起来。
-
-```ts
-if (!hasTranslatableText(recognised)) {
-  await jarvis.ui.dismissPopover();   // 当这一次没发生过
-  return;
-}
-```
-
-**为什么不能只是"什么都不做"**：弹窗在截图完成那一刻就开了，不取决于扩展提交与否。必须明说。
-
-不需要授权：它只能收起这个扩展自己那一扇弹窗。
-
-### `setTimeout` / `clearTimeout` / `sleep(ms)`（SDK 1.4）
-
-定时器是**全局**，不是一次能力调用：它不碰用户的任何数据，因此不需要授权、不记速率，
-与 `JSON`、`Promise` 同级。SDK 另外导出一个 `sleep(ms)`，省得每个扩展自己 `new Promise`。
-
-```ts
-import { sleep } from "@fusionseek/jarvis-extension-sdk";
-await sleep(500);
-```
-
-| 约束 | 值 | 为什么 |
-| --- | --- | --- |
-| 单次延时 | ≤ 30 s，负数 / NaN / Infinity 一律当 0 | 与浏览器一致（那几个值的含义是"尽快"）。更久的等待应该由用户按一下发起，而不是扩展在后台挂着 |
-| 同时挂起 | ≤ 64 个，超出的那一次被丢掉并记一条 warn | 每个定时器都是让宿主替你记一件事；不设限的话循环里排一万个就能把这条串行队列排满，表现是"扩展越用越慢"而不是报错 |
-| `setInterval` | **没有** | 一个忘记 clear 的 interval 会在面板关掉之后继续醒着，直到应用退出 |
-| 会话结束 | 还没到点的全部取消 | 回调攥着扩展的函数，而那时宿主已经把桥摘了；醒过来只会得到一条来路不明的异常 |
-
-典型用处是**退避重试**：免费的第三方端点被限流时要等一会儿再试，
-而"等一会儿"在没有定时器的环境里无从表达。
-
-### `jarvis.panel`
+#### `jarvis.ui`
 
 | 方法 | 说明 |
 | --- | --- |
-| `hold(reason) → HoldHandle` | 告诉容器「此刻别自动收回」。三条自动收回路径（15 秒倒计时、面板外按下、切走应用）都尊重它；用户的 Esc 与点球不受影响。事情做完必须 `release()`，离开扩展时宿主兜底释放。`reason` 进开发者日志。原地弹窗（`presentation: "popover"`）同样尊重它：译文没回来之前弹窗不会自己收 |
-| `collapse()` | 把面板收成那颗球。只在用户动作 1 秒内放行 |
-| `present()` | 把面板展开到**这个扩展的页面**：没展开就展开、贴边就弹出、不在这一屏就切过来。`silent` 命令中途决定要给用户看结果时用；只在用户动作（含快捷键）1 秒内放行 |
+| `update()` | 让宿主再调一次 `render()`。同一拍多次调用合并成一次提交；一面都没开着时是空操作。`ui` 事件回调之后宿主自动更新，**异步**回来的数据才需要手动调 |
+| `dismissPopover()` | 撤掉这一轮的原地结果弹窗：这一轮没什么可给用户看的（框到的那块里根本没有文字）。在命令返回之前 `await` 它，SDK 那次自动提交就不会再开弹窗。后台会话里 `surface.unavailable` |
 
-### `jarvis.commands`
+#### `jarvis.panel`（工具箱域）
 
-`run(id)`：运行 manifest 里声明的一条命令，与快捷键触发同一条路（`trigger = "page"`）。页面里那颗
-「截屏翻译」按钮就该这么写，而不是自己再调一遍命令里的函数——一条命令只有一份实现。
+| 方法 | 说明 |
+| --- | --- |
+| `hold(reason) → HoldHandle` | 告诉容器「此刻别自动收回」（文件在读、传输在跑、用户在盯进度）。事情做完必须 `release()`，离开扩展时宿主兜底释放。原地弹窗同样尊重它。后台会话里被拒（SDK 把这次拒绝吞掉：那里没有面板可摁） |
+| `collapse()` | 把面板收成那颗球 |
+| `present()` | 把它的界面叫到用户眼前：命令落点是窗口就开窗口，否则展开面板到这个扩展的页面 |
 
-**什么时候该 `hold`**：文件正在读、传输正在跑、输入框有焦点、用户正盯着倒计时。
-判据是"这件事跨越指针离开"（`floating-panel.md`「跨越指针离开的事」）。`field` / `editor` 有焦点时
-宿主自动举旗，不需要扩展做。
+后台会话里 `panel.*` 一律 `surface.unavailable`。
 
-### `jarvis.storage`
+#### `jarvis.window`（窗口域）
 
-每扩展一个键值空间，落 `extension_documents`。
+`open()`：在 Jarvis 工作区里打开这个扩展的标签（已经开着就切过去），前台会话随之 activate 在窗口那一面。
+没有入驻窗口域、或在后台会话里调用 → `surface.unavailable`。
+
+#### `jarvis.commands`
+
+`run(id, argument?)`：运行 manifest 里声明的一条命令，与快捷键同一条路（`trigger = "page"`）。落点是 `silent` 的
+去后台会话跑，其余在前台——宿主替你转到对的那一种。页面里那颗「截屏翻译」按钮就该这么写：一条命令只有一份实现。
+
+#### `jarvis.storage`
+
+每扩展一个键值空间（库里 `extension_preferences` 的 `<id>#storage` 命名空间，与偏好分开存——否则一个 key 取成
+`targetLanguage` 的 `set` 会改掉用户在设置页里选的语言）。
 
 | 方法 | 限制 |
 | --- | --- |
-| `get(key)` / `set(key, value)` / `delete(key)` / `keys()` | `key` ≤ 64 字符；值必须可 JSON 序列化，单条 ≤ 64 KB；每扩展合计 ≤ 2 MB / 2000 条，超出 `set` 以 `rate.limited` 拒绝 |
+| `get(key)` / `set(key, value)` / `delete(key)` / `keys()` | 值必须可 JSON 序列化，单条 ≤ 64 KB，超出 `rate.limited` |
 
-不是缓存、不会被淘汰；用户卸载时可选是否删除。**不要把大块数据塞进来**（图片、导出文件）——
-它是"记住上次输入了什么"那种量级。
+它是"记住上次输入了什么"那种量级，不是缓存、不会被淘汰；用户选「卸载并删除数据」时一起删。
 
-### `jarvis.preferences`
+#### `jarvis.preferences`
 
-manifest `settings.preferences` 里声明的值。`get(key)` 没声明的 key 以 `invalid.argument` 拒绝；
-用户在设置页改动后触发 `onChange(changes)` 并自动重画。`secret` 类型只能 `get(key)` 单独读，
-`all()` 与 `onChange` 里都没有它。
+manifest `contributes.settings.preferences` 与各服务 `preferences` 里声明的值（共用一个命名空间）。
+`get(key)` / `all()` / `onChange(listener)`；用户在设置页改动后触发 `onChange(changes)` 并自动重画。
+`secret` 类型只能 `get(key)` 单独读（宿主从钥匙串取），`all()` 与 `onChange` 里都没有它。
 
-### `jarvis.permissions`
+#### `jarvis.permissions`
 
 | 方法 | 说明 |
 | --- | --- |
 | `granted()` | 此刻拿到的能力 id 列表 |
-| `request(ids)` | 再问一次，只能问 manifest 声明过的；只在用户动作 1 秒内放行；返回 `{ granted, denied }` |
+| `request(ids)` | 再问一次，只能问 manifest 声明过的；返回 `{ granted, denied }`。后台会话里不弹，直接答此刻的授权 |
 | `openSystemSettings("screenRecording" \| "accessibility")` | 打开系统设置对应隐私面板并上「把 Jarvis 拖进列表」浮窗 |
 
-### `jarvis.log`
-
-`debug` / `info` / `warn` / `error(message, data?)`。进设置页「扩展」区段的日志抽屉（每扩展最近 200 条），
-只在开发者模式打开时显示；不写系统日志。**不要往里写用户内容**。
-
-### 纯函数工具（同步）
-
-工具箱里那几块面板背后的领域函数原样露出来，跑的是宿主里同一份 Swift：
-
-| 命名空间 | 方法 | 对应的宿主实现 |
-| --- | --- | --- |
-| `text.base64` | `encode(text, { urlSafe, omitPadding, wrapAt76 })`、`decode(text, { ignoreWhitespace })` | `Domain/Base64Codec.swift`：宽进严出、非法字符报 1 基位置 |
-| `text.hash` | `digest("md5" \| "sha1" \| "sha256" \| "sha512", text, { uppercase })` | `Domain/HashDigest.swift` |
-| `text.json` | `format(text, { indent: 2 \| 4 \| "tab", sortKeys })`、`minify(text, { sortKeys })` | `Domain/JSONFormatting.swift`：自己的解析器，不走 `JSONSerialization`，不改数字、不丢键序 |
-| `text.url` | `parse(text)`、`build(parts)` | `Domain/URLBreakdown.swift`：全函数，没有"解析失败" |
-| `text.regex` | `test(pattern, text, flags)` | `Domain/RegexTesting.swift`：位置按用户数得出来的字符算 |
-| `text.language` | `detect(text, { hints })` → `{ code, confidence, candidates }`；`displayName(code)` | 系统 `NaturalLanguage` 与 `Locale`；BCP-47；判不出 `code` 为 `null` |
-| `time` | `parse(text, unit)`、`format(ms, pattern, timeZone)`、`timeZones()` | `Domain/TimeConversion.swift`：pattern 坏了就说坏了，绝不静默退回固定格式 |
-| `color` | `convert(hex)` → hex / rgb / hsl / hsv / cmyk | 拾色器的色彩空间换算 |
-
-SDK 自己还带一组**不经宿主**的纯函数（`ocr.mergeLines` / `ocr.paragraphs` / `ocr.chunk`）：把 OCR 的行合成段落
-（CJK 不加空格、拉丁加空格、连字符断词接回、按纵向空隙与缩进换段），按句边界切块。它们在 node 里就能测。
-
-同步调用有 50 ms 预算；`text.hash.digest` 只接受文本（文件走 `files.readBytes` 再传进来时以 1 MB 为上限——
-更大的文件请用户去内置的哈希工具，它是流式的）。
-
-## 需要点头的能力
-
-每一节的标题就是 manifest 里要声明的 `CapabilityID`。
-
-### `clipboard.read` — 读取剪贴板
-
-| 方法 | 说明 |
-| --- | --- |
-| `read()` | 当前剪贴板的文本；密码管理器标记为机密（`org.nspasteboard.ConcealedType` / `TransientType` / `AutoGeneratedType`）的内容读回 `null`，与内置粘贴板同一条过滤 |
-| `readImage()` | 剪贴板里是一张图时给出句柄（宿主落临时文件，≤ 20 MB）；不是图为 `null` |
-| `observe(listener)` | 系统剪贴板换了内容时回调（宿主 0.6 s 轮询一拍）。`background: true` 才会在页面之外收到 |
-
-### `clipboard.write` — 写入剪贴板
-
-`write(text)`。**用户按下的复制钮不需要它**：`ui.copy` 节点由宿主写剪贴板，与内置工具的复制钮同一种事。
-需要这项能力的是"用户没按复制、扩展自己决定写"的场景，因此它是中风险。
-
-### `clipboard.history` — 读取复制历史
-
-| 方法 | 说明 |
-| --- | --- |
-| `history({ limit ≤ 60 })` | 只给摘要（`preview` / `kind` / `copiedAt`），不给正文 |
-| `entryText(id)` | 逐条取正文 |
-
-高风险：它看得到用户之前复制过的东西。
-
-### `quickTransfer.status` — 查看快传状态
-
-| 方法 | 说明 |
-| --- | --- |
-| `status()` | `state` / `url` / `peers` / `activeTransfers` / `inboxDirectory` / `failureReason`；**没有 `pairingCode`** |
-| `observe(listener)` | 快照变化时回调（`QuickTransferService.snapshots` 那条流） |
-
-### `quickTransfer.control` — 开启 / 停止快传
-
-| 方法 | 说明 |
-| --- | --- |
-| `start()` | 对局域网开端口。返回带 `pairingCode` 的 `status`——配对码是接入凭据，只给这一档 |
-| `stop()` | 真的切断：断开全部连接、作废配对码，与面板底栏那颗「停止服务」同一条路 |
-
-**不替用户自动打开。** 扩展想发东西而服务没开时，正确的做法是画一颗「开启快传」按钮让用户按，
-而不是在 `sendText` 里悄悄 `start()`。审核清单有这一条。
-
-### `quickTransfer.send` — 经快传发送
-
-| 方法 | 说明 |
-| --- | --- |
-| `sendText(text)` | 推一条消息到已配对的手机页面（SSE 下行）；服务没开 → `host.failure`，没人配对 → 正常 resolve 但没人收到（与用户在面板里发一样） |
-| `sendFile(file)` | `file` 必须是 `files.pick` / `dropzone` / `screenshot.capture` 给出的句柄；宿主走 `offerFile(at:)` |
-| `records({ limit ≤ 100 })` | 需要 `quickTransfer.records` |
-
-### `quickTransfer.records` — 读取传输记录
-
-`records()`，见上。
-
-### `screenshot.capture` — 截图
-
-`capture({ mode, selectionOnly, recognizeText, ocr: { languages, level }, hint })`：宿主收起面板、盖遮罩、由用户框选，
-返回 `{ file, width, height, ocr? }`——PNG 句柄（宿主临时目录，会话结束清理）与可选的 OCR 结果。
-
-- `selectionOnly: true`：只框选，松手即完成，不进标注工具条。截屏翻译 / 识字这种"框一块就走"用它；
-  省略则走完整会话（可以标注，⏎ 完成）。
-- `recognizeText: true`：顺手把 OCR 做了；`ocr.languages` 是 Vision 的识别语言（如 `["zh-Hans","en-US"]`），
-  省略用宿主默认的中英。
-- `hint`：框选期间画在选框下方那句提示（≤ 16 字，如「松手即翻译」）；省略用宿主默认的「松手即完成」。只对 `selectionOnly` 有意义。
-- `appearance`（SDK 1.3）：这一次框选**长什么样**。`dim` 压不压暗、`guides` 画不画网格 / 十字 / 放大镜、
-  `cursorSymbol` 光标尾巴上挂哪一枚符号。省略时与宿主自己的截图一模一样。
-  截图与「框一块来翻译」是两件不同的事：前者用户在**构图**（要压暗、要参照线），
-  后者用户在**看原文**（两样都不要，否则他得先把工具的装饰读掉一遍）。
-  扩展选得到**要不要**，选不到画多深——每一档都用宿主自己那一套值。
-- 完成后面板怎么办由命令的 `presentation` 决定：`popover` 的在选区旁开原地结果弹窗，`panel` 的回到面板；页面里按按钮触发的按 `panel` 处理（回到该扩展）。
-- 用户 Esc → `cancelled`。依赖 Jarvis 的屏幕录制权限；没有 → `permission.unavailable`。
-  只在用户动作（含快捷键）1 秒内放行。
-
-### `ocr.recognize` — 识别图片文字
-
-`recognize(file, { languages, level })` → `{ text, lines: [{ text, box, confidence }] }`：对一个句柄（截图、
-`clipboard.readImage()`、`dropzone` / `files.pick` 拿到的图）跑 Vision。`box` 相对整张图归一化到 0…1、原点左上；
-`text` 只按行拼（行之间 `\n`），**不合并段落**——段落用 SDK 的 `ocr.mergeLines`。`confidence` 不该拿来做门。
-
-### `speech.speak` — 朗读
-
-`speak(text, { language, rate })` / `stop()`：系统语音；再次调用打断上一次。
-
-### `hotkeys.register` — 全局快捷键
-
-没有方法。它是 manifest `commands[].hotkey` 的授权开关：声明了它，宿主才按 manifest 注册那几组键；
-用户可以在设置页改键或在授权弹窗里关掉这一项。冲突在系统层面探测不到。
-
-### `notifications.post` — 系统横幅
-
-`post({ title ≤ 60, body ≤ 240 })`。走通知中心，标题前缀宿主不改，但横幅的**来源**（子标题）
-恒为扩展名——用户要分得清这条是 Jarvis 说的还是扩展说的。声音由用户的提示音设置决定。
-需要 manifest `inbox.notifications: true`。每扩展 60 秒内最多 3 条。
-
-### `inbox.post` — Inbox 卡片
-
-`post(card)` / `dismiss(cardId)`，形态与规则见 [11](11-inbox.md)。每扩展同一时刻一张活动卡；10 秒内最多投一次。
-
-### `memo.read` / `memo.write` — 速记
+#### `jarvis.system`
 
 | 方法 | 能力 | 说明 |
 | --- | --- | --- |
-| `list({ filter: "all" \| "todo" \| "today", limit ≤ 200 })` | `memo.read` | 正文、类型、完成态、优先级、到期、标签 |
-| `create(body)` | `memo.write` | 正文里的语法记号（`- ` 待办 / `!` 优先级 / `#` 标签 / `@` 到期）与用户手打时同样生效 |
-| `complete(id)` | `memo.write` | 只能勾，不能删：删除只发生在用户按下删除时 |
+| `openExtensionSettings()` | 隐式 | 打开设置窗口（偏好、授权、快捷键都在 设置 › 扩展 里）。扩展页面里**不许再画一份设置** |
+| `openURL(url)` | `system.openURL` | 只放行 https |
 
-### `calendar.read` — 日历汇总
+#### `jarvis.log`
 
-`runs({ from, to })`：按天的 Codex / Claude 轮次数与速记数，区间最长 93 天。**不给单条任务**——那是 `tasks.read`。
+`debug` / `info` / `warn` / `error(message, data?)`。进内存里那条日志（每会话最近 200 条），出错屏上看得见最后几条。
+**不要往里写用户内容与机密**。
 
-### `tasks.read` — 最近任务
+#### 定时器：`setTimeout` / `clearTimeout` / `sleep(ms)`
 
-`recent()`：Inbox 里那 50 条快照（无 `link`——会话标识不外露）；`observe(listener)` 新事件落地时回调。
+全局，不是一次能力调用。单次 ≤ 30 s、同时挂起 ≤ 64 个、会话结束时全部取消；**没有 `setInterval`**。
 
-### `network.https` — 访问网络
+#### 纯函数工具（同步）
 
-`fetch(url, { method, headers, body })`：
+| 命名空间 | 方法 | 宿主这一版 |
+| --- | --- | --- |
+| `host` | `info` / `environment` | 已接上 |
+| `text.language` | `detect(text, { hints })`、`displayName(code)` | 已接上（系统 `NaturalLanguage` 与 `Locale`） |
+| `text.base64` | `encode(text, { urlSafe, omitPadding, wrapAt76 })`、`decode(text, { ignoreWhitespace })` | 已接上（`Base64Codec`） |
+| `text.hash` | `digest(algorithm, text, { uppercase })` | 已接上（`HashDigest`） |
+| （不提供）`text.json` / `text.url` / `text.regex` / `time` / `color` | — | SDK 1 的类型里写过、宿主从没接上；SDK 2 拿掉了。目录只列宿主做得到的 |
 
-- 只走 HTTPS；主机必须在 manifest `network.hosts` 里；重定向到白名单之外即失败；
-- 不带 cookie、不带任何 Jarvis 的凭据；请求头由扩展决定（含 `User-Agent`——有些端点对空 UA 会 403），
-  宿主只追加一个 `X-Jarvis-Extension: <id>/<version>` 做标识；
-- 走系统代理设置（国内访问 Google 一类端点靠它）；
-- 响应 ≤ 5 MB、30 秒超时；每扩展每分钟 ≤ 30 次。
+SDK 自己还带一组**不经宿主**的纯函数（`ocr.mergeLines` / `ocr.paragraphs` / `ocr.chunk`），在 node 里就能测。
 
-### `bigquery.query` — 查询 BigQuery（SDK 1.6，高风险）
+### 需要点头的能力
 
-以用户在 Jarvis 里登录的 Google 身份（gcloud 应用默认凭证）跑**只读** GoogleSQL。要同时写 manifest `bigquery.projects`（1–8 个计费项目），
-授权弹窗会念出这几个项目。
+每一节的标题就是 manifest 里要声明的 `CapabilityID`。频率上限是宿主的 `ExtensionRateLimitPolicy`，挡的是失控，不是安全边界。
 
-```ts
-const r = await jarvis.bigquery.query({
-  project: "my-gcp-project",
-  sql: "SELECT dt, platform, SUM(n) AS n FROM `ds.events` WHERE dt BETWEEN @start AND @end GROUP BY 1, 2",
-  parameters: [
-    { name: "start", type: "DATE", value: "2026-09-01" },
-    { name: "end", type: "DATE", value: "2026-09-30" },
-  ],
-});
-// r.result 是句柄，交给 ui.chart({ result: r.result }) / ui.dataTable({ result: r.result })
-```
-
-- **护栏在宿主**：每次先 dry-run，只放行 SELECT（多语句脚本、DML、DDL 一律拒绝）；预计扫描超过用户在 Jarvis 里设的扫描上限（默认 300 GiB）就拒绝，
-  `invalid.argument`，message 就是原因。正式执行带 `maximumBytesBilled`，由 BigQuery 兜底。**扩展调不高上限。**
-- 未登录：`permission.unavailable`。`jarvis.bigquery.status()` 查状态（不出网），`jarvis.bigquery.login()` 让宿主开 gcloud 登录。
-- 结果：句柄 + 列名 + 行（`maxRows` 1–20,000，默认 1,000；`includeRows: false` 可不要）+ 截断标志 + 成本。句柄每会话保留 20 个。结果超过一页时宿主自动翻页（不再计费）。
-- 令牌永远不进扩展；频率 30 次/分钟。
-
-### `files.pick` — 选文件
+#### `clipboard.read` — 读取剪贴板
 
 | 方法 | 说明 |
 | --- | --- |
-| `pick({ accepts, multiple })` | 宿主开 `NSOpenPanel`（`begin` 而不是 `runModal`，先 `NSApp.activate`）；面板期间 `hold`；取消 → `cancelled`；文件夹一律拒绝 |
-| `readText(file)` / `readBytes(file)` | ≤ 20 MB；只能读句柄指向的那一个文件 |
-| `reveal(file)` | 在访达里选中它 |
+| `read()` | 当前剪贴板的文本；密码管理器标记为机密的内容读回 `null`，与内置粘贴板同一条过滤 |
+| `readImage()` | 剪贴板里是一张图时给出句柄（宿主落临时文件）；不是图为 `null` |
 
-`dropzone` 节点落下的文件走同一套句柄，不需要额外能力——用户亲手拖进来的。
+#### `clipboard.write` — 写入剪贴板
 
-### `system.openExtensionSettings` — 打开本扩展的设置
+`write(text)`，每分钟 ≤ 60 次。**用户按下的复制钮不需要它**（`ui.copy` 由宿主写）；需要它的是"扩展自己决定写"，
+例如静默命令把译文放进剪贴板。
 
-隐式能力，不需要点头。打开 设置 › 扩展 › 本扩展 那一块（偏好、授权、快捷键都在那里）；只在用户动作 1 秒内放行。
-扩展页面里**不许再画一份设置**（[10](10-settings.md)），想让用户改偏好（填 API key、改目标语言）就给一颗 `link` 按钮调它。
+#### `quickTransfer.status` — 查看快传状态
 
-### `system.openURL` — 打开链接
+| 方法 | 说明 |
+| --- | --- |
+| `status()` | `{ state: stopped/starting/running/failed, url?, peers: [{ label, address, paired }], activeTransfers, failureReason? }`；**没有配对码** |
+| `observe(listener)` | 状态变化时回调（宿主每秒看一眼快照，变了才推） |
 
-`openURL(url)`，只放行 https。低风险：用户看得见浏览器开了。
+#### `quickTransfer.control` — 开关快传服务
 
-## 错误码
+`start()` 对局域网开端口（返回状态）；`stop()`。**不替用户自动打开**：扩展想发东西而服务没开时，
+画一颗「开启快传」按钮让用户按。
+
+#### `quickTransfer.send` — 经快传发送
+
+`sendText(text)`：推一条消息到已配对的手机页面；服务没开着 → `host.failure`（「快传没有开着」），宿主不会替你打开它。
+
+#### `screenshot.capture` — 截图
+
+`capture({ mode, selectionOnly, recognizeText, ocr: { languages, level }, hint, appearance })` → `{ file, width, height, ocr? }`。
+宿主收起面板、盖遮罩、由用户框选；Esc → `cancelled`；没有屏幕录制权限 → `permission.unavailable`；每分钟 ≤ 20 次。
+
+- `selectionOnly: true`：只框选，松手即完成；`hint` 是选框下方那句提示（≤ 16 字）；`appearance` 选压不压暗、画不画参照线。
+- 完成后谁叫回来：落点 `popover` 的在选区旁开原地弹窗；`toolbox` / `window` 的叫回面板页面或窗口；`silent` 的安静收场。
+- **后台会话里也能截**（静默命令「截屏译文入剪贴板」就是）：框选遮罩是宿主自己的界面，不借扩展的任何一面。
+
+#### `ocr.recognize` — 识别图片文字
+
+`recognize(file, { languages, level })` → `{ text, lines: [{ text, box, confidence }] }`；`box` 相对整张图归一化到 0…1。
+段落合并用 SDK 的 `ocr.mergeLines`。每分钟 ≤ 60 次。
+
+#### `speech.speak` — 朗读
+
+`speak(text, { language, rate })` / `stop()`：系统语音，再次调用打断上一次。每分钟 ≤ 30 次。
+
+#### `hotkeys.register` — 全局快捷键
+
+没有方法。它是 manifest `commands[].hotkey` 的授权开关：宿主启动时按 manifest 注册；**还没问过**授权的照样注册
+（按下时先把界面唤出来问一次），明确拒了的不注册。跨应用冲突探测不到。
+
+#### `notifications.post` — 系统横幅
+
+`post({ title, body })`，需要 manifest `inbox.notifications: true`。每分钟 ≤ 6 条。通知权限被拒时静默不弹、照常 resolve。
+
+#### `inbox.post` — 往 Inbox 投消息
+
+`post({ title, body, level? })`，需要 `inbox.messages: true`。标题前缀扩展名（`发到手机 · 已推到 iPhone`）、正文 ≤ 400 字、
+`level` 是 `info` / `success` / `warning` / `error`；与 WebSocket 进来的消息同一张卡、计入未读、不弹横幅。每分钟 ≤ 6 条。
+v1 的卡片动作与 `dismiss` 已删除（[11](11-inbox.md)）。
+
+#### `network.https` — 访问网络
+
+`net.fetch(url, { method, headers, body })` → `{ status, headers, text }`：
+
+- 只走 HTTPS；主机必须与 manifest `network.hosts` 里的某一个**完全相等**（后缀匹配会把 `evil-x.googleapis.com.attacker.tld` 放过去）；
+- 方法只认 GET / POST / PUT / DELETE；不带 cookie、不带 Jarvis 的任何凭据；宿主追加 `X-Jarvis-Extension: <id>/<version>`；
+- 响应 ≤ 5 MB、30 秒超时；每分钟 ≤ 60 次。
+
+### 受限执行（指令域，SDK 2）
+
+三项能力全部**高风险**，全部要在 manifest 里逐项声明对象，宿主硬拦声明之外的一切。
+
+#### `process.run` — 运行命令
+
+| 方法 | 说明 |
+| --- | --- |
+| `locate(executable)` | 按名字在固定位置里找：`/opt/homebrew/bin`、`/usr/local/bin`、`~/.local/bin`、`~/bin`、`~/.nix-profile/bin`、`/run/current-system/sw/bin`（不 fork shell 去 `which`：从 Finder 起的应用只有一份最小 PATH）。带 `/` 或 `~` 的当作用户填的路径——**坏了就报坏，不悄悄回落到自动探测**。返回 `{ path, source: custom/discovered }` 或 `{ path: null, problem: notFound/missing/notExecutable }` |
+| `run({ executable, arguments, onLine })` → `{ result, cancel() }` | 跑一个声明过的可执行文件；参数必须与声明的某一组**逐项相等**。标准输出逐行交给 `onLine`（宿主按 100ms 合批推过来，**全部输出先于结果到达**）；`result` 兑现为 `{ exitCode, stderr }`（stderr 末尾 4 KB）；`cancel()` 发 SIGINT，`result` 以 `cancelled` 拒绝 |
+
+放行规则（`ExtensionProcessPolicy`）：名字或路径的**文件名**必须等于 manifest `process.executables[].name`——
+用户在偏好里填 `/opt/tools/mo` 可以，填 `/bin/rm` 不行（`capability.undeclared`）。
+
+运行环境：**不经 shell**（`;`、`|`、`$()` 都只是字符）；stdin 接空设备（非交互的命令不会提示、不会卡住、不会要密码）；
+工作目录是主目录；PATH 补上 Homebrew 与常见工具链目录；`HOME` 显式给出；`NO_COLOR=1`。
+**进程继承 Jarvis 的全部系统权限，含完全磁盘访问**——这正是它高风险的原因。测试进程里一律拒绝。每分钟 ≤ 120 次。
+
+#### `files.read` — 读取文件
+
+| 方法 | 说明 |
+| --- | --- |
+| `stat(path)` | `{ size, inode }`；文件不在或是目录时 `null` |
+| `tail(path, offset)` | 从字节偏移起读**完整的**行，一次 ≤ 1 MB：`{ lines, offset, size, inode }`。最后一个换行之后的半行不读，留到下一次；`offset` 超过文件大小时从 0 读（文件被换掉了）。文件不在时 `null` |
+
+路径必须与 manifest `files.read` 里的某一个逐字相等（展开 `~`、规整之后比——`~/Library/Logs/mole/../../Keychains/x` 绕不过去）。
+换了 inode 或文件变小 = 被轮转了，由扩展自己从 0 接着读。每分钟 ≤ 1200 次（一次清理要读几百次日志）。
+
+#### `terminal.run` — 在终端里执行脚本
+
+`run(scriptId)`：打开用户选定的终端，执行 manifest `process.terminal` 里那个 id 的脚本——**扩展只能点名，不能传内容**。
+宿主在正文前补 `#!/bin/sh` 与「执行完删掉自己」那一行，写到属主独占的临时目录再交给终端打开；打开即返回，不等它跑完。
+每分钟 ≤ 6 次。装完之后的事（工具在不在了）由扩展自己再 `locate` 一次。
+
+### 错误码
 
 | `code` | 含义 | 扩展该做什么 |
 | --- | --- | --- |
-| `permission.denied` | 用户没授或撤销了 | 画拒绝态 + 一颗 `request` 按钮 |
+| `permission.denied` | 用户没授或撤销了 | 画拒绝态 + 一颗 `request` 按钮；服务写进 `status` |
 | `permission.unavailable` | Jarvis 自己没拿到系统权限 | 画说明 + `openSystemSettings` 按钮 |
-| `capability.undeclared` | manifest 没声明 | 开发期错误；改 manifest |
-| `capability.unknown` | 宿主不认识这个方法（SDK 比宿主新） | 检查 `minimumJarvisVersion` |
+| `capability.undeclared` | manifest 没声明，或受限执行的对象不是声明过的那一个 | 开发期错误；改 manifest |
+| `capability.unknown` | 宿主不认识这个方法（SDK 比宿主新，或宿主还没接上） | 检查 `minimumJarvisVersion` |
+| `surface.unavailable` | 这一面不存在：后台会话里调了界面类能力，或扩展没有入驻那个域 | 静默命令与服务别碰面板与窗口 |
 | `rate.limited` | 频率或体积超限 | 退避；不要重试风暴 |
-| `invalid.argument` | 参数不合法，或不在用户动作 1 秒内 | 开发期错误 |
+| `invalid.argument` | 参数不合法 | 开发期错误 |
 | `host.failure` | 宿主执行失败，`detail` 里是一句人话 | 原样显示 `detail` |
-| `cancelled` | 用户取消 | 收尾，不报错 |
+| `cancelled` | 用户在框选里按了 Esc，或宿主取消了这次调用 / 进程 | 收尾，不报错 |
+
+## Usage
+
+```ts
+import { jarvis, JarvisError } from "@fusionseek/jarvis-extension-sdk";
+
+const where = await jarvis.process.locate("mo");
+if (where.path === null) return { ready: false, summary: "没有找到 mo 命令", actions: [{ id: "install", title: "在终端中安装" }] };
+const handle = jarvis.process.run({ executable: where.path, arguments: ["--version"], onLine: (line) => lines.push(line) });
+const { exitCode } = await handle.result;
+```
+
+## Gotchas
+
+- `process.run` 的参数组合在 manifest 里写死：要多一组就改 manifest、升版本、过审核——这是有意的。
+- `files.tail` 的 `offset` 是**字节**偏移，不是行号；跨调用自己记着。
+- `inbox.post` 不是卡片：没有 id、没有动作、不能撤回；同一件事别每秒投一条。
+- 后台会话里没有界面：静默命令要交结果只能靠剪贴板、横幅与 Inbox。
 
 ## Related Links
 
 - [05 · 能力授权模型](05-permissions.md)
-- [`sdk/src/capabilities.ts`](../sdk/src/capabilities.ts)
-- `jarvis-mac/docs/foundation/quick-transfer.md`、`clipboard-persistence.md`、`memo-todo.md`、`calendar.md`
+- [10 · 设置域与服务扩展点](10-settings.md)（服务没有页面，它的东西画在哪）
+- [`sdk/src/capabilities.ts`](../sdk/src/capabilities.ts)、`jarvis-mac/Sources/Jarvis/App/Extensions/ExtensionCapabilityHost.swift`

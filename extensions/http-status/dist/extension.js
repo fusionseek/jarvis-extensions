@@ -1,4 +1,4 @@
-// jarvis-extension bundle · http-status@0.1.1 · sdk 1.6.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · http-status@1.0.0 · sdk 2.0.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -12,7 +12,7 @@
   };
 
   // sdk/src/bridge.ts
-  var bridgeProtocolVersion = 1;
+  var bridgeProtocolVersion = 2;
   function eventName(propName) {
     return propName.length > 2 && propName.startsWith("on") ? propName[2].toLowerCase() + propName.slice(3) : propName;
   }
@@ -103,14 +103,34 @@
     swatch: make("swatch"),
     dropzone: make("dropzone"),
     keycap: make("keycap"),
-    image: make("image"),
-    markdown: make("markdown"),
-    chart: make("chart"),
-    dataTable: make("dataTable")
+    image: make("image")
   };
 
   // sdk/src/index.ts
-  var sdkVersion = "1.6.0";
+  var sdkVersion = "2.0.0";
+  var Cancellation = class {
+    constructor() {
+      this.listeners = [];
+      this.fired = false;
+    }
+    get cancelled() {
+      return this.fired;
+    }
+    onCancel(listener) {
+      if (this.fired) {
+        listener();
+        return;
+      }
+      this.listeners.push(listener);
+    }
+    cancel() {
+      if (this.fired) return;
+      this.fired = true;
+      const listeners = this.listeners;
+      this.listeners = [];
+      for (const listener of listeners) listener();
+    }
+  };
   var Runtime = class {
     constructor() {
       this.definition = null;
@@ -119,8 +139,9 @@
       this.pending = /* @__PURE__ */ new Map();
       this.handlers = /* @__PURE__ */ new Map();
       this.subscriptions = /* @__PURE__ */ new Map();
+      this.serviceSignals = /* @__PURE__ */ new Map();
       this.updateQueued = false;
-      /** 此刻开着的那一面；`null` = 既没有页面也没有弹窗，`render()` 不会被调。 */
+      /** 此刻开着的那一面；`null` = 一面都没有，`render()` 不会被调。 */
       this.activeSurface = null;
       this.commandSummaries = [];
       this.hostRef = null;
@@ -135,7 +156,7 @@
       this.hostRef = host;
       return host;
     }
-    /** 把 `dispatch` 挂到全局。幂等；`defineExtension` 与任何一次能力调用都会确保它挂上了。 */
+    /** 把 `dispatch` 挂到全局。幂等。 */
     ensureRegistered() {
       if (this.registered) return;
       globalThis.__jarvisRuntime = { dispatch: (json) => this.dispatch(json) };
@@ -148,7 +169,7 @@
       this.definition = definition;
       this.ensureRegistered();
     }
-    /** 让宿主再调一次 render。同一拍里的多次请求合并成一次提交；页面与弹窗都没开着时是空操作。 */
+    /** 让宿主再调一次 render。同一拍里的多次请求合并成一次提交；一面都没开着时是空操作。 */
     requestUpdate() {
       if (this.updateQueued || !this.activeSurface) return;
       this.updateQueued = true;
@@ -172,35 +193,48 @@
       if (result.ok) return result.value;
       throw new JarvisError(result.error);
     }
+    /** 新的订阅 token。 */
+    token(namespace, method) {
+      return `${namespace}.${method}#${this.nextRequestId++}`;
+    }
+    /** 收这个 token 上的订阅事件。 */
+    listen(token, listener) {
+      this.subscriptions.set(token, listener);
+    }
+    /** 不再收这个 token 上的事件。 */
+    forget(token) {
+      this.subscriptions.delete(token);
+    }
     /**
      * 订阅宿主事件。宿主拒绝订阅（没授权、没这个能力）时**不抛到扩展里**：一条被拒的订阅只是收不到事件，
-     * 让它变成未处理的 rejection 会把整个上下文拖垮。拒绝记一条 warn 日志，开发者模式看得见。
+     * 让它变成未处理的 rejection 会把整个上下文拖垮。拒绝记一条 warn 日志。
      */
     subscribe(namespace, method, listener) {
-      const token = `${namespace}.${method}#${this.nextRequestId++}`;
-      this.subscriptions.set(token, listener);
+      const token = this.token(namespace, method);
+      this.listen(token, listener);
       this.invoke(namespace, method, { token }).catch((error) => {
-        this.subscriptions.delete(token);
+        this.forget(token);
         this.log("warn", `\u8BA2\u9605 ${namespace}.${method} \u88AB\u5BBF\u4E3B\u62D2\u7EDD`, error instanceof Error ? error.message : String(error));
       });
       return () => {
-        this.subscriptions.delete(token);
+        this.forget(token);
         this.invoke(namespace, "unsubscribe", { token }).catch(() => void 0);
       };
     }
     log(level, message, data) {
       this.host().log(level, message, data === void 0 ? null : JSON.stringify(data));
     }
-    /** 开着的那一面的定义：弹窗（没给时退回页面）或页面。 */
+    /** 开着的那一面的定义：弹窗与窗口没给时退回工具箱页面。 */
     surfaceDefinition(surface) {
       const definition = this.definition;
       if (surface === "popover" && definition?.popover) return definition.popover;
-      return definition?.page;
+      if (surface === "window" && definition?.window) return definition.window;
+      return definition?.toolbox;
     }
-    /** 此刻那一面的树：弹窗、自定义页面，或按命令清单画的默认页。 */
+    /** 此刻那一面的树：自定义的那一面，或按命令清单画的默认页。 */
     renderSurface() {
-      const page = this.surfaceDefinition(this.activeSurface);
-      if (page) return page.render();
+      const page2 = this.surfaceDefinition(this.activeSurface);
+      if (page2) return page2.render();
       return ui.scroll({
         children: [
           ui.section({
@@ -210,10 +244,10 @@
                 key: command.id,
                 symbol: command.presentation === "silent" ? "bolt" : "rectangle.and.text.magnifyingglass",
                 title: command.title,
-                subtitle: command.hotkey ? `\u5FEB\u6377\u952E ${command.hotkey}` : command.description ?? "\u6CA1\u6709\u5FEB\u6377\u952E\uFF0C\u5728\u8FD9\u91CC\u8FD0\u884C",
+                subtitle: command.hotkey ? `\u5FEB\u6377\u952E ${command.hotkey}` : command.slash ? `\u6307\u4EE4 ${command.slash}` : command.description ?? "\u5728\u8FD9\u91CC\u8FD0\u884C",
                 onPress: () => void jarvis.commands.run(command.id)
               })
-            ) : [ui.empty({ symbol: "bolt.slash", title: "\u8FD9\u4E2A\u6269\u5C55\u6CA1\u6709\u547D\u4EE4", hint: "\u5B83\u7684 manifest \u91CC\u65E2\u6CA1\u6709\u9875\u9762\u4E5F\u6CA1\u6709\u547D\u4EE4\u3002" })]
+            ) : [ui.empty({ symbol: "bolt.slash", title: "\u8FD9\u4E2A\u6269\u5C55\u6CA1\u6709\u547D\u4EE4", hint: "\u5B83\u65E2\u6CA1\u6709\u9875\u9762\u4E5F\u6CA1\u6709\u547D\u4EE4\u3002" })]
           })
         ]
       });
@@ -235,12 +269,64 @@
       this.generation += 1;
       this.host().commit(JSON.stringify({ protocol: bridgeProtocolVersion, generation: this.generation, surface, root }));
     }
+    /** 宿主调一次服务。结果与进度都经隐式调用交回去；这里不抛任何东西。 */
+    handleService(call2) {
+      const implementation = this.definition?.services?.[call2.service];
+      const respond = (result) => {
+        this.serviceSignals.delete(call2.callId);
+        this.invoke("service", "resolve", { callId: call2.callId, result }).catch(() => void 0);
+      };
+      if (!implementation) {
+        respond({ ok: false, error: { code: "capability.unknown", message: `defineExtension \u91CC\u6CA1\u6709\u670D\u52A1\u300C${call2.service}\u300D\u7684\u5B9E\u73B0\u3002` } });
+        return;
+      }
+      const context = { preferences: call2.params.preferences, granted: call2.params.granted };
+      const signal = new Cancellation();
+      this.serviceSignals.set(call2.callId, signal);
+      const work = () => {
+        switch (call2.point) {
+          case "junkClean.engine": {
+            const engine = implementation;
+            switch (call2.method) {
+              case "status":
+                return Promise.resolve(engine.status(context));
+              case "run":
+                return engine.run(
+                  context,
+                  (progress) => {
+                    if (signal.cancelled) return;
+                    this.invoke("service", "progress", { callId: call2.callId, progress }).catch(() => void 0);
+                  },
+                  signal
+                );
+              case "action":
+                return Promise.resolve(engine.action ? engine.action(call2.params.actionId ?? "", context) : {});
+            }
+          }
+        }
+        return Promise.reject(new JarvisError({ code: "capability.unknown", message: `\u4E0D\u8BA4\u8BC6\u7684\u670D\u52A1\u65B9\u6CD5 ${call2.point}.${call2.method}` }));
+      };
+      let pending;
+      try {
+        pending = work();
+      } catch (error) {
+        pending = Promise.reject(error);
+      }
+      pending.then(
+        (value) => respond({ ok: true, value: value ?? {} }),
+        (error) => {
+          const shape = error instanceof JarvisError ? { code: error.code, message: error.message, ...error.detail !== void 0 ? { detail: error.detail } : {} } : { code: "host.failure", message: error instanceof Error ? error.message : String(error) };
+          this.log("error", `\u670D\u52A1\u300C${call2.service}\u300D\u7684 ${call2.method} \u629B\u51FA\u4E86\u5F02\u5E38`, shape.message);
+          respond({ ok: false, error: shape });
+        }
+      );
+    }
     dispatch(json) {
       const event = JSON.parse(json);
       const definition = this.definition;
       switch (event.type) {
         case "activate": {
-          const surface = event.context.surface ?? "page";
+          const surface = event.context.surface;
           this.activeSurface = surface;
           this.commandSummaries = event.context.commands ?? [];
           void Promise.resolve(this.surfaceDefinition(surface)?.activate?.(event.context)).then(() => this.commit());
@@ -280,6 +366,14 @@
           );
           return;
         }
+        case "service": {
+          this.handleService(event.call);
+          return;
+        }
+        case "serviceCancel": {
+          this.serviceSignals.get(event.callId)?.cancel();
+          return;
+        }
         case "subscription": {
           this.subscriptions.get(event.token)?.(event.payload);
           return;
@@ -287,14 +381,6 @@
         case "preferencesChanged":
         case "permissionsChanged": {
           this.requestUpdate();
-          return;
-        }
-        case "inboxAction": {
-          void definition?.onInboxAction?.(event.cardId, event.actionId);
-          return;
-        }
-        case "notificationActivated": {
-          void definition?.onNotificationActivated?.();
           return;
         }
       }
@@ -312,6 +398,7 @@
   }
   var call = {
     panel: namespaced("panel"),
+    window: namespaced("window"),
     commands: namespaced("commands"),
     storage: namespaced("storage"),
     preferences: namespaced("preferences"),
@@ -323,20 +410,33 @@
     speech: namespaced("speech"),
     notifications: namespaced("notifications"),
     inbox: namespaced("inbox"),
-    memo: namespaced("memo"),
-    calendar: namespaced("calendar"),
-    tasks: namespaced("tasks"),
     net: namespaced("net"),
-    bigquery: namespaced("bigquery"),
+    process: namespaced("process"),
     files: namespaced("files"),
+    terminal: namespaced("terminal"),
     system: namespaced("system")
   };
   var sync = {
     text: syncNamespaced("text"),
-    time: syncNamespaced("time"),
-    color: syncNamespaced("color"),
     host: syncNamespaced("host")
   };
+  function runProcess(options) {
+    const token = runtime.token("process", "run");
+    runtime.listen(token, (payload) => {
+      const lines = payload.lines ?? [];
+      for (const line of lines) options.onLine?.(line);
+    });
+    const result = runtime.invoke("process", "run", { executable: options.executable, arguments: options.arguments, token }).finally(() => runtime.forget(token));
+    let cancelled = false;
+    return {
+      result,
+      cancel() {
+        if (cancelled) return;
+        cancelled = true;
+        call.process("cancel", { token }).catch(() => void 0);
+      }
+    };
+  }
   var jarvis = {
     sdk: { version: sdkVersion },
     get host() {
@@ -353,19 +453,23 @@
       hold(reason) {
         let released = false;
         const id = runtime.invoke("panel", "hold", { reason });
+        id.catch(() => void 0);
         return {
           release() {
             if (released) return;
             released = true;
-            void id.then((handle) => call.panel("release", { handle }));
+            void id.then((handle) => call.panel("release", { handle })).catch(() => void 0);
           }
         };
       },
       collapse: () => call.panel("collapse"),
       present: () => call.panel("present")
     },
+    window: {
+      open: () => call.window("open")
+    },
     commands: {
-      run: (id) => call.commands("run", { id })
+      run: (id, argument) => call.commands("run", argument === void 0 ? { id } : { id, argument })
     },
     storage: {
       get: (key) => call.storage("get", { key }),
@@ -397,46 +501,22 @@
       hash: {
         digest: (algorithm, text, options) => sync.text("hash.digest", { algorithm, text, ...options })
       },
-      json: {
-        format: (text, options) => sync.text("json.format", { text, ...options }),
-        minify: (text, options) => sync.text("json.minify", { text, ...options })
-      },
-      url: {
-        parse: (text) => sync.text("url.parse", { text }),
-        build: (parts) => sync.text("url.build", parts)
-      },
-      regex: {
-        test: (pattern, text, flags) => sync.text("regex.test", { pattern, text, flags })
-      },
       language: {
         detect: (text, options) => sync.text("language.detect", { text, ...options }),
         displayName: (code) => sync.text("language.displayName", { code })
       }
     },
-    time: {
-      parse: (text, unit) => sync.time("parse", { text, unit }),
-      format: (epochMilliseconds, pattern, timeZone) => sync.time("format", { epochMilliseconds, pattern, timeZone }),
-      timeZones: () => sync.time("timeZones")
-    },
-    color: {
-      convert: (hex) => sync.color("convert", { hex })
-    },
     clipboard: {
       read: () => call.clipboard("read"),
       readImage: () => call.clipboard("readImage"),
-      write: (text) => call.clipboard("write", { text }),
-      history: (options) => call.clipboard("history", options),
-      entryText: (id) => call.clipboard("entryText", { id }),
-      observe: (listener) => runtime.subscribe("clipboard", "observe", listener)
+      write: (text) => call.clipboard("write", { text })
     },
     quickTransfer: {
       status: () => call.quickTransfer("status"),
       observe: (listener) => runtime.subscribe("quickTransfer", "observe", listener),
       start: () => call.quickTransfer("start"),
       stop: () => call.quickTransfer("stop"),
-      sendText: (text) => call.quickTransfer("sendText", { text }),
-      sendFile: (file) => call.quickTransfer("sendFile", { file }),
-      records: (options) => call.quickTransfer("records", options)
+      sendText: (text) => call.quickTransfer("sendText", { text })
     },
     screenshot: {
       capture: (options) => call.screenshot("capture", options)
@@ -452,34 +532,21 @@
       post: (content) => call.notifications("post", content)
     },
     inbox: {
-      post: (card) => call.inbox("post", card),
-      dismiss: (cardId) => call.inbox("dismiss", { cardId })
-    },
-    memo: {
-      list: (options) => call.memo("list", options),
-      create: (body) => call.memo("create", { body }),
-      complete: (id) => call.memo("complete", { id })
-    },
-    calendar: {
-      runs: (range) => call.calendar("runs", range)
-    },
-    tasks: {
-      recent: () => call.tasks("recent"),
-      observe: (listener) => runtime.subscribe("tasks", "observe", listener)
+      post: (message) => call.inbox("post", message)
     },
     net: {
       fetch: (url, init) => call.net("fetch", { url, ...init })
     },
-    bigquery: {
-      query: (request) => call.bigquery("query", request),
-      status: () => call.bigquery("status"),
-      login: () => call.bigquery("login")
+    process: {
+      locate: (executable) => call.process("locate", { executable }),
+      run: runProcess
     },
     files: {
-      pick: (options) => call.files("pick", options),
-      readText: (file) => call.files("readText", { file }),
-      readBytes: (file) => call.files("readBytes", { file }),
-      reveal: (file) => call.files("reveal", { file })
+      stat: (path) => call.files("stat", { path }),
+      tail: (path, offset) => call.files("tail", { path, offset })
+    },
+    terminal: {
+      run: (scriptId) => call.terminal("run", { id: scriptId })
     },
     system: {
       openURL: (url) => call.system("openURL", { url }),
@@ -1640,12 +1707,29 @@
     await jarvis.system.openURL(url);
   }
   function searchBox(session2) {
-    return ui.search({
+    const box = ui.search({
       key: "query",
       value: session2.query,
       placeholder: "\u8F93\u5165\u72B6\u6001\u7801\u6216\u5173\u952E\u8BCD\uFF0C\u5982 404 / \u8D85\u65F6 / redirect",
       label: "\u67E5\u72B6\u6001\u7801",
       onChange: (value) => session2.setQuery(value)
+    });
+    if (session2.surface !== "toolbox") return box;
+    return ui.stack({
+      key: "query-row",
+      axis: "horizontal",
+      spacing: "tight",
+      alignment: "center",
+      children: [
+        box,
+        ui.iconButton({
+          key: "open-window",
+          symbol: "macwindow",
+          label: "\u5728\u7A97\u53E3\u4E2D\u6253\u5F00",
+          size: "bar",
+          onPress: () => void session2.openWindow()
+        })
+      ]
     });
   }
   function footnote(text, key = "footnote") {
@@ -1678,7 +1762,9 @@
           })
         )
       }),
-      footnote(offlineNote)
+      footnote(offlineNote),
+      // `/` 下拉之外没有别的地方会告诉用户这条指令存在；只写在分类这一屏，查到东西之后它就是噪音。
+      footnote("\u5168\u5C40\u641C\u7D22\u6216\u901F\u8BB0\u91CC\u8F93\u5165 /http 404\uFF0C\u7ED3\u679C\u8D34\u7740\u6307\u9488\u5F39\u51FA\uFF0C\u9762\u677F\u4E0D\u52A8", "slash-hint")
     ];
   }
   function compactBrowse(session2) {
@@ -1895,11 +1981,15 @@
       footnote("\u70B9\u4E00\u884C\u5C55\u5F00 \xB7 \u6307\u9488\u505C 320ms \u6D6E\u51FA\u6458\u8981 \xB7 Esc \u6E05\u7A7A\u641C\u7D22")
     ];
   }
-  function emptyScreen(session2, reason) {
+  function emptyCopy(session2, reason) {
     const query = session2.query.trim();
-    const clear = { id: "clear", title: "\u6E05\u7A7A\u641C\u7D22", symbol: "xmark.circle", help: "\u56DE\u5230\u5206\u7C7B", onPress: () => session2.clear() };
     const title = reason === "no-match" ? `\u6CA1\u6709\u5339\u914D\u300C${query}\u300D\u7684\u7801` : `\u6CA1\u6709 ${query} \u8FD9\u4E2A\u7801`;
     const hint = reason === "out-of-range" ? "\u72B6\u6001\u7801\u53EA\u6709 100\u2013599 \u8FD9\u4E00\u6BB5\u3002999 \u8FD9\u7C7B\u662F\u6293\u53D6\u88AB\u6321\u4E0B\u65F6\u5E38\u89C1\u7684\u81EA\u9020\u7801\uFF0C\u4E0D\u5728\u4EFB\u4F55\u6CE8\u518C\u8868\u91CC\u3002" : reason === "no-such-code" ? session2.includeUnofficial ? "\u5B83\u5728 100\u2013599 \u4E4B\u95F4\uFF0C\u4F46\u6CA1\u6709\u4EFB\u4F55\u89C4\u8303\u6216\u5382\u5546\u5B9A\u4E49\u8FC7\u5B83\u2014\u2014\u591A\u534A\u662F\u67D0\u4E2A\u670D\u52A1\u81EA\u5DF1\u9020\u7684\u3002" : "\u5B83\u6CA1\u6709\u88AB\u4EFB\u4F55\u89C4\u8303\u5B9A\u4E49\u8FC7\uFF1B\u5982\u679C\u662F nginx / Cloudflare \u90A3\u7C7B\u81EA\u9020\u7801\uFF0C\u628A\u300C\u542B\u975E\u6807\u51C6\u7801\u300D\u6253\u5F00\u518D\u641C\u4E00\u6B21\u3002" : "\u6362\u4E2A\u8BCD\u8BD5\u8BD5\uFF1A\u4E2D\u6587\u540D\u3001\u82F1\u6587\u540D\u3001\u522B\u540D\u4E0E\u4E09\u4F4D\u6570\u5B57\u90FD\u6536\uFF0C\u4E5F\u53EF\u4EE5\u76F4\u63A5\u7C98\u4E00\u6574\u884C\u54CD\u5E94\u8FDB\u6765\u3002";
+    return { title, hint };
+  }
+  function emptyScreen(session2, reason) {
+    const clear = { id: "clear", title: "\u6E05\u7A7A\u641C\u7D22", symbol: "xmark.circle", help: "\u56DE\u5230\u5206\u7C7B", onPress: () => session2.clear() };
+    const { title, hint } = emptyCopy(session2, reason);
     return [
       ui.empty({ key: "empty", symbol: "questionmark.circle", title, hint, action: clear }),
       ui.note({
@@ -1990,9 +2080,11 @@
     return ui.stack({ key: "facts", axis: "horizontal", spacing: "tight", children });
   }
   function hit(session2, entry) {
+    return [sourceCard(session2, true), ...entryBody(session2, entry)];
+  }
+  function entryBody(session2, entry) {
     const related = (entry.related ?? []).slice(0, 2);
     return [
-      sourceCard(session2, true),
       ui.readout({
         key: "readout",
         label: `${entry.zh} \xB7 ${CLASS_TITLE2[Math.floor(entry.code / 100)] ?? ""}`,
@@ -2025,15 +2117,7 @@
         symbol: "info.circle",
         title: "\u526A\u8D34\u677F\u91CC\u6CA1\u6709\u72B6\u6001\u7801",
         body: `\u8BFB\u5230\u7684\u8FD9\u4E00\u6BB5\u91CC\u6CA1\u6709 100\u2013599 \u7684\u6574\u6570\u3002\u590D\u5236\u54CD\u5E94\u884C\u3001\u65E5\u5FD7\u884C\u6216\u5355\u72EC\u7684\u6570\u5B57\u518D\u8DD1\u4E00\u6B21 ${session2.commandRef("explain-clipboard", "\u89E3\u91CA\u526A\u8D34\u677F\u91CC\u7684\u7801")}\uFF1B\u4E5F\u53EF\u4EE5\u6253\u5F00\u9762\u677F\u624B\u8F93\u3002`,
-        actions: [
-          {
-            id: "open-panel",
-            title: session2.hotkey("lookup") ? `\u6253\u5F00\u9762\u677F\u8F93\u5165 ${session2.hotkey("lookup")}` : "\u6253\u5F00\u9762\u677F\u8F93\u5165",
-            symbol: "magnifyingglass",
-            help: "\u628A\u9762\u677F\u5C55\u5F00\u5230\u8FD9\u4E2A\u6269\u5C55\u7684\u9875\u9762",
-            onPress: () => void jarvis.commands.run("lookup")
-          }
-        ]
+        actions: [openPanelAction(session2)]
       })
     ];
   }
@@ -2060,7 +2144,81 @@
       })
     ];
   }
+  function backLink(session2) {
+    if (session2.previousQuery === null) return [];
+    return [
+      ui.button({
+        key: "back",
+        title: `\u2190 \u56DE\u5230\u300C${session2.previousQuery}\u300D`,
+        variant: "link",
+        size: "inline",
+        onPress: () => session2.back()
+      })
+    ];
+  }
+  function queryList(session2, entries2, label) {
+    const from = session2.query;
+    return [
+      ui.section({
+        key: "results",
+        title: "\u7ED3\u679C \xB7 RESULTS",
+        trailing: label,
+        children: [
+          ui.list({
+            key: "result-list",
+            children: entries2.map(
+              (entry) => ui.row({
+                key: String(entry.code),
+                symbol: symbolFor(entry.code),
+                tint: tintFor(entry.code),
+                title: `${entry.code} \xB7 ${entry.name}`,
+                subtitle: rowSubtitle(entry),
+                accessory: "chevron",
+                label: `${entry.code} ${entry.name} \xB7 ${entry.zh}`,
+                onPress: () => session2.openCode(entry.code, from)
+              })
+            )
+          })
+        ]
+      })
+    ];
+  }
+  function openPanelAction(session2) {
+    const key = session2.hotkey("lookup");
+    return {
+      id: "open-panel",
+      title: key ? `\u6253\u5F00\u9762\u677F\u8F93\u5165 ${key}` : "\u6253\u5F00\u9762\u677F\u8F93\u5165",
+      symbol: "magnifyingglass",
+      help: "\u628A\u9762\u677F\u5C55\u5F00\u5230\u8FD9\u4E2A\u6269\u5C55\u7684\u9875\u9762",
+      onPress: () => void jarvis.commands.run("lookup")
+    };
+  }
+  function renderQuery(session2) {
+    const outcome = session2.outcome();
+    switch (outcome.kind) {
+      case "exact":
+        return [...backLink(session2), ...entryBody(session2, outcome.entry)];
+      case "list":
+        return queryList(session2, outcome.entries, outcome.label);
+      case "empty": {
+        const { title, hint } = emptyCopy(session2, outcome.reason);
+        return [ui.note({ key: "empty", tint: "neutral", symbol: "questionmark.circle", title, body: hint, actions: [openPanelAction(session2)] })];
+      }
+      case "browse":
+        return [
+          ui.note({
+            key: "prompt",
+            tint: "neutral",
+            symbol: "number.circle",
+            title: "\u7ED9\u4E00\u4E2A\u7801\u6216\u5173\u952E\u8BCD",
+            body: "\u5728 /http \u540E\u9762\u8DDF\u4E0A\u72B6\u6001\u7801\u6216\u5173\u952E\u8BCD\uFF0C\u5982 /http 404\u3001/http \u8D85\u65F6\u3001/http 5xx\u3002",
+            actions: [openPanelAction(session2)]
+          })
+        ];
+    }
+  }
   function renderPopover(session2) {
+    if (session2.popoverMode === "query") return ui.scroll({ children: renderQuery(session2) });
     const state = session2.clipboard;
     const children = state.kind === "hit" ? hit(session2, state.entry) : state.kind === "empty" ? nothingFound(session2) : state.kind === "denied" ? denied(session2) : state.kind === "failed" ? failed(state.message) : failed("\u8FD9\u4E00\u8F6E\u6CA1\u6709\u8BFB\u5230\u4EFB\u4F55\u5185\u5BB9\u3002");
     return ui.scroll({ children });
@@ -2078,8 +2236,15 @@
       this.includeUnofficial = true;
       this.classFilter = null;
       this.clipboard = { kind: "idle" };
+      /** 弹窗这一轮画哪一种：见 `PopoverMode`。 */
+      this.popoverMode = "clipboard";
       /** 用户刚拒了「打开链接」：详情屏改成把地址交给他自己去开，而不是再问一次。 */
       this.urlDenied = false;
+      /**
+       * 此刻画在哪一面（最近一次 `activate` 带来的）；命令上下文不改它。
+       * 页面据此决定画不画「在窗口中打开」——已经在窗口里了，再画一颗就是让用户原地打开自己。
+       */
+      this.surface = null;
       this.granted = [];
       this.preferences = {};
       this.commands = [];
@@ -2090,6 +2255,7 @@
       this.granted = context.granted;
       this.preferences = context.preferences;
       if ("commands" in context) this.commands = context.commands;
+      if ("surface" in context) this.surface = context.surface;
       this.includeUnofficial = this.preference("includeUnofficial", true);
       if (this.has("clipboard.read") && this.clipboard.kind === "denied") this.clipboard = { kind: "idle" };
       if (this.has("system.openURL")) this.urlDenied = false;
@@ -2180,8 +2346,38 @@
       const mdn = { title: "MDN", url: MDN(entry.code) };
       return this.preference("specSource", "rfc") === "mdn" ? [{ ...mdn, title: "\u6253\u5F00 MDN" }, { ...rfc2, title: entry.spec.split(" \xA7")[0] }] : [rfc2, mdn];
     }
+    // ── /http：查一段敲进来的字 ──────────────────────────────────────────
+    /**
+     * `/http <码或关键词>`：那段字就是输入框里的字，查法与页面搜索框一字不差（`search()`）。
+     *
+     * 先回到干净的一屏再赋值：上一次点进详情留下的「回到…」、手动关掉的「含非标准码」都属于上一次，
+     * 带进这一次会让同一条指令在不同时候查出不同的清单。
+     * - Parameter argument: `/` 指令后面那段字（宿主已去掉首尾空白）；没跟字为 `undefined`。
+     * - Returns: 无。
+     */
+    explain(argument) {
+      this.clear();
+      this.popoverMode = "query";
+      this.query = (argument ?? "").trim();
+    }
+    // ── 窗口域 ────────────────────────────────────────────────────────────
+    /**
+     * 「在窗口中打开」：在工作区开这个扩展的标签（已开着就切过去）。
+     *
+     * 宿主随后把前台会话 activate 在窗口那一面，`query` 不动——窗口里接着显示刚才那一屏。
+     * 宿主拒绝（例如这一版宿主还没有窗口域）时只记一条日志：页面本身照常能用，没有可以补救的下一步。
+     * - Returns: 无；从不抛。
+     */
+    async openWindow() {
+      try {
+        await jarvis.window.open();
+      } catch (error) {
+        jarvis.log.warn("\u5728\u7A97\u53E3\u4E2D\u6253\u5F00\u5931\u8D25", error.message ?? String(error));
+      }
+    }
     // ── ⌥⌘/：读一次剪贴板 ────────────────────────────────────────────────
     async readClipboard() {
+      this.popoverMode = "clipboard";
       if (!this.has("clipboard.read")) {
         this.clipboard = { kind: "denied" };
         return;
@@ -2242,22 +2438,29 @@
     session.adopt(context);
     await session.readClipboard();
   }
-  defineExtension({
-    page: {
-      activate: (context) => {
-        session.adopt(context);
-        session.watchPreferences();
-      },
-      deactivate: () => session.stopWatchingPreferences(),
-      render: () => renderPage(session)
+  function explain(context) {
+    session.adopt(context);
+    session.explain(context.argument);
+  }
+  var page = {
+    activate: (context) => {
+      session.adopt(context);
+      session.watchPreferences();
     },
+    deactivate: () => session.stopWatchingPreferences(),
+    render: () => renderPage(session)
+  };
+  defineExtension({
+    toolbox: page,
+    window: page,
     popover: {
       activate: (context) => session.adopt(context),
       render: () => renderPopover(session)
     },
     commands: {
       lookup,
-      "explain-clipboard": explainClipboard
+      "explain-clipboard": explainClipboard,
+      explain
     }
   });
 })();

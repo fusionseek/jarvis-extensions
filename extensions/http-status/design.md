@@ -20,6 +20,43 @@
 - 页面与弹窗里的内容——**扩展用 SDK 节点拼**，已在 `src/` 里实现：`page.ts` 是五态页面，
   `popover.ts` 是弹窗那棵树，`session.ts` 是它们共用的状态，`search.ts` 是查找，`data.ts` 是那张表。
 
+## 入口与 manifest（v2）
+
+manifest v2 按域声明（`contributes`）：工具箱、**窗口**、指令、设置四个域；名字与图标在顶层
+（`name: "HTTP 状态码"`、`symbol: "number.circle"`），`inbox: false`。
+
+| 命令 | 入口 | `presentation` | 结果落在 |
+| --- | --- | --- | --- |
+| `lookup` 查状态码 | ⌥⌘H、弹窗里「打开面板输入」 | `toolbox` | 工具箱页面，回到分类那一屏 |
+| `explain-clipboard` 解释剪贴板里的码 | ⌥⌘/ | `popover` | 指针旁的原地弹窗（读到的原文卡 + 那条码） |
+| `explain` 解释状态码 | `/http <码或关键词>` · `/状态码 …`（全局搜索与速记输入框） | `popover` | 指针旁的原地弹窗（不读剪贴板，见下） |
+
+三面都在宿主的**前台会话**里，读同一个 `Session`：
+
+| 面 | `defineExtension` | 画什么 |
+| --- | --- | --- |
+| 工具箱（`toolbox`） | `toolbox: page` | `renderPage`；搜索框右边多一颗「在窗口中打开」（`iconButton`，`macwindow`）→ `jarvis.window.open()` |
+| 窗口（`window`） | `window: page`（同一个定义） | `renderPage`，没有「在窗口中打开」；`query` 不动，接着显示刚才那一条 |
+| 原地弹窗（`popover`） | `popover` | `renderPopover`，按 `session.popoverMode` 分两种 |
+
+**窗口不另画一版**：这张表的每一屏在 400 宽里已经排得下，窗口多出来的宽度只会让行变长、不多出新信息；
+两面一样，从面板切到窗口之后用户找得到刚才看的那一处。「在窗口中打开」放在搜索框旁而不是页面底部——
+4xx 那张清单有 35 行。宿主拒绝开窗口（没有窗口域的宿主）只记一条 warn 日志，页面照常。
+
+### `/http` 那一种弹窗（`popoverMode === "query"`）
+
+`session.explain(argument)` 先 `clear()`（丢掉上一次的「回到…」与会话筛选），再把 `query` 设成那段字；
+弹窗按页面搜索框同一个 `search()` 画：
+
+| `SearchOutcome` | 弹窗里 |
+| --- | --- |
+| `exact` | 与 ⌥⌘/ 命中时同一块紧凑说明（读数、三枚徽标、一句话、两条成因、复制 chip、相关码）——**没有剪贴板原文卡**：用户刚亲手打过字 |
+| `list` | 段「结果 · RESULTS」+ `list` › `row`（与页面同一个副标 `rowSubtitle`）；点一行换成那一条，并画「← 回到…」。不画筛选 chip 与悬停卡——要筛就进面板 |
+| `empty` | `note`：标题与理由与页面空屏一字不差（共用 `emptyCopy`）+「打开面板输入」 |
+| `browse`（没跟字） | `note`「给一个码或关键词」+ 写法示例 +「打开面板输入」 |
+
+⌥⌘/ 那一种（`popoverMode === "clipboard"`）不变；两条命令轮流用时，弹窗跟着最近那一条换画法。
+
 ## 板子与节点号
 
 | 帧 | 节点 | 尺寸 | 实现 |
@@ -36,10 +73,10 @@
 | `popover-01-result` | `1038:12` | 400×334 | `popover.ts` `hit()` |
 | `popover-02-nomatch` | `1038:57` | 400×255 | `popover.ts` `nothingFound()` |
 | `sec-03` 入口与授权 | `1044:2`（行 `1044:9`） | — | — |
-| `toolbox-01-entry` | `1046:4` | 400×462 | 宿主：按 `toolbox.{symbol,name,subtitle}` 画 |
+| `toolbox-01-entry` | `1046:4` | 400×462 | 宿主：按顶层 `symbol` / `name` 与 `contributes.toolbox.subtitle` 画 |
 | `consent-01-first-entry` | `1044:12` | 420×416 | 宿主：按 `capabilities[]` 画（[docs/05](../../docs/05-permissions.md)） |
 | `sec-04` 设置 | `1049:2`（行 `1049:9`） | — | — |
-| `settings-01-http-status` | `1049:12` | 1000×809 | 宿主：按 `settings.preferences` 与 `commands[]` 画 |
+| `settings-01-http-status` | `1049:12` | 1000×809 | 宿主：按 `contributes.settings.preferences` 与 `contributes.commands[]` 画 |
 
 ## 一个真源：输入框里那串字
 
@@ -63,9 +100,11 @@
 | --- | --- | --- |
 | 段「查询 · LOOKUP」，右端 `⌥⌘H` | `section` + `trailing` | `context.commands` 里 `lookup` 的**当前**快捷键（用户改过的那个） |
 | 搜索框 + `⌘F` 键帽 | `search` | 宿主持有文本；`Esc` 有内容时清空，空时放行给面板收起 |
+| （稿上没画）搜索框右边「在窗口中打开」 | `stack`（horizontal）› `search` + `iconButton`（`macwindow`） | 只在 `session.surface === "toolbox"` 时画 |
 | 段「分类 · CLASSES」，右端「62 个标准码」 | `section` + `trailing` | `standardCount` |
 | 五行：`1xx · 信息` / `4 个 · 100 101 102 103` | `row`（`symbol` + `tint` + `accessory: "chevron"`） | `classSummaries()`；点一行 → `query = "4xx"` |
 | 脚注 | `text`（`footnote`） | `${standardCount} + ${unofficialCount}` |
+| （稿上没画）第二行脚注：`/http 404` 的用法 | `text`（`footnote`，key `slash-hint`） | 静态；只在分类这一屏，查到东西之后它就是噪音 |
 
 ### `http-status-02-detail`（404）
 
@@ -113,7 +152,7 @@
 
 | 项 | 规格 |
 | --- | --- |
-| 触发 | `explain-clipboard`（⌥⌘/，`presentation: "popover"`）；命令里第一次提交时弹窗就开在指针旁 |
+| 触发 | `explain-clipboard`（⌥⌘/）与 `explain`（`/http`），都是 `presentation: "popover"`；命令里第一次提交时弹窗就开在指针旁 |
 | 窗体 | 400 宽、按内容长高（最高 520 再滚）；圆角 16、内距 12、底 `#12121F` @96%、白 12% 描边 |
 | 锚点 | 指针右下 16pt；下方放不下翻到上方；任何情况下不出屏幕边 16pt（稿上 `1041:4` 左下角那三条） |
 | 焦点 | 不拿焦点：终端继续能打字；Esc / 点外面 / 指针离开 15 秒关 |
@@ -156,24 +195,23 @@
     稿子第一版写的 47 与它自己画的那一行对不上，已改成 26 / 42。
 11. **`⌥⌘H` 的说明是「打开面板，落在这个扩展的页面上」**，不是稿子第一版的「光标落进搜索框」：
    `search` 节点没有 `autoFocus`（只有 `field` 有），承诺不了焦点落在哪。
+12. **稿上没有窗口那一面、「在窗口中打开」与 `/http` 的弹窗**：它们是 manifest v2 才有的入口（窗口域、指令域的 `/` 指令），
+   全部用现成节点拼（`iconButton`、`list` › `row`、`note`），没有新控件；稿子补画即可，不涉及宿主。
 
 ## 宿主侧要的东西
 
-`minimumJarvisVersion` 写的是 **2.0.0**。0.1.0 曾经写成 2.0.1——那是照着
-[docs/14](../../docs/14-host-integration-plan.md) 期 A.1「已在 2.0.1 落地」写的，而那句话已经过期：
-宿主 `845da91` 教会 manifest 认 `popover` 时确实推到过 2.0.1，随后 `cb650bf`
-（`hold at 2.0.0 until the owner starts iterating`）把版本整个退回 2.0.0——2.0.0 还没发出去，
-中间那几次 patch +1 命名的是没有任何人装过的构建。于是 **2.0.1 从没存在过**，而
-`ExtensionCompatibilityPolicy` 是一句朴素比较（`hostVersion < minimum` → 商店那颗 chip 失效并写
-「需要 Jarvis ≥ 2.0.1」），0.1.0 因此在现存的每一版宿主上都装不上。0.1.1 改回 2.0.0。
+`minimumJarvisVersion` 写的是 **3.0.3**，`sdk` 是 `^2.0.0`：1.0.0 是 manifest v2 的第一版，窗口域、`/` 指令与
+`jarvis.window.open()` 都只在 v2 的宿主上有（jarvis-mac feature `extension-domains-service-engines`）；更早的宿主只认 v1，
+装不上它。0.1.x 曾为 `minimumJarvisVersion` 写错过一次（2.0.1 从没发布过，见 git 历史里 0.1.1 的说明）——
+这一行只写真的发过的版本。
 
-**`row.hoverCard` 在 2.0.0 上是空操作**：宿主的节点解析只查必填属性，多出来的属性被忽略——
+**`row.hoverCard` 在宿主上仍是空操作**：宿主的节点解析只查必填属性，多出来的属性被忽略——
 清单照画，指针停 320ms 不浮出那张卡。稿上 `1033:2` 那张卡因此是"目录里有、宿主还没画"的那一类，
 与第 8 条的 header 状态标一样，等宿主补上。
 
-运行时那一半只有一件，已经写进 [docs/14](../../docs/14-host-integration-plan.md) 的期 B：
-`presentation: "popover"` 的窗体与锚定（D-B13）。锚点这里是**指针**而不是选区——
-这条命令里没有截图，`docs/03-manifest.md` 的 `CommandPresentation` 已经写了这个退路。
+运行时那一半：`presentation: "popover"` 的窗体与锚定（[docs/14](../../docs/14-host-integration-plan.md) 期 B 的 D-B13）。
+锚点这里是**指针**而不是选区——⌥⌘/ 与 `/http` 这两条命令里都没有截图，`CommandPresentation` 的说明里写了这个退路。
+窗口域的标签（按扩展 id 去重、标题取扩展名）由宿主画，扩展只交 `window` 那一面的树。
 其余（`search` / `row.hoverCard` / `readout` / `note` / `empty` / `chip`）都是目录里现成的节点。
 
 ## Related Links

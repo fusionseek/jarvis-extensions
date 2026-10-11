@@ -101,12 +101,17 @@ if (existsSync(lockPath)) {
 // ── 3. registry.json 的 diff 范围 ───────────────────────────────────────
 const registryPath = "registry.json";
 const baseRegistryRaw = fileAtBase(registryPath);
-if (baseRegistryRaw !== null && changed.includes(registryPath)) {
+const currentRegistryVersion = JSON.parse(readFileSync(join(ROOT, registryPath), "utf8")).registryVersion;
+const baseRegistryVersion = baseRegistryRaw === null ? null : JSON.parse(baseRegistryRaw).registryVersion;
+if (baseRegistryRaw !== null && baseRegistryVersion !== currentRegistryVersion) {
+  // 索引换代（registryVersion 变了）的那一次，每一条都会变，范围检查没有意义。
+  notes.push(`registry.json：registryVersion ${baseRegistryVersion} → ${currentRegistryVersion}，整份换代，跳过范围检查`);
+} else if (baseRegistryRaw !== null && changed.includes(registryPath)) {
   const entriesOf = (raw) =>
     new Map(
       JSON.parse(raw).extensions.map((entry) => {
         const { updatedAt: _updatedAt, ...stableEntry } = entry;
-        return [entry.id, JSON.stringify(stableEntry)];
+        return [entry.manifest.id, JSON.stringify(stableEntry)];
       }),
     );
   const before = entriesOf(baseRegistryRaw);

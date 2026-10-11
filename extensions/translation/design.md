@@ -11,7 +11,7 @@
 
 1. **松手之后译文出现在哪**——就在选区旁边（`sec-02`）。这是主路径的落点，和 Easydict 一样不用挪眼睛、不用去找面板。
 2. **扩展页面在 400×520 的面板里长什么样**（`sec-01`，五种状态）——从原地弹窗「在面板里打开」或钉住之后落在这里，
-   「翻译剪贴板」也落在这里。
+   「翻译剪贴板」与 `/translate <文字>` 也落在这里（manifest v2 里叫**工具箱域**，命令落点 `presentation: "toolbox"`）。
 3. **页面之外宿主替扩展画的东西**：第一次进入的授权弹窗、静默命令的横幅回执（`sec-03`），以及设置页里它那一块（`sec-04`）。
 
 方向要分清：
@@ -20,6 +20,24 @@
   这些落在 `jarvis-mac` 的期 B（[docs/14](../../docs/14-host-integration-plan.md) D-B13…D-B16）。
 - 弹窗与页面的内容——**扩展用 SDK 节点拼**，已在 `src/` 里实现：`popover.ts` 是弹窗那棵树，`page.ts` 是五态页面，
   `session.ts` 是它们共用的状态与编排，`google.ts` 是 Google 的两条路。
+
+## 入口与 manifest（v2）
+
+manifest v2 按域声明（`contributes`）。这个扩展入驻工具箱、指令、设置三个域；名字与图标在顶层（`name: "截屏翻译"`、
+`symbol: "translate"`），工具箱那一行只带 `subtitle` 与 `keywords`。Inbox 只开横幅：`{ messages: false, notifications: true }`。
+
+| 命令 | 入口 | `presentation` | 跑在哪 | 结果落在 |
+| --- | --- | --- | --- | --- |
+| `capture-translate` 截屏翻译 | ⌥⌘T、页面「截屏翻译」「再截一块」 | `popover` | 前台会话 | 原地弹窗（`popover.ts`） |
+| `capture-copy` 截屏译文入剪贴板 | ⌥⌘O、页面同名按钮 | `silent` | **后台会话** | 剪贴板 + 横幅 |
+| `translate-clipboard` 翻译剪贴板 | 页面「翻译剪贴板」 | `toolbox` | 前台会话 | 工具箱页面（`page.ts`） |
+| `translate-text` 翻译这段文字 | `/translate <文字>` · `/翻译 <文字>`（全局搜索与速记输入框） | `toolbox` | 前台会话 | 工具箱页面；没跟字时同「翻译剪贴板」 |
+
+**静默命令用另一份会话状态**（`index.ts` 的 `background = new Session({ headless: true })`）。真机上它跑在宿主的后台会话——
+另一个 JSContext，页面那一份 `Session` 在那里不存在，`panel.*` / `ui.*` 都以 `surface.unavailable` 拒绝。
+单独一个实例让单测（同一个 JSContext）与真机是同一种行为：它读不到页面上手动改过的语言，也不会把一次失败写进用户正看着的那一屏。
+`headless` 带来的差别只有三处：框空了不调 `ui.dismissPopover`（那里没有弹窗）、不订阅偏好（每次的上下文都带着偏好）、
+失败的正文写给横幅（`failureFor(…, true)`：不说"原文还留在上面"，不指向「授权」「重试」）。`panel.hold` 照常请求，被拒由 SDK 吞掉。
 
 ## 板子与节点号
 
@@ -39,9 +57,9 @@
 | `popover-02-result` | `993:53` | 400×316 | — | `popover.ts`，`phase === "done"` |
 | `sec-03` 入口与授权 | `993:99`（行 `993:106`） | — | — | |
 | `consent-01-first-entry` | `986:4` | 420 宽 | 清单 `986:11` | 宿主：按 manifest `capabilities[]` 画 |
-| `receipt-01-notification` | `985:29` | 380×74 | — | `capture-copy` → `notifications.post` |
+| `receipt-01-notification` | `985:29` | 380×74 | — | `capture-copy`（后台会话）→ `notifications.post` |
 | `sec-04` 设置 | `983:24`（行 `983:31`） | — | — | |
-| `settings-01-screenshot-translate` | `989:4` | 1000×950 | 区段 `989:25` | 宿主：按 manifest `settings.preferences` 与 `commands[]` 画 |
+| `settings-01-screenshot-translate` | `989:4` | 1000×950 | 区段 `989:25` | 宿主：按 manifest `contributes.settings.preferences` 与 `contributes.commands[]` 画 |
 
 ## 原地结果弹窗（主路径的落点）
 
@@ -56,7 +74,7 @@
 | 关闭 | Esc / 点弹窗外面 / 指针离开 15 秒（同面板的倒计时）；翻译中不倒计时（扩展 `panel.hold` 着） |
 | 钉住 ⊙ | 常驻，直到手动关；再截一块时钉住的弹窗被新的一次替换 |
 | 在面板里打开 ⤢ | 宿主先 `deactivate` 弹窗再 `activate` 页面，扩展的 `Session` 不动，页面画 `translate-02-captured` |
-| 头 | 22pt 徽标（`toolbox.symbol`）+ 名 12.5pt semibold + 状态标（小圆点 + 9pt 等宽大写）；右端三颗 22pt 玻璃圆片：钉住 / 进面板 / 关闭 |
+| 头 | 22pt 徽标（manifest 顶层 `symbol`）+ 名 12.5pt semibold + 状态标（小圆点 + 9pt 等宽大写）；右端三颗 22pt 玻璃圆片：钉住 / 进面板 / 关闭 |
 | 选区残影 | 弹窗期间原选区留一圈 1pt 青 70% 轮廓 + 青 5% 底，告诉用户「翻的是这一块」；弹窗关闭时一起退 |
 | 无障碍 | VoiceOver 出现时播报「截屏翻译 · 结果」并把译文作为 `accessibilityValue`；Reduce Motion 直接出现不滑入；Reduce Transparency 不透明底 |
 
@@ -195,7 +213,9 @@ git commit -m    -> dict: []             src_translit: —
 - **`consent-01-first-entry`**：按 [docs/05](../../docs/05-permissions.md)：420 宽、透明行 + 发丝线、档位标签、玻璃开关、
   「允许并打开」炫彩描边。行顺序 = manifest `capabilities[]`；第二行 = `reason`；高风险行的第三句由宿主写。
 - **`receipt-01-notification`**：只属于 `capture-copy`：`notifications.post({ title: "已复制译文", body })`；
-  失败时同一条路 `notifications.post({ title: failure.title, body })`，点横幅展开到页面的错误屏。
+  失败时同一条路 `notifications.post({ title, body })`。它跑在后台会话，**点横幅展开的页面画不出那次的错误屏**
+  （那一屏只在后台会话的内存里），因此横幅正文自己说完：翻译失败的原因、剪贴板写不进去、缺屏幕录制权限或截图授权时去哪开。
+  Esc 与框空了不发横幅。
 
 ## 设置页 · `settings-01-screenshot-translate`
 
@@ -216,8 +236,8 @@ git commit -m    -> dict: []             src_translit: —
 ## 宿主侧还缺的（期 B）
 
 `presentation: "popover"` 的窗体与锚定（D-B13）、`capture` 的 `hint`（D-B14）、`system.openExtensionSettings`（D-B15）、
-`picker.layout: "compact"`（D-B16）——都已写进 [docs/14](../../docs/14-host-integration-plan.md)。manifest / registry 认 `popover`
-这一步已先在宿主 2.0.1 落地，否则整份 registry 会被判无效。
+`picker.layout: "compact"`（D-B16）——都已写进 [docs/14](../../docs/14-host-integration-plan.md)。
+manifest v2（`contributes`、`/` 指令、后台会话里的静默命令）由宿主的扩展域改造提供（jarvis-mac feature `extension-domains-service-engines`）；`minimumJarvisVersion` 写 3.0.3。
 
 ## Related Links
 

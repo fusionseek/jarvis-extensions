@@ -1,22 +1,32 @@
 {
-  "manifestVersion": 1,
+  "manifestVersion": 2,
   "id": "hello-extension",
   "version": "0.1.0",
-  "toolbox": {
-    "symbol": "textformat.123",
-    "name": "字数统计",
-    "subtitle": "字符、单词与行数",
-    "keywords": ["count", "words", "统计"]
-  },
-  "description": "粘一段文字，实时数出字符、单词与行数；一键复制摘要。脚手架示例：不需要任何授权，不进设置页，不进 Inbox。",
+  "name": "字数统计",
+  "symbol": "textformat.123",
+  "description": "粘一段文字，实时数出字符、单词与行数；一键复制摘要。也可以在全局搜索或速记里打 /count 加一段文字直接数。脚手架示例：入驻工具箱与指令两个域，不需要任何授权，不进设置页，不进 Inbox。",
   "author": {
     "name": "fusionseek",
     "github": "fusionseek"
   },
   "main": "dist/extension.js",
-  "sdk": "^1.0.0",
-  "minimumJarvisVersion": "2.0.0",
+  "sdk": "^2.0.0",
+  "minimumJarvisVersion": "3.0.3",
   "capabilities": [],
-  "settings": false,
+  "contributes": {
+    "toolbox": {
+      "subtitle": "字符、单词与行数",
+      "keywords": ["count", "words", "wc"]
+    },
+    "commands": [
+      {
+        "id": "count",
+        "title": "数一段文字",
+        "description": "把 / 后面那段文字放进面板里数",
+        "slash": { "keyword": "count", "aliases": ["字数"], "argument": "要数的文字" },
+        "presentation": "toolbox"
+      }
+    ]
+  },
   "inbox": false
 }

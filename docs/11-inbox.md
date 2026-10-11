@@ -1,126 +1,98 @@
-# Inbox 接入（第四部分）
+# Inbox 通路
 
 ## Overview
 
-Inbox 是浮窗展开后的第一屏，装的是"发生了什么"：Agent 任务、消息卡、图片、速记提醒、更新通告。
-扩展可以往它顶部那一段投**一张卡**——与速记提醒卡、更新通告卡同一种东西：一件需要用户
-看一眼或做点什么的事，带一两颗按钮，处理完就走。
+Inbox 是浮窗展开后的第一屏，装的是"发生了什么"：Agent 任务、消息、图片、速记提醒、更新通告。
+扩展不是一个"域"，但有两条往外交结果的通路：**往 Inbox 投一条消息**，以及**弹一条系统横幅**。
 
-它不是通知流、不是日志、不是营销位。判据只有一条：**这张卡上有没有一件用户此刻要做的事**。
+它们存在的理由是**静默命令与服务**：后台会话没有任何一面，用户按下快捷键之后、关上面板之后，
+结果只能落在这两处（或剪贴板）。有界面的扩展在界面上交结果，很少需要它们。
+
+v2 只保留最小的一种：**一条纯文本消息**。v1 的扩展卡片（带动作、能 `dismiss`、落盘 7 天、点卡片回到扩展页）整套删掉——
+一张带按钮的卡等于让第三方在 Inbox 顶部开一扇对话窗，而 Inbox 不是对话。
 
 ## Concepts
 
-### 卡片长什么样
+### 声明
 
-借速记提醒卡（Figma `689:23`、`JarvisDesign.Memo.InboxCard`）的解剖，一个像素都不新造：
+manifest 的 `inbox` 必须显式回答（[03](03-manifest.md)）：
 
-```text
-┌ 卡片（tint 10% 底 / 16% 边，圆角 12，内距 12）───────────────────┐
-│ [符号 15pt, 18pt 列]  发到手机                          12:41   │  ← 15 semibold rowTitle · 时刻 12 等宽
-│                       已推到 iPhone · Safari                    │  ← 正文 15 titleText，≤ 2 行
-│                       「会议 3 点改到 4 点」                     │  ← 说明 13 subtleText，1 行
-│                       [ 撤回 ]  [ 知道了 ]                      │  ← 动作 28 高，主次两档
-└──────────────────────────────────────────────────────────────────┘
-```
-
-| 字段 | 来源 | 限制 |
+| 写法 | 含义 | 要同时声明 |
 | --- | --- | --- |
-| 行首符号 | `card.symbol`，没有时用 `toolbox.symbol` | SF Symbol |
-| 标题 | **恒为扩展名**（`toolbox.name`） | 扩展改不了：用户要一眼知道这张卡是谁投的 |
-| 时刻 | `posted_at` | 宿主 |
-| 正文 | `card.title` | ≤ 60 字，2 行尾截断 |
-| 说明 | `card.body` | ≤ 240 字，1 行尾截断；点卡片展开到 4 行 |
-| 语义色 | `card.tint`：`accent` / `live` / `alert` / `danger` / `violet`；默认 `alert` | 与更新通告（橙）、消息卡（按等级）同一条规则：带语义色 = 这不是一条任务记录 |
-| 动作 | `card.actions` ≤ 3 颗；`primary: true` 那颗青底；最右恒为宿主加的「×」 | 按下后宿主先收卡再调 `onInboxAction` |
-| 来源徽标 | 无 | 标题已经是扩展名，再挂一枚胶囊是同一件事说两遍 |
+| `false` | 不碰 Inbox，也不弹横幅 | — |
+| `{ "messages": true, "notifications": false }` | 往 Inbox 投消息 | `inbox.post` |
+| `{ "messages": false, "notifications": true }` | 只弹横幅（静默命令的回执「已复制译文」） | `notifications.post` |
+| 两者都 `true` | 两条都走 | 两项都声明 |
 
-### 位置与顺序
+`false` 也是回答：审核时一眼看得出它会不会在用户没看着的时候说话。
 
-Inbox 顶部那一段（"需要你做点什么"）的顺序：
+### 消息长什么样
 
-```text
-更新通告（置顶态） → 速记提醒卡 → 扩展卡（按 posted_at 倒序） → 消息卡 → 图片 → 最近记录
-```
+`jarvis.inbox.post({ title, body, level })` 由宿主变成一条普通的 Inbox 消息，与 WebSocket 进来的 `message`
+走同一条 `AppModel.apply(.message)`：同一种消息卡、同一套未读与角标——屏幕上没有任何新组件。
 
-扩展卡排在速记之后：更新通告是全局的，速记提醒是用户自己排的，扩展卡是第三方说的话——
-三者都要用户做点什么，但可信度递减，位置随之靠后。
-
-**扩展卡不进「最近记录」列表。** 那一列装的是 Agent 任务与降级后的更新通告，处理完的扩展卡直接消失，
-不留一行历史——扩展想留历史用 `storage`，自己在页面里画。
-
-### 未读与已读
-
-投递即标未读：`UnreadItemKey.extension("<id>:<cardId>")`，球上的角标 +1、贴边细条上的红点亮起、
-贴边时浮窗弹出 2.8 秒——与任务、消息、速记提醒**同一套**，屏幕上没有任何新角标。
-
-已读走同一条可见性判定（`reportsFeedFrame`）：卡片露出行高的 60% 且不少于 12pt 即算看过；
-处理或撤走时未读键同批回收，角标不会停在一个清不掉的数字上。
-
-### 规则
-
-| 规则 | 值 | 为什么 |
+| 字段 | 宿主怎么处理 | 为什么 |
 | --- | --- | --- |
-| 每扩展同一时刻**一张**活动卡 | 同 `card.id` 再投 = 替换；不同 `id` 再投 = 替换掉旧的 | Inbox 顶部那一段是用户每次展开的第一眼；一个扩展叠三张卡等于把 Agent 的任务挤出面板 |
-| 频率 | 10 秒内最多一次 `post` | 一个每秒投一张的扩展会让角标像秒表 |
-| 存活 | 用户点「×」、点任一动作、扩展 `dismiss(id)`，或 **7 天**后由宿主撤走 | 一张永远不走的卡与更新通告那次"常驻在上面"是同一个错 |
-| 落盘 | `extension_inbox_cards`，重启还在 | 与更新通告同一条理由：用户下次打开面板、下次启动时它还该在原地 |
-| 禁用 / 卸载 | 卡撤走、未读回收 | — |
-| 内容 | 纯文本；宿主转义 | 卡片上不允许扩展画节点树 |
+| 标题 | `<扩展名> · <title>`，`title` 截到 60 字 | Inbox 里分得出这一条是谁投的——扩展不能冒充 Jarvis 自己说话 |
+| 正文 | 截到 400 字，纯文本 | 卡片上不允许扩展画节点树 |
+| `level` | `info`（默认）/ `success` / `warning` / `error`，决定消息卡的语义色 | 与 Agent 消息同一条规则 |
+| 横幅 | **不弹**（`notify: false`） | 要横幅另调 `notifications.post`，两条通路各自声明、各自限频 |
+| 动作、撤回、id | 没有 | 投出去就是用户的了；要接着交互，让用户回到扩展的界面 |
 
-### 动作回调
+### 横幅
 
-按钮按下：宿主先把卡收走、回收未读，再 `dispatch({ type: "inboxAction", cardId, actionId })`。
-扩展没在运行时（`background: false` 且页面没开）宿主会**为这一次回调加载上下文**、执行、
-再销毁；回调里可以调它已授权的能力。回调**不能**再投一张卡来"接着问"——那是一次对话，Inbox 不是对话。
+`jarvis.notifications.post({ title, body })` 弹一条系统横幅：
 
-点卡片本体（不点按钮）= 展开面板到该扩展页面（`activate(context.entry = "inboxCard")`），卡**不收**。
+- 走 Jarvis 的通知通道，声音由用户的提示音设置决定，扩展不能指定；
+- **没有按钮、没有点击回调**：`UNNotificationAction` 要按 category 应用级注册，给每个扩展注册一套等于把系统的通知数据库交给第三方；
+- 用户在系统设置里关了 Jarvis 的通知时静默不弹，`post` 照常 resolve——横幅本来就是尽力而为。
 
-### 系统横幅
+### 限频
 
-`inbox.notifications: true` 且声明了 `notifications.post` 时，`post({ …, notify: true })` 同时弹一条
-系统横幅：标题 = `card.title`、副标题 = 扩展名、正文 = `card.body`。点横幅 = 展开面板到该扩展页面
-（`entry = "notification"`，并调 `onNotificationActivated`），与点卡片本体同一条路。
+| 通路 | 上限 | 为什么 |
+| --- | --- | --- |
+| `inbox.post` | 每分钟 6 条 | 一个每秒投一条的扩展会让角标像秒表 |
+| `notifications.post` | 每分钟 6 条 | 同上，横幅打断得更狠 |
 
-横幅**没有按钮**：`UNNotificationAction` 要注册 category，而 category 是应用级注册的；
-给每个扩展注册一套等于把系统的通知数据库交给第三方。要按钮的动作放在卡片上。
+超出 → `rate.limited`。限频挡的是失控，不是礼貌：同一件事在一分钟里投两次已经多了，审核按这个读。
 
-声音由用户的提示音设置决定（`AlertCue` 那四类里没有扩展这一类，因此走"消息"那一档）；
-扩展不能指定声音。通知权限被拒时横幅静默不弹，`post` 照常 resolve——横幅本来就是尽力而为。
+### 判据：什么值得投
 
-`jarvis.notifications.post` 单独调用（不带卡）也可以，同样的限制：60 秒内 ≤ 3 条、副标题恒为扩展名。
-manifest 写 `{ cards: false, notifications: true }` 就是只走这条路——静默命令的回执（「已复制译文」）
-用它，点横幅展开面板到这个扩展的页面。
+| 该投 | 不该投 |
+| --- | --- |
+| 静默命令跑完的结果（「已复制译文」「已推到 iPhone」） | 有界面的扩展在界面上已经画出来的东西 |
+| 服务后台跑完、用户已经离开面板（清理报告由宿主写，服务不需要自己投） | 进度、心跳、"我还活着" |
+| 一件需要用户知道的失败（「快传没有开着，没有发出去」） | 营销、更新提示（更新由商店负责） |
 
 ## Usage
 
 ```ts
-// 一次发送成功之后
-await jarvis.inbox.post({
-  id: "sent",                    // 同一类事同一个 id：连发三次只会有一张卡，正文换成最新那次
-  title: "已推到 iPhone · Safari",
-  body: text.slice(0, 60),
-  tint: "live",
-  actions: [{ id: "undo", title: "撤回" }, { id: "ok", title: "知道了", primary: true }],
-});
+// 静默命令：截屏翻译，译文进剪贴板，再说一声
+async function translateSilently() {
+  const text = await translateCapture();
+  await jarvis.clipboard.write(text);
+  await jarvis.notifications.post({ title: "已复制译文", body: text.slice(0, 80) });
+}
 
-defineExtension({
-  render,
-  async onInboxAction(cardId, actionId) {
-    if (cardId === "sent" && actionId === "undo") await jarvis.quickTransfer.sendText("（已撤回上一条）");
-  },
-});
+// 静默命令：发到手机，失败要让用户知道
+try {
+  await jarvis.quickTransfer.sendText(text);
+  await jarvis.inbox.post({ title: "已推到手机", body: text.slice(0, 120), level: "success" });
+} catch (e) {
+  await jarvis.inbox.post({ title: "没有发出去", body: e instanceof JarvisError ? e.detail ?? e.message : String(e), level: "warning" });
+}
 ```
 
 ## Gotchas
 
-- 「知道了」这种只关卡的动作**不需要**——宿主已经给了「×」。给它是为了主次两颗按钮排版对称时才有意义。
-- 卡上的标题是扩展名，不是你写的 `title`；你写的 `title` 是正文那一行。
-- `background: false` 的扩展在后台投不了卡（没有上下文在跑）；它只能在页面开着时投，
-  典型场景是"用户做了一件事、关掉面板之后还该看得见结果"。
+- 消息标题前面恒有扩展名；你写的 `title` 是冒号后那一段。
+- 没有 `dismiss`、没有卡片 id：同一件事别连投三条，用户会收到三条。
+- 横幅没有点击回调；点横幅只是把 Jarvis 叫到前面。
+- 没声明 `inbox.messages` 就调 `inbox.post` → `capability.undeclared`；声明了用户没点头 → `permission.denied`。
+  后台会话里不会弹授权，静默命令的这两项要靠用户在设置 › 扩展 里打开。
 
 ## Related Links
 
-- [03 · manifest 规范](03-manifest.md)（第四部分）
+- [03 · manifest 规范](03-manifest.md)（`inbox`）
 - [06 · 能力接口目录](06-capabilities.md)（`inbox.post` / `notifications.post`）
-- `jarvis-mac/Sources/Jarvis/UI/FloatingStatusView.swift`（`memoReminderCard`、`updateNoticeCard`）、
-  `Domain/UnreadState.swift`、`App/MemoReminderBridge.swift`
+- `jarvis-mac/Sources/Jarvis/App/Extensions/ExtensionCapabilityHost.swift`（`inbox.post`）、`Domain/StatusModels.swift`（`DisplayMessage`）

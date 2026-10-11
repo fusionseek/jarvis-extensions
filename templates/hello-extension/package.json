@@ -10,6 +10,6 @@
     "validate": "node ../../scripts/validate.mjs ."
   },
   "dependencies": {
-    "@fusionseek/jarvis-extension-sdk": "^1.0.0"
+    "@fusionseek/jarvis-extension-sdk": "^2.0.0"
   }
 }

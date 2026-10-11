@@ -1,4 +1,4 @@
-// jarvis-extension bundle · send-to-phone@1.0.0 · sdk 1.6.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · send-to-phone@2.0.0 · sdk 2.0.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -12,7 +12,7 @@
   };
 
   // sdk/src/bridge.ts
-  var bridgeProtocolVersion = 1;
+  var bridgeProtocolVersion = 2;
   function eventName(propName) {
     return propName.length > 2 && propName.startsWith("on") ? propName[2].toLowerCase() + propName.slice(3) : propName;
   }
@@ -103,14 +103,34 @@
     swatch: make("swatch"),
     dropzone: make("dropzone"),
     keycap: make("keycap"),
-    image: make("image"),
-    markdown: make("markdown"),
-    chart: make("chart"),
-    dataTable: make("dataTable")
+    image: make("image")
   };
 
   // sdk/src/index.ts
-  var sdkVersion = "1.6.0";
+  var sdkVersion = "2.0.0";
+  var Cancellation = class {
+    constructor() {
+      this.listeners = [];
+      this.fired = false;
+    }
+    get cancelled() {
+      return this.fired;
+    }
+    onCancel(listener) {
+      if (this.fired) {
+        listener();
+        return;
+      }
+      this.listeners.push(listener);
+    }
+    cancel() {
+      if (this.fired) return;
+      this.fired = true;
+      const listeners = this.listeners;
+      this.listeners = [];
+      for (const listener of listeners) listener();
+    }
+  };
   var Runtime = class {
     constructor() {
       this.definition = null;
@@ -119,8 +139,9 @@
       this.pending = /* @__PURE__ */ new Map();
       this.handlers = /* @__PURE__ */ new Map();
       this.subscriptions = /* @__PURE__ */ new Map();
+      this.serviceSignals = /* @__PURE__ */ new Map();
       this.updateQueued = false;
-      /** 此刻开着的那一面；`null` = 既没有页面也没有弹窗，`render()` 不会被调。 */
+      /** 此刻开着的那一面；`null` = 一面都没有，`render()` 不会被调。 */
       this.activeSurface = null;
       this.commandSummaries = [];
       this.hostRef = null;
@@ -135,7 +156,7 @@
       this.hostRef = host;
       return host;
     }
-    /** 把 `dispatch` 挂到全局。幂等；`defineExtension` 与任何一次能力调用都会确保它挂上了。 */
+    /** 把 `dispatch` 挂到全局。幂等。 */
     ensureRegistered() {
       if (this.registered) return;
       globalThis.__jarvisRuntime = { dispatch: (json) => this.dispatch(json) };
@@ -148,7 +169,7 @@
       this.definition = definition;
       this.ensureRegistered();
     }
-    /** 让宿主再调一次 render。同一拍里的多次请求合并成一次提交；页面与弹窗都没开着时是空操作。 */
+    /** 让宿主再调一次 render。同一拍里的多次请求合并成一次提交；一面都没开着时是空操作。 */
     requestUpdate() {
       if (this.updateQueued || !this.activeSurface) return;
       this.updateQueued = true;
@@ -172,32 +193,45 @@
       if (result.ok) return result.value;
       throw new JarvisError(result.error);
     }
+    /** 新的订阅 token。 */
+    token(namespace, method) {
+      return `${namespace}.${method}#${this.nextRequestId++}`;
+    }
+    /** 收这个 token 上的订阅事件。 */
+    listen(token, listener) {
+      this.subscriptions.set(token, listener);
+    }
+    /** 不再收这个 token 上的事件。 */
+    forget(token) {
+      this.subscriptions.delete(token);
+    }
     /**
      * 订阅宿主事件。宿主拒绝订阅（没授权、没这个能力）时**不抛到扩展里**：一条被拒的订阅只是收不到事件，
-     * 让它变成未处理的 rejection 会把整个上下文拖垮。拒绝记一条 warn 日志，开发者模式看得见。
+     * 让它变成未处理的 rejection 会把整个上下文拖垮。拒绝记一条 warn 日志。
      */
     subscribe(namespace, method, listener) {
-      const token = `${namespace}.${method}#${this.nextRequestId++}`;
-      this.subscriptions.set(token, listener);
+      const token = this.token(namespace, method);
+      this.listen(token, listener);
       this.invoke(namespace, method, { token }).catch((error) => {
-        this.subscriptions.delete(token);
+        this.forget(token);
         this.log("warn", `\u8BA2\u9605 ${namespace}.${method} \u88AB\u5BBF\u4E3B\u62D2\u7EDD`, error instanceof Error ? error.message : String(error));
       });
       return () => {
-        this.subscriptions.delete(token);
+        this.forget(token);
         this.invoke(namespace, "unsubscribe", { token }).catch(() => void 0);
       };
     }
     log(level, message, data) {
       this.host().log(level, message, data === void 0 ? null : JSON.stringify(data));
     }
-    /** 开着的那一面的定义：弹窗（没给时退回页面）或页面。 */
+    /** 开着的那一面的定义：弹窗与窗口没给时退回工具箱页面。 */
     surfaceDefinition(surface) {
       const definition = this.definition;
       if (surface === "popover" && definition?.popover) return definition.popover;
-      return definition?.page;
+      if (surface === "window" && definition?.window) return definition.window;
+      return definition?.toolbox;
     }
-    /** 此刻那一面的树：弹窗、自定义页面，或按命令清单画的默认页。 */
+    /** 此刻那一面的树：自定义的那一面，或按命令清单画的默认页。 */
     renderSurface() {
       const page = this.surfaceDefinition(this.activeSurface);
       if (page) return page.render();
@@ -210,10 +244,10 @@
                 key: command.id,
                 symbol: command.presentation === "silent" ? "bolt" : "rectangle.and.text.magnifyingglass",
                 title: command.title,
-                subtitle: command.hotkey ? `\u5FEB\u6377\u952E ${command.hotkey}` : command.description ?? "\u6CA1\u6709\u5FEB\u6377\u952E\uFF0C\u5728\u8FD9\u91CC\u8FD0\u884C",
+                subtitle: command.hotkey ? `\u5FEB\u6377\u952E ${command.hotkey}` : command.slash ? `\u6307\u4EE4 ${command.slash}` : command.description ?? "\u5728\u8FD9\u91CC\u8FD0\u884C",
                 onPress: () => void jarvis.commands.run(command.id)
               })
-            ) : [ui.empty({ symbol: "bolt.slash", title: "\u8FD9\u4E2A\u6269\u5C55\u6CA1\u6709\u547D\u4EE4", hint: "\u5B83\u7684 manifest \u91CC\u65E2\u6CA1\u6709\u9875\u9762\u4E5F\u6CA1\u6709\u547D\u4EE4\u3002" })]
+            ) : [ui.empty({ symbol: "bolt.slash", title: "\u8FD9\u4E2A\u6269\u5C55\u6CA1\u6709\u547D\u4EE4", hint: "\u5B83\u65E2\u6CA1\u6709\u9875\u9762\u4E5F\u6CA1\u6709\u547D\u4EE4\u3002" })]
           })
         ]
       });
@@ -235,12 +269,64 @@
       this.generation += 1;
       this.host().commit(JSON.stringify({ protocol: bridgeProtocolVersion, generation: this.generation, surface, root }));
     }
+    /** 宿主调一次服务。结果与进度都经隐式调用交回去；这里不抛任何东西。 */
+    handleService(call2) {
+      const implementation = this.definition?.services?.[call2.service];
+      const respond = (result) => {
+        this.serviceSignals.delete(call2.callId);
+        this.invoke("service", "resolve", { callId: call2.callId, result }).catch(() => void 0);
+      };
+      if (!implementation) {
+        respond({ ok: false, error: { code: "capability.unknown", message: `defineExtension \u91CC\u6CA1\u6709\u670D\u52A1\u300C${call2.service}\u300D\u7684\u5B9E\u73B0\u3002` } });
+        return;
+      }
+      const context = { preferences: call2.params.preferences, granted: call2.params.granted };
+      const signal = new Cancellation();
+      this.serviceSignals.set(call2.callId, signal);
+      const work = () => {
+        switch (call2.point) {
+          case "junkClean.engine": {
+            const engine = implementation;
+            switch (call2.method) {
+              case "status":
+                return Promise.resolve(engine.status(context));
+              case "run":
+                return engine.run(
+                  context,
+                  (progress) => {
+                    if (signal.cancelled) return;
+                    this.invoke("service", "progress", { callId: call2.callId, progress }).catch(() => void 0);
+                  },
+                  signal
+                );
+              case "action":
+                return Promise.resolve(engine.action ? engine.action(call2.params.actionId ?? "", context) : {});
+            }
+          }
+        }
+        return Promise.reject(new JarvisError({ code: "capability.unknown", message: `\u4E0D\u8BA4\u8BC6\u7684\u670D\u52A1\u65B9\u6CD5 ${call2.point}.${call2.method}` }));
+      };
+      let pending;
+      try {
+        pending = work();
+      } catch (error) {
+        pending = Promise.reject(error);
+      }
+      pending.then(
+        (value) => respond({ ok: true, value: value ?? {} }),
+        (error) => {
+          const shape = error instanceof JarvisError ? { code: error.code, message: error.message, ...error.detail !== void 0 ? { detail: error.detail } : {} } : { code: "host.failure", message: error instanceof Error ? error.message : String(error) };
+          this.log("error", `\u670D\u52A1\u300C${call2.service}\u300D\u7684 ${call2.method} \u629B\u51FA\u4E86\u5F02\u5E38`, shape.message);
+          respond({ ok: false, error: shape });
+        }
+      );
+    }
     dispatch(json) {
       const event = JSON.parse(json);
       const definition = this.definition;
       switch (event.type) {
         case "activate": {
-          const surface = event.context.surface ?? "page";
+          const surface = event.context.surface;
           this.activeSurface = surface;
           this.commandSummaries = event.context.commands ?? [];
           void Promise.resolve(this.surfaceDefinition(surface)?.activate?.(event.context)).then(() => this.commit());
@@ -280,6 +366,14 @@
           );
           return;
         }
+        case "service": {
+          this.handleService(event.call);
+          return;
+        }
+        case "serviceCancel": {
+          this.serviceSignals.get(event.callId)?.cancel();
+          return;
+        }
         case "subscription": {
           this.subscriptions.get(event.token)?.(event.payload);
           return;
@@ -287,14 +381,6 @@
         case "preferencesChanged":
         case "permissionsChanged": {
           this.requestUpdate();
-          return;
-        }
-        case "inboxAction": {
-          void definition?.onInboxAction?.(event.cardId, event.actionId);
-          return;
-        }
-        case "notificationActivated": {
-          void definition?.onNotificationActivated?.();
           return;
         }
       }
@@ -312,6 +398,7 @@
   }
   var call = {
     panel: namespaced("panel"),
+    window: namespaced("window"),
     commands: namespaced("commands"),
     storage: namespaced("storage"),
     preferences: namespaced("preferences"),
@@ -323,20 +410,33 @@
     speech: namespaced("speech"),
     notifications: namespaced("notifications"),
     inbox: namespaced("inbox"),
-    memo: namespaced("memo"),
-    calendar: namespaced("calendar"),
-    tasks: namespaced("tasks"),
     net: namespaced("net"),
-    bigquery: namespaced("bigquery"),
+    process: namespaced("process"),
     files: namespaced("files"),
+    terminal: namespaced("terminal"),
     system: namespaced("system")
   };
   var sync = {
     text: syncNamespaced("text"),
-    time: syncNamespaced("time"),
-    color: syncNamespaced("color"),
     host: syncNamespaced("host")
   };
+  function runProcess(options) {
+    const token = runtime.token("process", "run");
+    runtime.listen(token, (payload) => {
+      const lines = payload.lines ?? [];
+      for (const line of lines) options.onLine?.(line);
+    });
+    const result = runtime.invoke("process", "run", { executable: options.executable, arguments: options.arguments, token }).finally(() => runtime.forget(token));
+    let cancelled = false;
+    return {
+      result,
+      cancel() {
+        if (cancelled) return;
+        cancelled = true;
+        call.process("cancel", { token }).catch(() => void 0);
+      }
+    };
+  }
   var jarvis = {
     sdk: { version: sdkVersion },
     get host() {
@@ -353,19 +453,23 @@
       hold(reason) {
         let released = false;
         const id = runtime.invoke("panel", "hold", { reason });
+        id.catch(() => void 0);
         return {
           release() {
             if (released) return;
             released = true;
-            void id.then((handle) => call.panel("release", { handle }));
+            void id.then((handle) => call.panel("release", { handle })).catch(() => void 0);
           }
         };
       },
       collapse: () => call.panel("collapse"),
       present: () => call.panel("present")
     },
+    window: {
+      open: () => call.window("open")
+    },
     commands: {
-      run: (id) => call.commands("run", { id })
+      run: (id, argument) => call.commands("run", argument === void 0 ? { id } : { id, argument })
     },
     storage: {
       get: (key) => call.storage("get", { key }),
@@ -397,46 +501,22 @@
       hash: {
         digest: (algorithm, text2, options) => sync.text("hash.digest", { algorithm, text: text2, ...options })
       },
-      json: {
-        format: (text2, options) => sync.text("json.format", { text: text2, ...options }),
-        minify: (text2, options) => sync.text("json.minify", { text: text2, ...options })
-      },
-      url: {
-        parse: (text2) => sync.text("url.parse", { text: text2 }),
-        build: (parts) => sync.text("url.build", parts)
-      },
-      regex: {
-        test: (pattern, text2, flags) => sync.text("regex.test", { pattern, text: text2, flags })
-      },
       language: {
         detect: (text2, options) => sync.text("language.detect", { text: text2, ...options }),
         displayName: (code) => sync.text("language.displayName", { code })
       }
     },
-    time: {
-      parse: (text2, unit) => sync.time("parse", { text: text2, unit }),
-      format: (epochMilliseconds, pattern, timeZone) => sync.time("format", { epochMilliseconds, pattern, timeZone }),
-      timeZones: () => sync.time("timeZones")
-    },
-    color: {
-      convert: (hex) => sync.color("convert", { hex })
-    },
     clipboard: {
       read: () => call.clipboard("read"),
       readImage: () => call.clipboard("readImage"),
-      write: (text2) => call.clipboard("write", { text: text2 }),
-      history: (options) => call.clipboard("history", options),
-      entryText: (id) => call.clipboard("entryText", { id }),
-      observe: (listener) => runtime.subscribe("clipboard", "observe", listener)
+      write: (text2) => call.clipboard("write", { text: text2 })
     },
     quickTransfer: {
       status: () => call.quickTransfer("status"),
       observe: (listener) => runtime.subscribe("quickTransfer", "observe", listener),
       start: () => call.quickTransfer("start"),
       stop: () => call.quickTransfer("stop"),
-      sendText: (text2) => call.quickTransfer("sendText", { text: text2 }),
-      sendFile: (file) => call.quickTransfer("sendFile", { file }),
-      records: (options) => call.quickTransfer("records", options)
+      sendText: (text2) => call.quickTransfer("sendText", { text: text2 })
     },
     screenshot: {
       capture: (options) => call.screenshot("capture", options)
@@ -452,34 +532,21 @@
       post: (content) => call.notifications("post", content)
     },
     inbox: {
-      post: (card) => call.inbox("post", card),
-      dismiss: (cardId) => call.inbox("dismiss", { cardId })
-    },
-    memo: {
-      list: (options) => call.memo("list", options),
-      create: (body) => call.memo("create", { body }),
-      complete: (id) => call.memo("complete", { id })
-    },
-    calendar: {
-      runs: (range) => call.calendar("runs", range)
-    },
-    tasks: {
-      recent: () => call.tasks("recent"),
-      observe: (listener) => runtime.subscribe("tasks", "observe", listener)
+      post: (message) => call.inbox("post", message)
     },
     net: {
       fetch: (url, init) => call.net("fetch", { url, ...init })
     },
-    bigquery: {
-      query: (request) => call.bigquery("query", request),
-      status: () => call.bigquery("status"),
-      login: () => call.bigquery("login")
+    process: {
+      locate: (executable) => call.process("locate", { executable }),
+      run: runProcess
     },
     files: {
-      pick: (options) => call.files("pick", options),
-      readText: (file) => call.files("readText", { file }),
-      readBytes: (file) => call.files("readBytes", { file }),
-      reveal: (file) => call.files("reveal", { file })
+      stat: (path) => call.files("stat", { path }),
+      tail: (path, offset) => call.files("tail", { path, offset })
+    },
+    terminal: {
+      run: (scriptId) => call.terminal("run", { id: scriptId })
     },
     system: {
       openURL: (url) => call.system("openURL", { url }),
@@ -496,9 +563,30 @@
   var lastSentAt = null;
   var failure = null;
   var prefs = { trimWhitespace: true, confirmBeforeSend: false };
-  var unsubscribe = null;
+  var unsubscribeStatus = null;
+  var unsubscribePrefs = null;
   function has(id) {
     return granted.has(id);
+  }
+  function readPrefs(raw) {
+    return {
+      trimWhitespace: Boolean(raw["trimWhitespace"] ?? true),
+      confirmBeforeSend: Boolean(raw["confirmBeforeSend"] ?? false)
+    };
+  }
+  function describe(e) {
+    if (e instanceof JarvisError) return e.detail ?? e.message;
+    return e instanceof Error ? e.message : String(e);
+  }
+  function peerLabel(current) {
+    const paired = current?.peers.filter((p) => p.paired) ?? [];
+    if (paired.length === 1) return paired[0]?.label ?? null;
+    if (paired.length > 1) return `${paired.length} \u53F0\u8BBE\u5907`;
+    return null;
+  }
+  function excerpt(value, limit) {
+    const flat = Array.from(value.replace(/\s+/g, " ").trim());
+    return flat.length > limit ? `${flat.slice(0, limit).join("")}\u2026` : flat.join("");
   }
   async function refreshStatus() {
     if (!has("quickTransfer.status")) return;
@@ -506,7 +594,7 @@
       status = await jarvis.quickTransfer.status();
       statusProblem = null;
     } catch (e) {
-      statusProblem = e instanceof JarvisError ? e.detail ?? e.message : String(e);
+      statusProblem = describe(e);
     }
     jarvis.ui.update();
   }
@@ -534,25 +622,29 @@
     }
     jarvis.ui.update();
   }
+  async function postToInbox(message, can) {
+    if (!can("inbox.post")) {
+      jarvis.log.warn("\u6CA1\u6709 Inbox \u6388\u6743\uFF0C\u8FD9\u6761\u56DE\u6267\u6CA1\u6295", message);
+      return;
+    }
+    try {
+      await jarvis.inbox.post(message);
+    } catch (e) {
+      jarvis.log.warn("Inbox \u56DE\u6267\u6CA1\u6295\u51FA\u53BB", describe(e));
+    }
+  }
   async function send() {
     const payload = prefs.trimWhitespace ? text.trim() : text;
-    if (payload === "" || sending) return;
+    if (payload.trim() === "" || sending) return;
     sending = true;
     failure = null;
     jarvis.ui.update();
     const hold = jarvis.panel.hold("\u6B63\u5728\u628A\u6587\u5B57\u63A8\u5230\u624B\u673A");
+    let sent = false;
     try {
       await jarvis.quickTransfer.sendText(payload);
       lastSentAt = (/* @__PURE__ */ new Date()).toISOString();
-      if (has("inbox.post")) {
-        await jarvis.inbox.post({
-          id: "sent",
-          title: peerLabel() ? `\u5DF2\u63A8\u5230 ${peerLabel()}` : "\u5DF2\u63A8\u5230\u624B\u673A",
-          body: payload.slice(0, 60),
-          tint: "live",
-          actions: [{ id: "again", title: "\u518D\u53D1\u4E00\u6B21" }]
-        });
-      }
+      sent = true;
     } catch (e) {
       failure = describe(e);
     } finally {
@@ -560,16 +652,75 @@
       sending = false;
       jarvis.ui.update();
     }
+    if (sent) {
+      const peer = peerLabel(status);
+      await postToInbox({ title: peer ? `\u5DF2\u63A8\u5230 ${peer}` : "\u5DF2\u63A8\u5230\u624B\u673A", body: excerpt(payload, 120), level: "success" }, has);
+    }
   }
-  function describe(e) {
-    if (e instanceof JarvisError) return e.detail ?? e.message;
-    return e instanceof Error ? e.message : String(e);
+  var HOW_TO_START = "\u8FD9\u6761\u6307\u4EE4\u4E0D\u4F1A\u66FF\u4F60\u6253\u5F00\u5FEB\u4F20\uFF1A\u5728\u5DE5\u5177\u7BB1\u91CC\u6253\u5F00\u300C\u53D1\u5230\u624B\u673A\u300D\u6309\u300C\u5F00\u542F\u5FEB\u4F20\u300D\uFF0C\u6216\u5728\u5FEB\u4F20\u9762\u677F\u91CC\u5F00\u542F\uFF0C\u624B\u673A\u626B\u7801\u63A5\u5165\u4E4B\u540E\u518D\u53D1\u4E00\u6B21\u3002";
+  function notRunningMessage(current, payload) {
+    const title = current.state === "starting" ? "\u5FEB\u4F20\u8FD8\u5728\u542F\u52A8\uFF0C\u6CA1\u6709\u53D1\u51FA\u53BB" : current.state === "failed" ? "\u5FEB\u4F20\u6CA1\u8D77\u6765\uFF0C\u6CA1\u6709\u53D1\u51FA\u53BB" : "\u5FEB\u4F20\u6CA1\u5F00\uFF0C\u6CA1\u6709\u53D1\u51FA\u53BB";
+    const reason = current.state === "failed" && current.failureReason ? `${current.failureReason}\u3002` : "";
+    return { title, body: `${reason}${HOW_TO_START}\u6CA1\u53D1\u51FA\u53BB\u7684\u662F\uFF1A\u300C${excerpt(payload, 60)}\u300D`, level: "warning" };
   }
-  function peerLabel() {
-    const paired = status?.peers.filter((p) => p.paired) ?? [];
-    if (paired.length === 1) return paired[0]?.label ?? null;
-    if (paired.length > 1) return `${paired.length} \u53F0\u8BBE\u5907`;
-    return null;
+  async function sendTextSilently(context) {
+    const allowed = new Set(context.granted);
+    const can = (id) => allowed.has(id);
+    const { trimWhitespace } = readPrefs(context.preferences);
+    if (!can("quickTransfer.send")) {
+      await postToInbox(
+        { title: "\u6CA1\u6709\u7ECF\u5FEB\u4F20\u53D1\u9001\u7684\u6388\u6743", body: "\u8FD9\u6761\u6307\u4EE4\u8981\u628A\u6587\u5B57\u7ECF\u5FEB\u4F20\u63A8\u5230\u624B\u673A\u3002\u5728 \u8BBE\u7F6E \u203A \u6269\u5C55 \u203A \u53D1\u5230\u624B\u673A \u91CC\u6253\u5F00\u300C\u7ECF\u5FEB\u4F20\u53D1\u9001\u300D\u3002", level: "warning" },
+        can
+      );
+      return;
+    }
+    let raw = context.argument ?? "";
+    if (raw.trim() === "") {
+      if (!can("clipboard.read")) {
+        await postToInbox(
+          { title: "\u6CA1\u6709\u8981\u53D1\u9001\u7684\u6587\u5B57", body: "/phone \u540E\u9762\u6CA1\u8DDF\u5B57\uFF0C\u800C\u8BFB\u526A\u8D34\u677F\u7684\u6388\u6743\u5173\u7740\u3002\u5728 / \u540E\u9762\u8DDF\u4E0A\u8981\u53D1\u7684\u5B57\uFF0C\u6216\u5728 \u8BBE\u7F6E \u203A \u6269\u5C55 \u203A \u53D1\u5230\u624B\u673A \u91CC\u6253\u5F00\u300C\u8BFB\u53D6\u526A\u8D34\u677F\u300D\u3002", level: "warning" },
+          can
+        );
+        return;
+      }
+      try {
+        const clip = await jarvis.clipboard.read();
+        if (clip === null) {
+          await postToInbox({ title: "\u526A\u8D34\u677F\u91CC\u662F\u673A\u5BC6\u5185\u5BB9", body: "\u5BC6\u7801\u7BA1\u7406\u5668\u6807\u8BB0\u4E3A\u673A\u5BC6\u7684\u5185\u5BB9 Jarvis \u4E0D\u653E\u884C\u3002\u5728 /phone \u540E\u9762\u76F4\u63A5\u8DDF\u4E0A\u8981\u53D1\u7684\u5B57\u3002", level: "warning" }, can);
+          return;
+        }
+        raw = clip;
+      } catch (e) {
+        await postToInbox({ title: "\u6CA1\u8BFB\u5230\u526A\u8D34\u677F", body: describe(e), level: "error" }, can);
+        return;
+      }
+    }
+    const payload = trimWhitespace ? raw.trim() : raw;
+    if (payload.trim() === "") {
+      await postToInbox({ title: "\u6CA1\u6709\u8981\u53D1\u9001\u7684\u6587\u5B57", body: "/phone \u540E\u9762\u6CA1\u8DDF\u5B57\uFF0C\u526A\u8D34\u677F\u91CC\u4E5F\u662F\u7A7A\u7684\u3002", level: "warning" }, can);
+      return;
+    }
+    let current = null;
+    if (can("quickTransfer.status")) {
+      try {
+        current = await jarvis.quickTransfer.status();
+      } catch {
+        current = null;
+      }
+      if (current && current.state !== "running") {
+        await postToInbox(notRunningMessage(current, payload), can);
+        return;
+      }
+    }
+    try {
+      await jarvis.quickTransfer.sendText(payload);
+    } catch (e) {
+      const body = e instanceof JarvisError && e.code === "host.failure" && current === null ? `${describe(e)}\u3002\u5FEB\u4F20\u591A\u534A\u6CA1\u5F00\uFF1A${HOW_TO_START}` : describe(e);
+      await postToInbox({ title: "\u6CA1\u6709\u53D1\u51FA\u53BB", body, level: "error" }, can);
+      return;
+    }
+    const peer = peerLabel(current);
+    await postToInbox({ title: peer ? `\u5DF2\u63A8\u5230 ${peer}` : "\u5DF2\u63A8\u5230\u624B\u673A", body: excerpt(payload, 120), level: "success" }, can);
   }
   function deniedNote(id, title, body) {
     return ui.note({
@@ -598,6 +749,7 @@
       children.unshift(deniedNote("clipboard.read", "\u6CA1\u6709\u8BFB\u53D6\u526A\u8D34\u677F\u7684\u6388\u6743", "\u6388\u6743\u4E4B\u540E\u300C\u8BFB\u526A\u8D34\u677F\u300D\u90A3\u9897\u6309\u94AE\u624D\u6709\u7528\uFF1B\u4F60\u4E5F\u53EF\u4EE5\u76F4\u63A5\u5728\u4E0B\u9762\u8F93\u5165\u3002"));
     }
     return ui.section({
+      key: "content",
       title: "\u5185\u5BB9 \xB7 CONTENT",
       trailing: text === "" ? void 0 : `${Array.from(text).length} \u5B57\u7B26`,
       actions: [
@@ -626,12 +778,14 @@
   function transferSection() {
     if (!has("quickTransfer.status")) {
       return ui.section({
+        key: "transfer",
         title: "\u5FEB\u4F20 \xB7 TRANSFER",
         children: [deniedNote("quickTransfer.status", "\u770B\u4E0D\u5230\u5FEB\u4F20\u7684\u72B6\u6001", "\u6CA1\u6709\u8FD9\u9879\u6388\u6743\u65F6\u65E0\u6CD5\u77E5\u9053\u670D\u52A1\u5F00\u6CA1\u5F00\u3001\u624B\u673A\u8FDE\u6CA1\u8FDE\u3002")]
       });
     }
     if (statusProblem) {
       return ui.section({
+        key: "transfer",
         title: "\u5FEB\u4F20 \xB7 TRANSFER",
         children: [ui.note({ tint: "danger", symbol: "exclamationmark.triangle", title: "\u8BFB\u4E0D\u5230\u5FEB\u4F20\u72B6\u6001", body: statusProblem })]
       });
@@ -639,10 +793,12 @@
     if (!status || status.state === "stopped" || status.state === "failed") {
       const canStart = has("quickTransfer.control");
       return ui.section({
+        key: "transfer",
         title: "\u5FEB\u4F20 \xB7 TRANSFER",
         trailing: "\u672A\u5F00\u542F",
         children: [
           ui.note({
+            key: "not-running",
             tint: "alert",
             symbol: "antenna.radiowaves.left.and.right",
             title: status?.state === "failed" ? "\u5FEB\u4F20\u6CA1\u8D77\u6765" : "\u5FEB\u4F20\u8FD8\u6CA1\u5F00",
@@ -652,13 +808,14 @@
         ]
       });
     }
-    const peer = peerLabel();
+    const peer = peerLabel(status);
     return ui.section({
+      key: "transfer",
       title: "\u5FEB\u4F20 \xB7 TRANSFER",
       trailing: status.state === "starting" ? "\u542F\u52A8\u4E2D" : "\u670D\u52A1\u4E2D",
       children: [
-        ui.readout({ label: "\u5730\u5740", value: status.url ?? "\u2014", tint: "accent", copy: true }),
-        ui.readout({ label: "\u5DF2\u63A5\u5165", value: peer ?? "\u8FD8\u6CA1\u6709\u624B\u673A\u63A5\u5165 \xB7 \u5728\u5FEB\u4F20\u91CC\u626B\u7801", tint: peer ? "live" : "neutral" })
+        ui.readout({ key: "address", label: "\u5730\u5740", value: status.url ?? "\u2014", tint: "accent", copy: true }),
+        ui.readout({ key: "peer", label: "\u5DF2\u63A5\u5165", value: peer ?? "\u8FD8\u6CA1\u6709\u624B\u673A\u63A5\u5165 \xB7 \u5728\u5FEB\u4F20\u91CC\u626B\u7801", tint: peer ? "live" : "neutral" })
       ]
     });
   }
@@ -669,12 +826,13 @@
       children.push(deniedNote("quickTransfer.send", "\u6CA1\u6709\u7ECF\u5FEB\u4F20\u53D1\u9001\u7684\u6388\u6743", "\u8FD9\u662F\u8FD9\u4E2A\u6269\u5C55\u552F\u4E00\u8981\u505A\u7684\u4E8B\u3002"));
     }
     if (failure) {
-      children.push(ui.note({ tint: "danger", symbol: "exclamationmark.triangle", body: failure }));
+      children.push(ui.note({ key: "failure", tint: "danger", symbol: "exclamationmark.triangle", body: failure }));
     }
     if (lastSentAt && !failure) {
-      children.push(ui.text({ text: `\u4E0A\u6B21\u53D1\u9001 ${new Date(lastSentAt).toLocaleTimeString()}`, style: "footnote" }));
+      children.push(ui.text({ key: "last-sent", text: `\u4E0A\u6B21\u53D1\u9001 ${new Date(lastSentAt).toLocaleTimeString()}`, style: "footnote" }));
     }
     const button = ui.button({
+      key: "send",
       title: sending ? "\u53D1\u9001\u4E2D\u2026" : "\u53D1\u5230\u624B\u673A",
       symbol: "paperplane",
       variant: "primary",
@@ -685,40 +843,40 @@
       ...prefs.confirmBeforeSend ? { confirm: { title: "\u786E\u8BA4\u53D1\u9001", timeoutSeconds: 4 } } : {}
     });
     children.push(button);
-    return ui.section({ title: "\u53D1\u9001 \xB7 SEND", children });
+    children.push(ui.text({ key: "slash-hint", text: "\u5168\u5C40\u641C\u7D22\u6216\u901F\u8BB0\u91CC\u8F93\u5165 /phone \u540E\u9762\u8DDF\u4E00\u6BB5\u5B57\uFF0C\u4E0D\u5F00\u9762\u677F\u76F4\u63A5\u53D1", style: "footnote" }));
+    return ui.section({ key: "send-section", title: "\u53D1\u9001 \xB7 SEND", children });
   }
   defineExtension({
-    page: {
+    toolbox: {
       async activate(context) {
         granted = new Set(context.granted);
-        prefs = {
-          trimWhitespace: Boolean(context.preferences["trimWhitespace"] ?? true),
-          confirmBeforeSend: Boolean(context.preferences["confirmBeforeSend"] ?? false)
-        };
+        prefs = readPrefs(context.preferences);
         await refreshStatus();
-        if (has("quickTransfer.status")) {
-          unsubscribe = jarvis.quickTransfer.observe((next) => {
+        if (has("quickTransfer.status") && !unsubscribeStatus) {
+          unsubscribeStatus = jarvis.quickTransfer.observe((next) => {
             status = next;
             jarvis.ui.update();
           });
         }
-        jarvis.preferences.onChange((changes) => {
-          if ("trimWhitespace" in changes) prefs.trimWhitespace = Boolean(changes["trimWhitespace"]);
-          if ("confirmBeforeSend" in changes) prefs.confirmBeforeSend = Boolean(changes["confirmBeforeSend"]);
-        });
+        if (!unsubscribePrefs) {
+          unsubscribePrefs = jarvis.preferences.onChange((changes) => {
+            if ("trimWhitespace" in changes) prefs.trimWhitespace = Boolean(changes["trimWhitespace"]);
+            if ("confirmBeforeSend" in changes) prefs.confirmBeforeSend = Boolean(changes["confirmBeforeSend"]);
+          });
+        }
       },
       render() {
         return ui.scroll({ children: [contentSection(), transferSection(), actionSection()] });
       },
       deactivate() {
-        unsubscribe?.();
-        unsubscribe = null;
+        unsubscribeStatus?.();
+        unsubscribeStatus = null;
+        unsubscribePrefs?.();
+        unsubscribePrefs = null;
       }
     },
-    async onInboxAction(cardId, actionId) {
-      if (cardId === "sent" && actionId === "again") {
-        await send();
-      }
+    commands: {
+      "send-text": sendTextSilently
     }
   });
 })();

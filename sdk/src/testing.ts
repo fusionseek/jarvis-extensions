@@ -1,10 +1,10 @@
 /**
- * 宿主替身：让扩展在 node 里跑单测。
+ * 宿主替身：让扩展在 node 里跑单测（SDK 2）。
  *
  * 装上一个假的 `__jarvisHost`，把能力调用路由到你给的桩，把每一次 UI 提交攒下来，
- * 并提供 `dispatch()` 让测试自己触发 `activate` / `command` / `ui` 事件。
+ * 并提供 `dispatch()` 让测试自己触发 `activate` / `command` / `ui` 事件、`callService()` 调服务扩展点。
  *
- * **它不是宿主，只是线缆另一端的一个玩偶**：不画界面、不校验节点、不管授权。
+ * **它不是宿主，只是线缆另一端的一个玩偶**：不画界面、不校验节点、不管授权、不查 manifest 声明。
  * 它证明的是"扩展的逻辑在没有 Jarvis 的机器上也能被断言"，仅此而已。
  *
  * 用法（先装替身，再 import 扩展或 SDK）：
@@ -15,35 +15,62 @@
  * const { defineExtension, jarvis } = await import("@fusionseek/jarvis-extension-sdk");
  * ```
  */
-import type { CommitRequest, HostEvent, InvokeRequest, InvokeResult, SerializedNode } from "./bridge.js";
+import type { CommitRequest, HostEvent, InvokeRequest, InvokeResult, SerializedNode, ServiceCall } from "./bridge.js";
 import type { JarvisErrorShape } from "./capabilities.js";
+import type { ServicePoint } from "./manifest.js";
 
-export type AsyncStub = (params: unknown) => Promise<unknown> | unknown;
+/** 异步桩。第二个参数可以往订阅 token 上推事件（`process.run` 推输出行就靠它）。 */
+export type AsyncStub = (params: unknown, host: TestHost) => Promise<unknown> | unknown;
+/** 同步桩。 */
 export type SyncStub = (params: unknown) => unknown;
 
+/** 替身的配置。 */
 export interface TestHostOptions {
   /** `namespace.method` → 异步桩。返回值就是 Promise 的结果；抛 `JarvisErrorShape` 形状的对象等于宿主拒绝。 */
   async?: Record<string, AsyncStub>;
-  /** `namespace.method` → 同步桩（`text.*` / `time.*` / `color.*` / `host.*`）。 */
+  /** `namespace.method` → 同步桩（`text.*` / `host.*`）。 */
   sync?: Record<string, SyncStub>;
   hostInfo?: { version: string; channel: "release" | "development" };
   environment?: { reduceMotion: boolean; reduceTransparency: boolean; increaseContrast: boolean; locale: string };
 }
 
+/** 一次服务调用的结果。 */
+export interface ServiceOutcome {
+  result: InvokeResult;
+  /** 这次调用里扩展报过的全部进度，按先后。 */
+  progress: unknown[];
+}
+
+/** 替身。 */
 export interface TestHost {
   /** 每一次提交的树，最新的在最后。 */
   commits: SerializedNode[];
-  /** 与 `commits` 一一对应：那棵树画在哪一面（`page` / `popover`）。 */
+  /** 与 `commits` 一一对应：那棵树画在哪一面（`toolbox` / `popover` / `window`）。 */
   surfaces: string[];
   /** 最新一次提交画在哪一面；还没提交过为 `undefined`。 */
   readonly latestSurface: string | undefined;
-  /** 每一次能力调用。 */
+  /** 每一次能力调用（不含 `service.resolve` / `service.progress`）。 */
   invocations: InvokeRequest[];
   logs: { level: string; message: string; data: unknown }[];
   /** 最新一棵树；还没提交过为 `undefined`。 */
   readonly latest: SerializedNode | undefined;
   /** 给 SDK 发一个宿主事件。 */
   dispatch(event: HostEvent): void;
+  /** 往一个订阅 token 上推一次事件。 */
+  emit(token: string, payload: unknown): void;
+  /** 调一次服务扩展点的方法，等扩展交回结果。 */
+  callService(request: {
+    point?: ServicePoint;
+    service: string;
+    method: ServiceCall["method"];
+    preferences?: Record<string, unknown>;
+    granted?: string[];
+    actionId?: string;
+  }): Promise<ServiceOutcome>;
+  /** 取消一次进行中的服务调用（发 `serviceCancel`）。`callService` 之前先拿 `nextCallId`。 */
+  cancelService(callId: number): void;
+  /** 下一次 `callService` 会用的 callId。 */
+  readonly nextCallId: number;
   /** 等待所有在途的能力调用与合并的提交落定。 */
   settle(): Promise<void>;
   /** 按节点 `key` 或 `kind` 找到第一个节点。 */
@@ -74,6 +101,8 @@ export function createTestHost(options: TestHostOptions = {}): TestHost {
   const invocations: InvokeRequest[] = [];
   const logs: { level: string; message: string; data: unknown }[] = [];
   let inflight: Promise<unknown>[] = [];
+  let callCounter = 1;
+  const serviceWaiters = new Map<number, { resolve: (outcome: ServiceOutcome) => void; progress: unknown[] }>();
   const asyncStubs = options.async ?? {};
   const syncStubs: Record<string, SyncStub> = {
     "host.info": () => options.hostInfo ?? { version: "0.0.0-test", channel: "development" },
@@ -88,16 +117,99 @@ export function createTestHost(options: TestHostOptions = {}): TestHost {
     runtime.dispatch(JSON.stringify(event));
   };
 
+  const host: TestHost = {
+    commits,
+    surfaces,
+    invocations,
+    logs,
+    get latest() {
+      return commits[commits.length - 1];
+    },
+    get latestSurface() {
+      return surfaces[surfaces.length - 1];
+    },
+    get nextCallId() {
+      return callCounter;
+    },
+    dispatch: dispatchToRuntime,
+    emit(token, payload) {
+      dispatchToRuntime({ type: "subscription", token, payload });
+    },
+    callService(request) {
+      const callId = callCounter++;
+      return new Promise<ServiceOutcome>((resolve) => {
+        serviceWaiters.set(callId, { resolve, progress: [] });
+        dispatchToRuntime({
+          type: "service",
+          call: {
+            callId,
+            point: request.point ?? "junkClean.engine",
+            service: request.service,
+            method: request.method,
+            params: {
+              preferences: request.preferences ?? {},
+              granted: request.granted ?? [],
+              ...(request.actionId !== undefined ? { actionId: request.actionId } : {}),
+            },
+          },
+        });
+      });
+    },
+    cancelService(callId) {
+      dispatchToRuntime({ type: "serviceCancel", callId });
+    },
+    async settle() {
+      // 在途调用会触发新的调用与提交，循环到没有新东西为止。SDK 里的合并提交与扩展的
+      // `await` 续体都是微任务，因此每轮多让几拍微任务就够了。
+      const drain = async () => {
+        for (let i = 0; i < 16; i += 1) await Promise.resolve();
+      };
+      while (inflight.length) {
+        const batch = inflight;
+        inflight = [];
+        await Promise.all(batch);
+        await drain();
+      }
+      await drain();
+    },
+    find(predicate) {
+      const latest = commits[commits.length - 1];
+      return latest ? walk(latest, predicate) : undefined;
+    },
+    async fire(node, event, payload = {}) {
+      const handler = node.on?.[event];
+      if (!handler) throw new Error(`节点 ${node.kind}${node.key ? `#${node.key}` : ""} 上没有 ${event} 事件。`);
+      dispatchToRuntime({ type: "ui", handler, payload });
+      await host.settle();
+    },
+    uninstall() {
+      globalThis.__jarvisHost = undefined;
+    },
+  };
+
   globalThis.__jarvisHost = {
     invoke(requestJSON) {
       const request = JSON.parse(requestJSON) as InvokeRequest;
-      invocations.push(request);
       const key = `${request.namespace}.${request.method}`;
+      // 服务调用的两个回话由替身自己接住：它们是线缆的一部分，不是能力。
+      if (key === "service.progress" || key === "service.resolve") {
+        const params = request.params as { callId: number; progress?: unknown; result?: InvokeResult };
+        const waiter = serviceWaiters.get(params.callId);
+        if (waiter && key === "service.progress") waiter.progress.push(params.progress);
+        if (waiter && key === "service.resolve" && params.result) {
+          serviceWaiters.delete(params.callId);
+          waiter.resolve({ result: params.result, progress: waiter.progress });
+        }
+        const done = Promise.resolve().then(() => dispatchToRuntime({ type: "settle", id: request.id, result: { ok: true, value: null } }));
+        inflight.push(done);
+        return;
+      }
+      invocations.push(request);
       const stub = asyncStubs[key];
       const run = (async (): Promise<InvokeResult> => {
         if (!stub) return { ok: false, error: { code: "capability.unknown", message: `测试替身没有桩：${key}` } };
         try {
-          return { ok: true, value: await stub(request.params) };
+          return { ok: true, value: await stub(request.params, host) };
         } catch (error) {
           if (isErrorShape(error)) return { ok: false, error };
           return { ok: false, error: { code: "host.failure", message: error instanceof Error ? error.message : String(error) } };
@@ -126,45 +238,5 @@ export function createTestHost(options: TestHostOptions = {}): TestHost {
     },
   };
 
-  const host: TestHost = {
-    commits,
-    surfaces,
-    invocations,
-    logs,
-    get latest() {
-      return commits[commits.length - 1];
-    },
-    get latestSurface() {
-      return surfaces[surfaces.length - 1];
-    },
-    dispatch: dispatchToRuntime,
-    async settle() {
-      // 在途调用会触发新的调用与提交，循环到没有新东西为止。SDK 里的合并提交与扩展的
-      // `await` 续体都是微任务，因此每轮多让几拍微任务就够了，不需要宿主环境有 setTimeout。
-      const drain = async () => {
-        for (let i = 0; i < 16; i += 1) await Promise.resolve();
-      };
-      while (inflight.length) {
-        const batch = inflight;
-        inflight = [];
-        await Promise.all(batch);
-        await drain();
-      }
-      await drain();
-    },
-    find(predicate) {
-      const latest = commits[commits.length - 1];
-      return latest ? walk(latest, predicate) : undefined;
-    },
-    async fire(node, event, payload = {}) {
-      const handler = node.on?.[event];
-      if (!handler) throw new Error(`节点 ${node.kind}${node.key ? `#${node.key}` : ""} 上没有 ${event} 事件。`);
-      dispatchToRuntime({ type: "ui", handler, payload });
-      await host.settle();
-    },
-    uninstall() {
-      globalThis.__jarvisHost = undefined;
-    },
-  };
   return host;
 }

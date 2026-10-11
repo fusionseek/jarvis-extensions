@@ -11,6 +11,26 @@
 
 类型真源：[`sdk/src/ui.ts`](../sdk/src/ui.ts)。
 
+SDK 2 删掉了 v1 的 `markdown` / `chart` / `dataTable` 三种数据节点：它们背后是 BigQuery 结果句柄与一套图表规格，
+v2 的能力目录里没有 BigQuery，留着节点只会让扩展画出一块永远拿不到数据的空框。
+
+## 三面：同一棵树画在哪
+
+v2 的扩展最多有三面（[02](02-architecture.md#运行时前台会话与后台会话)）：工具箱面板页面、工作区窗口标签、原地结果弹窗。
+`defineExtension` 按面交出 `toolbox` / `window` / `popover` 三份页面定义，后两份没给时宿主退回 `toolbox` 那一份；
+`activate(context)` 的 `context.surface` 说这一次是哪一面。**节点目录对三面一样**，变的只是宽度与留白：
+
+| 面 | 内容宽 | 高 | 内边距 | 为什么 |
+| --- | --- | --- | --- | --- |
+| `toolbox` | 368pt（400 面板扣左右各 16） | header 62 之下的 457，装不下滚动 | 16 | 面板恒为 400×520，这是全 App 唯一的内容画布 |
+| `window` | 随窗宽，**收在 720pt 以内居中** | 随窗高 | 上下 16 | 节点按 368 设计，放宽到将近两倍还读得顺；再宽，`row` 的标题与读数之间隔着半扇窗 |
+| `popover` | 400pt 宽，扣内距 12 | 随内容长，≤ 520 后滚动 | 12 | 一枚贴着选区的浮片，不是画布；与面板同宽，免得同一棵树换一面就重新折行 |
+
+后台会话（服务、静默命令）**没有任何一面**，宿主不会调它的 `render()`。
+
+判据：一棵树先按工具箱那 368pt 写对，窗口与弹窗自然成立。不要给三面画三套不同的东西——
+同一个扩展换一面就换一种长相，用户会以为点进来的不是同一件东西；单给 `popover` 的理由只该是「弹窗里省掉输入段」这类取舍。
+
 ## 语义表
 
 ### `Tint`
@@ -107,31 +127,17 @@
 | `result` | 输出框 | `TimeConverter.Result`：黑 20% 底 / 白 8% 边 / 圆角 8 / p8；`mono` 12pt 等宽 | 底色比输入控件更沉，读成"输出"；`empty` 那句用被动语态（「结果会实时出现在这里」）；`error` 时描边转红、文字用报错色 |
 | `progress` | `ProgressView(.linear)` | 3pt、`tint` | 读完就撤（留一条满格的进度条用户会以为它还在动）；`value` 省略 = 不确定，Reduce Motion 下不确定态换成文字 |
 
-### 数据（SDK 1.6）
-
-| 节点 | 必填 | 说明 |
-|---|---|---|
-| `markdown` | `text` | Markdown 原文（含 GFM 表格），宿主排版；可选中复制 |
-| `chart` | `result` | `bigquery.query` 返回的句柄；可选 `spec`（图表规格 v1）、`height`（160–600，默认 280）、`title`。图例开关与悬停读数由宿主处理 |
-| `dataTable` | `result` | 同一个句柄画成结果网格 |
-
-`chart` 与 `dataTable` 都接受 `filter: { column, equals }`：只画某一列等于某个值的行。一份按「日 × 维度 × 取值」展开的结果切成每个维度一张图，
-不必每个维度各查一次（查询按扫描量计费）。
-
-句柄失效（超过 20 个、会话重开）时宿主在原位画「结果已失效，请重新查询」，不让整页失败。
-图表规格看不懂时宿主按列类型自动推荐并在图上方说明。
-
 ## 全局规则（宿主替每个节点做的事）
 
 | 规则 | 实现 |
 | --- | --- |
 | 可点的东西自己会亮 | `onPress` / `onChange` 存在且未 `disabled` 的节点挂 `controlFocusHighlight(shape:)`，轮廓与节点自己的底一致 |
 | 选中不是失效 | `selected` 走 `selectionChroma`；`disabled` 走 `.disabled` + 45% 不透明度，**不隐藏** |
-| 输入框有焦点就 hold | `field` / `editor` / `search` 聚焦期间 `isHeldOpen`，与快传输入框同一条 |
+| 输入框有焦点就 hold | `field` / `editor` / `search` 聚焦期间 `isHeldOpen`，与快传输入框同一条（只对工具箱面板与弹窗有意义：窗口不会自己收回） |
 | 输入框的文本由宿主持有 | 用户每敲一个字，宿主先更新文本框，再把 `onChange` 送 JS；下一次 `render()` 的 `value` 只在与宿主此刻的文本不同时才覆写。打字不经 JS 往返，中文输入法的组合态不会被异步回写打断；扩展要改掉用户输入（清空、粘贴）照常改 `value` |
 | 三档辅助功能 | Reduce Motion：光停转、转圈换文字、翻转换直切；Reduce Transparency：材质换实底；Increase Contrast：边 1 → 1.5pt、光晕拉满 |
 | VoiceOver | 每个可交互节点必须有 `label`（图标类必填，文字类从标题推）；`row` 合并成一个元素；装饰层 `accessibilityHidden` |
-| 键盘 | `field` / `editor` / `search` 可 Tab 到；`button` 可空格触发；`Esc` 收面板（`search` 有内容时例外） |
+| 键盘 | `field` / `editor` / `search` 可 Tab 到；`button` 可空格触发；`Esc` 收面板 / 撤弹窗（`search` 有内容时例外）；窗口标签里 `Esc` 不关标签 |
 | 动画 | 节点增删走 `Motion.feedback`（0.16s 淡入淡出）；Reduce Motion 下 `reducedPanel` |
 | 限制 | 节点 ≤ 500、`qrcode` ≤ 1、`scroll` 只在根、`list` 子节点必须有 `key` |
 
@@ -154,8 +160,10 @@ ui.scroll({
 
 ## Gotchas
 
-- 没有 `image` 节点：面板上几乎没有位图，图标一律 SF Symbols。要显示截图结果用 `note` + 「在访达中显示」。
-- 没有 `modal` / `sheet`：面板 15 秒会自动收回，modal 会被截断；确认走 `button.confirm`。
+- `image` 只画宿主颁发的句柄（截图、剪贴板里的图、拖进来的图），给用户核对"截到的是哪一块"，不是相册；
+  图标一律 SF Symbols。
+- 没有 `markdown` / `chart` / `dataTable`（SDK 2 删掉了）：要排一段说明用 `section` + `text`，要列数据用 `list` + `row`。
+- 没有 `modal` / `sheet`：面板 15 秒会自动收回、弹窗点外面就撤，modal 会被截断；确认走 `button.confirm`。
 - 没有 `spacing: number`：四档是全部。想要"再密一点"多半是想少画一段。
 - `key` 不是可选的礼貌：列表里没有 `key` 的行在增删时会被整块重建，正在输入的框会丢焦点。
 

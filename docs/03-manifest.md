@@ -1,209 +1,264 @@
-# `extension.json` 规范
+# `extension.json` 规范（v2）
 
 ## Overview
 
 每个扩展目录里有且只有一份 `extension.json`。真源是
-[`schemas/extension.v1.schema.json`](../schemas/extension.v1.schema.json)（Draft 2020-12，
+[`schemas/extension.v2.schema.json`](../schemas/extension.v2.schema.json)（Draft 2020-12，
 `additionalProperties: false`，多一个键就不合法）；本文解释每个字段**为什么这样定**，
-并列出 schema 表达不了的跨字段规则。
+并列出 schema 表达不了的跨字段规则——`scripts/validate.mjs` 与宿主的 `ExtensionManifest.validate()` 查的是**同一份清单**。
 
-四个部分（工具箱条目 / 功能与能力 / 设置 / Inbox）在 manifest 里对应四组字段，
-**全部必填**——`settings` 与 `inbox` 不要时写 `false`，不能省略。
+v2 按**域**组织（[01](01-overview.md)）：身份与能力在顶层，入驻哪几个域写在 `contributes` 里。
+**必填**：`manifestVersion`、`id`、`version`、`name`、`symbol`、`description`、`author`、`main`、`sdk`、
+`minimumJarvisVersion`、`capabilities`、`contributes`、`inbox`；`contributes` 至少要有 `toolbox` / `window` / `commands` / `services` 之一。
+`inbox` 不要时写 `false`，不能省略——「没想过」与「想过了，不要」在审核里是两件事。
 
-## 一份完整的例子
+## Concepts
+
+### 一份完整的例子（工具箱 + 窗口 + 指令 + 设置）
 
 ```json
 {
-  "manifestVersion": 1,
-  "id": "send-to-phone",
+  "manifestVersion": 2,
+  "id": "http-status",
   "version": "1.0.0",
-  "toolbox": {
-    "symbol": "iphone.and.arrow.forward",
-    "name": "发到手机",
-    "subtitle": "把剪贴板里的东西推到手机",
-    "keywords": ["phone", "手机", "快传"]
-  },
-  "description": "读一次剪贴板，经 Jarvis 快传把文字或链接推到已配对的手机上；快传没开时给一颗按钮替你打开。",
+  "name": "HTTP 状态码",
+  "symbol": "number.circle",
+  "description": "输入状态码或关键词，给出这个码的读法、语义、常见成因、怎么处理与 RFC 出处。",
   "author": { "name": "fusionseek", "github": "fusionseek" },
   "main": "dist/extension.js",
-  "sdk": "^1.0.0",
-  "minimumJarvisVersion": "2.0.0",
+  "sdk": "^2.0.0",
+  "minimumJarvisVersion": "3.0.3",
   "capabilities": [
-    { "id": "clipboard.read", "reason": "读取要发送的文字或链接" },
-    { "id": "quickTransfer.status", "reason": "知道快传开没开、有没有手机连着" },
-    { "id": "quickTransfer.control", "reason": "快传没开时替你打开" },
-    { "id": "quickTransfer.send", "reason": "把内容推到手机" },
-    { "id": "hotkeys.register", "reason": "全局快捷键一键发送" }
+    { "id": "clipboard.read", "reason": "⌥⌘/ 按下时读一次剪贴板，从里面找状态码" },
+    { "id": "system.openURL", "reason": "点「打开原文」时用默认浏览器打开 RFC / MDN" },
+    { "id": "hotkeys.register", "reason": "两条命令的全局快捷键" }
   ],
-  "commands": [
-    { "id": "send-clipboard", "title": "一键发送", "hotkey": { "default": "⌥⌘P" }, "presentation": "silent" }
-  ],
-  "settings": {
-    "preferences": [
-      { "key": "trimWhitespace", "type": "toggle", "title": "去掉首尾空白", "default": true },
-      { "key": "confirmBeforeSend", "type": "toggle", "title": "发送前确认", "description": "点「发到手机」后先看一眼再发", "default": false }
-    ]
+  "contributes": {
+    "toolbox": { "subtitle": "查一个码：含义、成因、怎么处理", "keywords": ["status", "rfc"] },
+    "window": { "subtitle": "在窗口里查状态码：含义、成因、怎么处理、出处" },
+    "commands": [
+      { "id": "lookup", "title": "查状态码", "hotkey": "⌥⌘H", "presentation": "toolbox" },
+      { "id": "explain-clipboard", "title": "解释剪贴板里的码", "hotkey": "⌥⌘/", "presentation": "popover" },
+      {
+        "id": "explain",
+        "title": "解释状态码",
+        "slash": { "keyword": "http", "aliases": ["状态码"], "argument": "状态码或关键词" },
+        "presentation": "popover"
+      }
+    ],
+    "settings": {
+      "preferences": [
+        { "key": "includeUnofficial", "type": "toggle", "title": "搜索包含非标准码", "default": true }
+      ]
+    }
   },
-  "inbox": { "cards": true, "notifications": false },
-  "background": false
-}
-```
-
-最小的例子（一个不需要任何点头能力、不进设置、不进 Inbox 的纯工具）：
-
-```json
-{
-  "manifestVersion": 1,
-  "id": "lorem",
-  "version": "0.1.0",
-  "toolbox": { "symbol": "text.alignleft", "name": "占位文本", "subtitle": "生成几段 Lorem ipsum" },
-  "description": "按段落数生成占位文本，一键复制。",
-  "author": { "name": "someone" },
-  "main": "dist/extension.js",
-  "sdk": "^1.0.0",
-  "minimumJarvisVersion": "2.0.0",
-  "capabilities": [],
-  "settings": false,
   "inbox": false
 }
 ```
 
-## 字段
+### 一个服务扩展（只入驻服务域）
+
+```json
+{
+  "manifestVersion": 2,
+  "id": "mole-clean",
+  "version": "1.0.0",
+  "name": "Mole 深度清理",
+  "symbol": "bubbles.and.sparkles",
+  "description": "给 Jarvis 清理换一台更深的引擎：开着时，晃球、/clean 与工具箱清理改走你装好的 Mole。",
+  "author": { "name": "fusionseek", "github": "fusionseek" },
+  "main": "dist/extension.js",
+  "sdk": "^2.0.0",
+  "minimumJarvisVersion": "3.0.3",
+  "capabilities": [
+    { "id": "process.run", "reason": "调用你装好的 mo clean 与 mo --version，它继承 Jarvis 的完全磁盘访问" },
+    { "id": "files.read", "reason": "读 Mole 的操作日志，逐项显示正在删什么" },
+    { "id": "terminal.run", "reason": "没装 mo 时在终端里替你安装" }
+  ],
+  "process": {
+    "executables": [{ "name": "mo", "arguments": [["clean"], ["--version"]] }],
+    "terminal": [{ "id": "install", "title": "安装 Mole", "script": ["if command -v brew >/dev/null 2>&1; then", "    brew install mole", "fi"] }]
+  },
+  "files": { "read": ["~/Library/Logs/mole/operations.log"] },
+  "contributes": {
+    "services": [
+      {
+        "point": "junkClean.engine",
+        "id": "mole",
+        "title": "深度清理（Mole）",
+        "subtitle": "调用 mo clean，覆盖浏览器、开发工具与各类应用的更多缓存",
+        "notes": ["系统级部分需要管理员权限，Mole 会自动跳过，不会向你要密码"],
+        "preferences": [
+          { "key": "command", "type": "text", "title": "mo 命令", "default": "mo", "placeholder": "mo", "monospaced": true }
+        ]
+      }
+    ]
+  },
+  "inbox": false
+}
+```
 
 ### 身份
 
 | 字段 | 规则 | 为什么 |
 | --- | --- | --- |
-| `manifestVersion` | 恒为 `1` | 破坏性变化用新的 major，宿主按它选解析器 |
-| `id` | `^[a-z][a-z0-9]*(-[a-z0-9]+)*$`，3–40 字，**等于目录名** | 它同时是工具箱行 id、数据库里的隔离键、`OrbShortcutKind.panelContent("extension:<id>")` 的载荷。全小写是因为它会出现在路径与 URL 里 |
-| `version` | 严格 semver（`1.2.3`，不带前缀不带预发布） | 扩展库靠比较它判断「更新到」；预发布版本不上主干 |
+| `manifestVersion` | 恒为 `2` | 宿主只认这一版；v1 的形状读下去只会在第一个缺的字段上报一句不相干的话，因此先看版本 |
+| `id` | `^[a-z][a-z0-9]*(-[a-z0-9]+)*$`，3–40 字，**等于目录名** | 它同时是工具箱行 id（`extension:<id>`）、数据库与钥匙串的隔离键、服务引擎 id 的前缀 |
+| `version` | 严格 semver（`1.2.3`） | 商店靠比较它判断「更新到」 |
+| `name` | 1–12 字 | 工具箱那一行、窗口标签、面板 header、设置面板、Inbox 消息标题前缀共用。header 留给标题的宽度只有 **144pt**，6 个汉字以内两处都不截 |
+| `symbol` | SF Symbol 名，`^[A-Za-z0-9.-]+$` | 一律 SF Symbols：emoji 接不住选中态的青色染色，位图在选中时不会点亮。宿主验证不存在的符号回落 `puzzlepiece.extension` |
+| `description` | 8–240 字 | 商店卡片正文。回答「它替我做什么」 |
+| `author` | `name` 必填；`url`（https）、`github` 可选 | 卡片署名 |
+| `repository` | https；省略时指向本仓库该目录 | 「查看源码」 |
+| `main` | `dist/<name>.js`，单文件 | 宿主只 `evaluateScript` 这一个文件 |
+| `sdk` | `^2.0.0` 形式 | 只认主版本；宿主的 SDK 主版本是 2 |
+| `minimumJarvisVersion` | semver | 用到的能力是哪一版宿主开始提供的，写那一版 |
 
-**保留 id**（与内置工具行 id 及宿主页面撞名）：`palette`、`clipboard`、`base64`、`hash`、`regex`、
-`url`、`json`、`time`、`apk`、`datapull`、`screenshot`、`quicktransfer`、`gallery`、`extension`、
-`extensions`、`jarvis`。校验脚本拒绝。
+**保留 id**（与内置工具行与宿主页面撞名）：`palette`、`clipboard`、`base64`、`hash`、`regex`、`url`、`json`、`time`、
+`junkclean`、`clean`、`apk`、`datapull`、`screenshot`、`quicktransfer`、`gallery`、`extension`、`extensions`、`jarvis`。
 
-### 第一部分：`toolbox`
-
-| 字段 | 规则 | 为什么 |
-| --- | --- | --- |
-| `symbol` | SF Symbol 名，`^[A-Za-z0-9.-]+$` | 工具箱**一律 SF Symbols**，不接受 emoji、位图、自绘路径——emoji 接不住选中态那层青色染色，位图在选中时不会点亮。宿主加载时用 `NSImage(systemSymbolName:)` 验证；不存在的符号回落 `puzzlepiece.extension` 并在开发者模式里报错 |
-| `name` | 1–12 字 | header 留给标题的宽度是 **144pt**（400 − 32 内边距 − 徽标 26 − 三道间距 36 − 五颗按钮 162），15pt SemiBold 下约 9 个汉字；宫格标题 86pt 宽、11pt，超过 6 个汉字尾部截断。12 是 schema 的硬上限，**6 以内**才两处都不截 |
-| `subtitle` | 1–22 字 | 列表行说明 11pt，行宽扣掉图标井与记号约 270pt；宫格常态不显示、搜索命中时显示并单行截断 |
-| `keywords` | ≤ 12 个，每个 ≤ 24 字 | 只装标题与说明里**没有**的词（英文名、别名）。已经在标题里的词再写一遍等于同一件事说两遍，两遍必然有一遍先过期 |
-
-`symbol` 同时是扩展页面 header 徽标里的那枚 glyph：宿主按 `Toolbox.HeaderBadge.glyphSize − 3`（11pt）
-画在 26pt 青色方片上，与 JSON / URL / 哈希那几块工具逐值相同——**徽标与列表行说的是同一件事**，
-不允许两处用不同符号。
-
-### 第二部分：`main`、`commands`、`capabilities`、`network`
+### 能力与声明对象
 
 | 字段 | 规则 | 为什么 |
 | --- | --- | --- |
-| `main` | `dist/<name>.js`，单文件 | 宿主只 `evaluateScript` 这一个文件；没有模块加载器。ESM/IIFE 都行，但不能 `import` 别的文件 |
-| `commands[]` | ≤ 8 条，每条 `{ id, title, description?, hotkey?, presentation }`；`id` 与扩展 id 同一套规则、扩展内唯一；`title` ≤ 12 字 | 页面之外的入口。快捷键、页面按钮、快捷环、Inbox 卡片触发，落到 `defineExtension({ commands })` 里同 id 的处理函数。**没有页面也可以**：SDK 会画一张列出全部命令的默认页 |
-| `commands[].hotkey.default` | 修饰键按 `⌃⌥⇧⌘` 顺序 + 一个主键（`A`–`Z`、`0`–`9`、`F1`–`F12` 或 `- = [ ] ; ' , . /`），至少含 ⌃、⌥、⌘ 之一；例 `⌥⌘T` | 与 Jarvis 设置页显示的写法一致。它只是默认值，用户可以改；系统探测不到跨应用冲突，因此设置页会写明"按了没反应多半是别的应用占着" |
-| `commands[].presentation` | `panel` / `silent` / `popover` | `panel`：跑完展开面板到这个扩展的页面；`silent`：不碰面板，命令自己用剪贴板、横幅或 `jarvis.panel.present()` 交结果；`popover`：面板不动，宿主在**原地**弹一扇结果弹窗——锚在这条命令里那次 `screenshot.capture` 的选区旁（没截图就锚在指针旁），命令里第一次截图返回时就出现（命令还在跑时里面先画"翻译中"），画 `defineExtension({ popover })` 的树（没给就画页面那棵）；Esc / 点外面 / 指针离开 15 秒后关，钉住常驻，「在面板里打开」把同一棵树搬进面板 |
-| `capabilities[]` | ≤ 12 项，每项 `{ id, reason }`，`reason` 4–60 字 | `reason` 是授权弹窗那一行的第二句，**写给用户看**：说清拿它做什么，不写"为了更好的体验"。同一个 id 不能出现两次（校验脚本查） |
-| `network.hosts` | 声明了 `network.https` 时**必填**，1–8 个主机名（不带协议与路径） | 宿主只放行这几个主机上的 HTTPS；授权弹窗把主机名逐条列给用户看 |
+| `capabilities[]` | ≤ 16 项，`{ id, reason }`，`reason` 4–60 字，id 不重复 | `reason` 是授权屏那一行的第二句，写给用户看 |
+| `network.hosts` | 声明了 `network.https` 时必填，1–8 个主机名 | 宿主只放行这几个主机（完全相等，不认后缀）；授权屏逐条列给用户看 |
+| `process.executables[]` | 声明了 `process.run` 时必填：`{ name, arguments: [[…], …] }`，`name` 不带路径；1–8 组参数，每组 ≤ 8 个，每个参数 1–64 字、**不带空白与 `; & \| \` $ < >`** | 一次调用的参数必须与其中某一组**逐项相等**——不支持通配，读 manifest 就知道它会跑什么 |
+| `process.terminal[]` | 声明了 `terminal.run` 时必填：`{ id, title ≤ 16, script: [行…] }`，1–80 行、每行 ≤ 240 字 | 扩展只能按 id 点名，不能传脚本内容；宿主在前面补 `#!/bin/sh` 与「执行完删掉自己」那一行 |
+| `files.read[]` | 声明了 `files.read` 时必填：1–8 个绝对路径或 `~` 开头的**文件**，不能有通配与 `..` | 宿主展开 `~`、规整之后逐字比；目录读不了 |
 
-能力目录见 [06](06-capabilities.md)。隐式能力（`panel.*`、`storage.*`、`preferences.*`、`text.*`、
-`time.*`、`color.*`、`environment`、`log`）**不在这里声明**：它们碰不到用户的数据。
+能力目录见 [06](06-capabilities.md)。隐式能力（`panel.*`、`window.open`、`commands.run`、`storage.*`、`preferences.*`、
+`permissions.*`、`text.*`、`host.*`、`log`）**不在这里声明**：它们碰不到用户的数据。
 
-跨字段规则：
+**受限执行声明要最小、要逐字**：只写真的会跑的那几组参数、真的会读的那一个文件。多写一组参数，
+用户在授权屏上就多点了一次头去允许一件扩展根本不做的事。
 
-- `network.https` 在 `capabilities` 里 ⇔ `network` 字段存在。少一边校验脚本拒绝。
-- `inbox.cards: true` ⇒ 必须声明 `inbox.post`；`inbox.notifications: true` ⇒ 必须声明 `notifications.post`。
-- `background: true` ⇒ 必须声明 `inbox.post` **或** 至少一项带 `observe` 的能力（`clipboard.read`、
-  `quickTransfer.status`、`tasks.read`）。没有后台要做的事却常驻，审核不通过。
-- 任一命令带 `hotkey` ⇔ 声明了 `hotkeys.register`。全局快捷键要用户点头，弹窗里那一行写的是「注册全局快捷键 ⌥⌘T」。
-- `presentation: "silent"` 的命令必须至少声明 `clipboard.write`、`notifications.post`、`inbox.post` 之一：
-  一条不开面板又不交结果的命令，用户按了只会以为坏了。
-- 两条命令不能用同一个快捷键。
-- `presentation: "popover"` 的命令通常声明 `screenshot.capture`：没有截图的弹窗只能锚在指针旁，
-  用户的眼睛未必在那里——那种场合 `panel` 更合适。
+### `contributes`：入驻的域
 
-#### `bigquery`（SDK 1.6）
+#### 工具箱域：`contributes.toolbox`
 
-声明了 `bigquery.query` 时必填，反过来也一样：`{ "projects": ["my-gcp-project"] }`，1–8 个项目 ID。
-它管的是**计费项目**——查询发到哪个项目、记在谁的账上；跨项目读表照常写全名。
+| 字段 | 规则 | 为什么 |
+| --- | --- | --- |
+| `subtitle` | 1–22 字 | 列表行说明 11pt，行宽约 270pt |
+| `keywords` | ≤ 12 个，每个 ≤ 24 字，不重复 | 只装名字与说明里**没有**的词（英文名、别名） |
 
-#### `workspace`（SDK 1.6）
+入驻了工具箱域，目录末尾多一行；点开是面板里那一页（`defineExtension({ toolbox })`）。
 
-`true` 时从工具箱点开扩展会在 Jarvis **工作区新开一个标签**（surface `tab`），而不是面板里 400×520 的页面。
-给要大画布的扩展（指标页、报表）。标签里的会话与面板那一个互不影响；旧宿主忽略这个键，按面板打开。
+#### 窗口域：`contributes.window`
 
-### 第三部分：`settings`
+| 字段 | 规则 | 为什么 |
+| --- | --- | --- |
+| `subtitle` | 1–40 字 | 全局搜索那一行与标签副标题 |
+| `keywords` | 同上 | 只入驻窗口域的扩展靠它在全局搜索里被找到 |
 
-`false`，或 `{ "preferences": [ … ] }`（1–16 项）。每一项渲染成设置页「扩展」区段里该扩展面板内的一行，
-控件由 `type` 决定：
+入驻了窗口域，扩展可以在 Jarvis 工作区里开一枚标签（`defineExtension({ window })`，省略时画 `toolbox` 那一页）。
+入口：`presentation: "window"` 的命令、全局搜索（只入驻窗口、没有工具箱那一行的扩展才在搜索里单列一行）、页面里的
+`jarvis.window.open()`。
+
+#### 指令域：`contributes.commands[]`
+
+≤ 12 条，每条 `{ id, title, description?, slash?, hotkey?, presentation }`。
+
+| 字段 | 规则 | 为什么 |
+| --- | --- | --- |
+| `id` | 与扩展 id 同一套规则，扩展内唯一 | `defineExtension({ commands })` 按它对上处理函数 |
+| `title` | 1–12 字 | `/` 下拉、设置页、商店详情里显示 |
+| `description` | ≤ 60 字 | 全局搜索里那一行的灰字 |
+| `slash.keyword` | `^[a-z][a-z0-9-]{1,19}$` | `/` 下拉里显示的那一个；能直接敲出来 |
+| `slash.aliases` | ≤ 4 个，每个 1–12 字、不带空白与 `/`；可以是中文 | `/翻译` 这样的别名 |
+| `slash.argument` | 1–24 字 | 参数提示；**有它 = 要参数**：`/` 下拉里回车先补全成 `/http ` 等用户接着打；没有它回车直接跑 |
+| `slash.scopes` | ⊆ `["launcher", "memo"]`，省略 = 两处都要 | `launcher` = 全局搜索（全局启动条与默认页搜索栏），`memo` = 速记输入框 |
+| `hotkey` | 修饰键按 `⌃⌥⇧⌘` 顺序 + 一个主键，至少含 ⌃、⌥、⌘ 之一；例 `⌥⌘T` | 与设置页显示的写法一致；跨应用冲突系统层面探测不到 |
+| `presentation` | `toolbox` / `window` / `popover` / `silent` | 见下表 |
+
+| `presentation` | 跑在哪 | 用户看到 | 要求 |
+| --- | --- | --- | --- |
+| `toolbox` | 前台会话 | 面板展开到这个扩展的页面 | 入驻工具箱域 |
+| `window` | 前台会话 | 工作区里开它的标签 | 入驻窗口域 |
+| `popover` | 前台会话 | 面板不动，原地结果弹窗：截图的扩展锚在选区旁，不截图的扩展锚在指针旁 | 入驻工具箱域（弹窗画 `popover`，省略时画 `toolbox`） |
+| `silent` | **后台会话** | 什么界面都不碰 | 至少声明 `clipboard.write`、`notifications.post`、`inbox.post` 之一来交结果 |
+
+**`/` 指令词不能与内置指令撞**：`color colour 颜色 调色板 hash md5 sha1 sha256 sha512 哈希 base64 b64 url 链接
+time ts timestamp 时间 时间戳 json regex 正则 mind 脑图 flow 流程图 seq 时序图 lane 泳道图 arch 架构图 architecture
+todo 待办 memo note 速记 记 find 查找 diff compare 对比 比较 gitdiff gdiff git对比 git gitlog git图 clean cleanup 清理`。
+撞了宿主不加载那一条（设置页写明），`validate.mjs` 在 PR 里就拦下。两个扩展认同一个词时宿主先装先得，仓库里不允许出现。
+
+#### 设置域：`contributes.settings`
+
+`{ "preferences": [ … ] }`，1–16 项。控件由宿主画在设置页「扩展」区段它那块面板里（[10](10-settings.md)）：
 
 | `type` | 控件 | 字段 |
 | --- | --- | --- |
 | `toggle` | 玻璃开关 | `default: boolean` |
-| `text` | 单行输入框 | `default`、`placeholder`、`maxLength`（≤ 200） |
-| `number` | 单行输入框 + 范围校验 | `default`、`minimum`、`maximum`、`step` |
-| `select` | 分段选择器（≤ 4 档）或下拉（5–8 档） | `default`、`options[]`（2–8 项） |
-| `multiselect` | 一排可多选的 chip | `default: string[]`、`options[]`（2–8 项） |
-| `secret` | 遮罩输入框 + 「已设置」徽标 | 无默认；`placeholder`。存 **Keychain**、不进 SQLite、不进日志、`preferences.all()` 里没有它、只能按 key 单独读 |
-| `directory` | 「选择…」chip + 缩写路径 | 无默认；未选时显示「未选择」 |
+| `text` | 单行输入框（失焦或回车提交，清空 = 恢复默认） | `default`、`placeholder`、`maxLength`（≤ 200）、`monospaced`（路径、命令用等宽字） |
+| `number` | 输入框，提交时夹到 `[minimum, maximum]` | `default`、`minimum`、`maximum`、`step` |
+| `select` | 下拉 | `default`、`options[]`（2–8 项） |
+| `multiselect` | 一列勾选框 | `default: string[]`、`options[]`（2–8 项） |
+| `secret` | 遮罩输入框 + 「已保存」徽标 + 「清除」 | 无默认；`placeholder`。进**钥匙串**、不进库、不进日志、`preferences.all()` 里没有它 |
+| `directory` | 「选择…」+ 路径 | 无默认 |
 
-规则：
+`key` `^[a-z][a-zA-Z0-9]*$`，≤ 32；`title` ≤ 24 字；`description` ≤ 120 字。
 
-- `key` `^[a-z][a-zA-Z0-9]*$`，≤ 32；`title` ≤ 24 字；`description` ≤ 80 字。设置页的行文本区上限 640pt，
-  超过这个长度的说明读不下去。
-- `secret` 是唯一一种不落 `extension_preferences` 的偏好：Keychain 条目按 `<extension id>/<key>` 命名，
-  随卸载删除。扩展把它写进 `storage`、写进日志、发到白名单之外的主机，审核不通过。
-- 值的读取走 `jarvis.preferences.get(key)`；用户在设置页改动后宿主发 `preferencesChanged`。
-- 扩展**不能**在自己的页面里再画一份设置：同一个开关出现在两处，用户就得先判断哪个算数。
+#### 服务域：`contributes.services[]`
 
-### 第四部分：`inbox`
-
-`false`，或 `{ "cards": boolean, "notifications": boolean }`，两个键都必填。
-
-| 组合 | 含义 |
-| --- | --- |
-| `false` | 不进 Inbox。`jarvis.inbox.*` 与 `jarvis.notifications.*` 即使声明了能力也拒绝 |
-| `{ cards: true, notifications: false }` | 只投卡片，不弹横幅 |
-| `{ cards: true, notifications: true }` | 投卡片时可以带横幅（`notify: true`） |
-| `{ cards: false, notifications: true }` | 只弹横幅不投卡（静默命令的回执）：点横幅展开面板到这个扩展的页面 |
-| `{ cards: false, notifications: false }` | **不合法**：两项都不要就写 `false` |
-
-卡片的形态与规则见 [11 · Inbox 接入](11-inbox.md)。
-
-### 其余
+≤ 4 个，每个 `{ point, id, title, subtitle, notes?, preferences? }`。
 
 | 字段 | 规则 | 为什么 |
 | --- | --- | --- |
-| `description` | 8–240 字 | 扩展库卡片正文，2 行显示、可展开。回答「它替我做什么」 |
-| `author` | `name` 必填；`url`（https）、`github` 可选 | 卡片上署名 + 可点的源码链接。没有作者的扩展不上主干 |
-| `repository` | https；省略时指向本仓库该目录 | 卡片上「查看源码」 |
-| `sdk` | `^1.0.0` 形式 | 只认主版本；宿主拒绝不同主版本 |
-| `minimumJarvisVersion` | semver | 用到的能力是哪一版宿主开始提供的，写那一版。宿主用 `AppVersion` 比较 |
-| `background` | 布尔，默认 `false` | 见第二部分的跨字段规则 |
+| `point` | 宿主开放的扩展点：`junkClean.engine` | **扩展点是宿主定的**：方法、载荷、设置画在哪都写死在宿主与 SDK 里 |
+| `id` | 与扩展 id 同一套规则，扩展内唯一 | 引擎 id = `<扩展 id>/<服务 id>`；`defineExtension({ services })` 按它对上实现 |
+| `title` | 1–16 字 | 在那个内置能力里的名字，例如「深度清理（Mole）」——设置 · 清理 里那一行开关的标题 |
+| `subtitle` | 1–80 字 | 一句话说它比内置的多做了什么 |
+| `notes` | ≤ 6 条，每条 1–80 字 | 须知：画在设置区段与清理工具的范围说明里 |
+| `preferences` | ≤ 8 项，形状同设置域 | **画在扩展点指定的那个内置区段里**（`junkClean.engine` → 设置 · 清理），不在「扩展」区段 |
 
-## 校验
+偏好的 key 在设置域与全部服务之间**共用一个命名空间**，不能重。
+
+### `inbox`
+
+`false`，或 `{ "messages": boolean, "notifications": boolean }`，两个键都必填。
+
+| 组合 | 含义 |
+| --- | --- |
+| `false` | 不投 Inbox、不弹横幅；声明了 `inbox.post` / `notifications.post` 也算错 |
+| `{ messages: true, notifications: false }` | 往 Inbox 投消息（`inbox.post`） |
+| `{ messages: false, notifications: true }` | 只弹系统横幅（`notifications.post`），静默命令的回执用它 |
+| `{ messages: true, notifications: true }` | 两条都开 |
+| `{ messages: false, notifications: false }` | **不合法**：两项都不要就写 `false` |
+
+### 跨字段规则（validate.mjs 与宿主同一份）
+
+- `network.https` ⇔ `network`；`process.run` ⇔ `process.executables`；`terminal.run` ⇔ `process.terminal`；`files.read` ⇔ `files`。
+- `inbox.messages` ⇔ 声明 `inbox.post`；`inbox.notifications` ⇔ 声明 `notifications.post`；`inbox: false` 时两项都不能声明。
+- 任一命令带 `hotkey` ⇔ 声明 `hotkeys.register`；两条命令不能用同一个快捷键。
+- `presentation: "toolbox" | "popover"` ⇒ 入驻工具箱域；`"window"` ⇒ 入驻窗口域；`"silent"` ⇒ 至少一种交结果的能力。
+- 命令 id 不重；`/` 指令词（含别名）不重、不与内置撞；服务 id 不重；偏好 key 全局不重。
+- `select` / `multiselect` 的默认值在 `options` 里；`number` 的默认值在上下界之间。
+- `toolbox.keywords` / `window.keywords` 不重复名字与说明里已经有的词。
+
+## Usage
 
 ```bash
-node scripts/validate.mjs                 # 校验全部扩展
+node scripts/validate.mjs                 # 校验全部扩展（含跨扩展的 / 指令词冲突）
 node scripts/validate.mjs extensions/foo  # 校验一个
 ```
 
-脚本检查：schema、保留 id、目录名 = id、`main` 指向的文件存在且 ≤ 512 KB、bundle 不含
-`__jarvisHost` 之外的宿主全局引用、跨字段规则、`version` 相对主干是否递增（CI 里）。
-SF Symbol 是否存在**脚本查不了**（符号表只在 macOS 上），由宿主的开发者模式在加载时报。
+脚本检查：schema、保留 id、目录名 = id、跨字段规则、`main` 指向的文件存在且 ≤ 512 KB、bundle 不含
+`XMLHttpRequest` / `WebSocket` / `require(` / `importScripts` / `eval(` / `new Function(`、bundle 是用 SDK 构建的、有 README。
+`version` 相对主干递增由 `check-pr.mjs` 在 PR 里查。SF Symbol 是否存在脚本查不了（符号表只在 macOS 上）。
 
 ## Gotchas
 
-- `name` 与 `subtitle` 是**中文优先**的：这个应用的全部界面文案是中文，一行英文标题在工具箱里会读成漏翻。
-  英文名放进 `keywords`。
-- 改 `id` 等于换一个扩展：安装记录、授权、偏好、文档全部按 `id` 隔离，旧的不会迁移。
-- `capabilities` 里多声明一项而代码里没用到，审核会问；少声明一项而代码里用到了，
-  运行时得到 `capability.undeclared`——两个方向都会在 PR 里被看见。
+- `name` 与各处说明是**中文优先**的；英文名放进 `keywords`。
+- 改 `id` 等于换一个扩展：安装记录、授权、偏好、钥匙串全部按 `id` 隔离，旧的不会迁移。
+- `capabilities` 里多声明一项而代码里没用到，审核会问；少声明一项而代码里用到了，运行时得到 `capability.undeclared`。
+- 受限执行的参数组合里出现「为了以后可能用到」的那一组，审核不通过。
+- v1 的 `toolbox.symbol/name`、`commands`、`settings`、`background`、`workspace`、`bigquery`、`inbox.cards` 都不存在了——schema 会直接拒。
 
 ## Related Links
 
-- [`schemas/extension.v1.schema.json`](../schemas/extension.v1.schema.json)
+- [`schemas/extension.v2.schema.json`](../schemas/extension.v2.schema.json)、[`schemas/registry.v2.schema.json`](../schemas/registry.v2.schema.json)
 - [05 · 能力授权模型](05-permissions.md)
 - [06 · 能力接口目录](06-capabilities.md)
-- [10 · 设置区段接入](10-settings.md)
-- [11 · Inbox 接入](11-inbox.md)
+- [10 · 设置域与服务扩展点](10-settings.md)
+- [11 · Inbox 通路](11-inbox.md)

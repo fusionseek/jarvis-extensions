@@ -1,16 +1,26 @@
 /**
- * `@fusionseek/jarvis-extension-sdk` 的入口。
+ * `@fusionseek/jarvis-extension-sdk` 的入口（SDK 2）。
  *
- * 一个扩展只做三件事：`defineExtension` 交出页面与命令，用 `ui.*` 描述界面，
- * 用全局 `jarvis` 调宿主能力。其余（渲染、悬停光、授权、存储隔离、快捷键注册）全在宿主。
+ * 一个扩展只做三件事：`defineExtension` 按域交出实现，用 `ui.*` 描述界面，用全局 `jarvis` 调宿主能力。
+ * 其余（渲染、悬停光、授权、存储隔离、指令与快捷键注册、服务调度）全在宿主。
  *
- * 入口模型是 **命令 + 页面**：工具箱那一行打开页面；快捷键、页面里的按钮、快捷环、Inbox 卡片
- * 触发命令。没有自定义页面的扩展，SDK 会画一张列出全部命令的默认页。
+ * 域与 `defineExtension` 的对应：
+ *
+ * | 域 | manifest | `defineExtension` |
+ * |---|---|---|
+ * | 工具箱 | `contributes.toolbox` | `toolbox`（面板里的页面）+ `popover`（原地结果弹窗，省略时画 `toolbox`） |
+ * | 窗口 | `contributes.window` | `window`（工作区标签，省略时画 `toolbox`） |
+ * | 指令 | `contributes.commands` | `commands` |
+ * | 设置 | `contributes.settings` | —（宿主画控件，扩展读 `jarvis.preferences`） |
+ * | 服务 | `contributes.services` | `services` |
+ *
+ * 悬浮球不是可入驻的域。
  */
-import type { EnvironmentInfo, HostInfo, Jarvis, Unsubscribe } from "./capabilities.js";
+import type { EnvironmentInfo, HostInfo, Jarvis, ProcessHandle, ProcessResult, Unsubscribe } from "./capabilities.js";
 import { JarvisError } from "./capabilities.js";
-import type { ActivationContext, CommandContext, HostEvent, InvokeResult, HostBridge, CommandSummary, Surface } from "./bridge.js";
+import type { ActivationContext, CommandContext, HostEvent, InvokeResult, HostBridge, CommandSummary, ServiceCall, Surface } from "./bridge.js";
 import { bridgeProtocolVersion, countNodes, serialize } from "./bridge.js";
+import type { CancelSignal, ServiceContext, ServiceImplementation, JunkCleanEngine } from "./services.js";
 import type { UINode } from "./ui.js";
 import { maximumNodesPerRender, ui } from "./ui.js";
 import { ocr } from "./ocr.js";
@@ -18,50 +28,89 @@ import { ocr } from "./ocr.js";
 export * from "./manifest.js";
 export * from "./ui.js";
 export * from "./capabilities.js";
+export * from "./services.js";
 export * from "./ocr.js";
-export type { ActivationContext, CommandContext, CommandSummary, CommandTrigger, HostEvent, SerializedNode, Surface } from "./bridge.js";
+export type {
+  ActivationContext,
+  CommandContext,
+  CommandSummary,
+  CommandTrigger,
+  HostEvent,
+  SerializedNode,
+  ServiceCall,
+  Surface,
+} from "./bridge.js";
 export { bridgeProtocolVersion } from "./bridge.js";
 
-export const sdkVersion = "1.6.0";
+/** SDK 版本。主版本必须与宿主运行时一致。 */
+export const sdkVersion = "2.0.0";
 
+/** 一面的实现：工具箱页面、原地弹窗或窗口标签。 */
 export interface PageDefinition {
-  /** 进入扩展页面时调用一次。拿到已授予的能力、当前偏好与命令清单。 */
+  /** 这一面 activate 时调用一次。拿到已授予的能力、当前偏好与命令清单。 */
   activate?(context: ActivationContext): void | Promise<void>;
   /** 每次需要重画时调用。必须是同步的、只读自己的状态。 */
   render(): UINode;
-  /** 离开扩展页面时调用；`background: true` 的扩展只在被禁用 / 卸载时调用。 */
+  /** 这一面离开时调用。 */
   deactivate?(): void | Promise<void>;
 }
 
+/** 一条命令的处理函数。`/` 指令带来的参数在 `context.argument`。 */
 export type CommandHandler = (context: CommandContext) => void | Promise<void>;
 
+/** 按域交出的实现。 */
 export interface ExtensionDefinition {
-  /** 工具箱那一行打开的页面。省略时 SDK 画一张列出全部命令的默认页。 */
-  page?: PageDefinition;
+  /** 工具箱域：面板里那一页。省略时 SDK 画一张列出全部命令的默认页。 */
+  toolbox?: PageDefinition;
   /**
-   * `presentation: "popover"` 的命令结束后，宿主贴着选区弹出的那扇原地结果弹窗里画什么。
-   * 省略时弹窗里画 `page.render()` 的那棵树。弹窗 400 宽、按内容长高（最高 520），因此这里通常是
-   * 页面的紧凑版：不画缩略图、不画偏好行，只有原文、语言行与译文。
-   * 同一时刻只有一面（面板或弹窗）开着；「在面板里打开」是宿主先 `deactivate` 这里再 `activate` 页面。
+   * `presentation: "popover"` 的命令跑起来之后，宿主贴着选区弹出的那扇原地结果弹窗里画什么。
+   * 省略时画 `toolbox`。弹窗 400 宽、按内容长高（最高 520），因此通常是页面的紧凑版。
    */
   popover?: PageDefinition;
-  /** manifest `commands[]` 里每条命令的处理函数，按 id 对上。 */
+  /** 窗口域：工作区标签里画什么。省略时画 `toolbox`；宽度不受 400 限制。 */
+  window?: PageDefinition;
+  /** 指令域：manifest `contributes.commands[]` 里每条命令的处理函数，按 id 对上。 */
   commands?: Record<string, CommandHandler>;
-  /** Inbox 卡片上的按钮被按了。卡片由宿主收走，这里只做后果。 */
-  onInboxAction?(cardId: string, actionId: string): void | Promise<void>;
-  /** 用户点了这个扩展发的系统横幅；宿主已经把面板展开到这个扩展。 */
-  onNotificationActivated?(): void | Promise<void>;
+  /** 服务域：manifest `contributes.services[]` 里每个服务的实现，按服务 id 对上。 */
+  services?: Record<string, ServiceImplementation>;
 }
 
 type Pending = { resolve: (value: unknown) => void; reject: (error: JarvisError) => void };
 
+/** 一次服务调用的取消信号。 */
+class Cancellation implements CancelSignal {
+  private listeners: (() => void)[] = [];
+  private fired = false;
+
+  get cancelled(): boolean {
+    return this.fired;
+  }
+
+  onCancel(listener: () => void): void {
+    if (this.fired) {
+      listener();
+      return;
+    }
+    this.listeners.push(listener);
+  }
+
+  cancel(): void {
+    if (this.fired) return;
+    this.fired = true;
+    const listeners = this.listeners;
+    this.listeners = [];
+    for (const listener of listeners) listener();
+  }
+}
+
 /**
- * 运行时。**一个 JSContext 里只有一份**：`defineExtension` 第二次调用会抛错，
- * 因为宿主只认一个入口。
+ * 运行时。**一个 JSContext 里只有一份**：`defineExtension` 第二次调用会抛错，因为宿主只认一个入口。
+ *
+ * 同一份 bundle 会被装进两种会话：前台（有界面）与后台（服务、静默命令）。运行时不需要知道自己在哪一种——
+ * 后台会话里宿主永远不发 `activate`，`render` 也就永远不会被调。
  *
  * 宿主全局 `__jarvisHost` 是**延迟绑定**的：模块加载时不碰它，第一次真的要调宿主时才找。
- * 因此这个 bundle 可以在 node 里被 `import`（配合 `testing.ts` 的替身跑单测），
- * 只有真的调能力却没有宿主时才报错。
+ * 因此这个 bundle 可以在 node 里被 `import`（配合 `testing.ts` 的替身跑单测）。
  */
 class Runtime {
   private definition: ExtensionDefinition | null = null;
@@ -70,8 +119,9 @@ class Runtime {
   private pending = new Map<number, Pending>();
   private handlers = new Map<string, (payload: unknown) => void>();
   private subscriptions = new Map<string, (payload: unknown) => void>();
+  private serviceSignals = new Map<number, Cancellation>();
   private updateQueued = false;
-  /** 此刻开着的那一面；`null` = 既没有页面也没有弹窗，`render()` 不会被调。 */
+  /** 此刻开着的那一面；`null` = 一面都没有，`render()` 不会被调。 */
   private activeSurface: Surface | null = null;
   private commandSummaries: CommandSummary[] = [];
   private hostRef: HostBridge | null = null;
@@ -87,7 +137,7 @@ class Runtime {
     return host;
   }
 
-  /** 把 `dispatch` 挂到全局。幂等；`defineExtension` 与任何一次能力调用都会确保它挂上了。 */
+  /** 把 `dispatch` 挂到全局。幂等。 */
   private ensureRegistered(): void {
     if (this.registered) return;
     globalThis.__jarvisRuntime = { dispatch: (json) => this.dispatch(json) };
@@ -102,7 +152,7 @@ class Runtime {
     this.ensureRegistered();
   }
 
-  /** 让宿主再调一次 render。同一拍里的多次请求合并成一次提交；页面与弹窗都没开着时是空操作。 */
+  /** 让宿主再调一次 render。同一拍里的多次请求合并成一次提交；一面都没开着时是空操作。 */
   requestUpdate(): void {
     if (this.updateQueued || !this.activeSurface) return;
     this.updateQueued = true;
@@ -129,19 +179,34 @@ class Runtime {
     throw new JarvisError(result.error);
   }
 
+  /** 新的订阅 token。 */
+  token(namespace: string, method: string): string {
+    return `${namespace}.${method}#${this.nextRequestId++}`;
+  }
+
+  /** 收这个 token 上的订阅事件。 */
+  listen(token: string, listener: (payload: unknown) => void): void {
+    this.subscriptions.set(token, listener);
+  }
+
+  /** 不再收这个 token 上的事件。 */
+  forget(token: string): void {
+    this.subscriptions.delete(token);
+  }
+
   /**
    * 订阅宿主事件。宿主拒绝订阅（没授权、没这个能力）时**不抛到扩展里**：一条被拒的订阅只是收不到事件，
-   * 让它变成未处理的 rejection 会把整个上下文拖垮。拒绝记一条 warn 日志，开发者模式看得见。
+   * 让它变成未处理的 rejection 会把整个上下文拖垮。拒绝记一条 warn 日志。
    */
   subscribe(namespace: string, method: string, listener: (payload: unknown) => void): Unsubscribe {
-    const token = `${namespace}.${method}#${this.nextRequestId++}`;
-    this.subscriptions.set(token, listener);
+    const token = this.token(namespace, method);
+    this.listen(token, listener);
     this.invoke(namespace, method, { token }).catch((error: unknown) => {
-      this.subscriptions.delete(token);
+      this.forget(token);
       this.log("warn", `订阅 ${namespace}.${method} 被宿主拒绝`, error instanceof Error ? error.message : String(error));
     });
     return () => {
-      this.subscriptions.delete(token);
+      this.forget(token);
       this.invoke(namespace, "unsubscribe", { token }).catch(() => undefined);
     };
   }
@@ -150,14 +215,15 @@ class Runtime {
     this.host().log(level, message, data === undefined ? null : JSON.stringify(data));
   }
 
-  /** 开着的那一面的定义：弹窗（没给时退回页面）或页面。 */
+  /** 开着的那一面的定义：弹窗与窗口没给时退回工具箱页面。 */
   private surfaceDefinition(surface: Surface | null): PageDefinition | undefined {
     const definition = this.definition;
     if (surface === "popover" && definition?.popover) return definition.popover;
-    return definition?.page;
+    if (surface === "window" && definition?.window) return definition.window;
+    return definition?.toolbox;
   }
 
-  /** 此刻那一面的树：弹窗、自定义页面，或按命令清单画的默认页。 */
+  /** 此刻那一面的树：自定义的那一面，或按命令清单画的默认页。 */
   private renderSurface(): UINode {
     const page = this.surfaceDefinition(this.activeSurface);
     if (page) return page.render();
@@ -171,11 +237,15 @@ class Runtime {
                   key: command.id,
                   symbol: command.presentation === "silent" ? "bolt" : "rectangle.and.text.magnifyingglass",
                   title: command.title,
-                  subtitle: command.hotkey ? `快捷键 ${command.hotkey}` : (command.description ?? "没有快捷键，在这里运行"),
+                  subtitle: command.hotkey
+                    ? `快捷键 ${command.hotkey}`
+                    : command.slash
+                      ? `指令 ${command.slash}`
+                      : (command.description ?? "在这里运行"),
                   onPress: () => void jarvis.commands.run(command.id),
                 }),
               )
-            : [ui.empty({ symbol: "bolt.slash", title: "这个扩展没有命令", hint: "它的 manifest 里既没有页面也没有命令。" })],
+            : [ui.empty({ symbol: "bolt.slash", title: "这个扩展没有命令", hint: "它既没有页面也没有命令。" })],
         }),
       ],
     });
@@ -200,12 +270,68 @@ class Runtime {
     this.host().commit(JSON.stringify({ protocol: bridgeProtocolVersion, generation: this.generation, surface, root }));
   }
 
+  /** 宿主调一次服务。结果与进度都经隐式调用交回去；这里不抛任何东西。 */
+  private handleService(call: ServiceCall): void {
+    const implementation = this.definition?.services?.[call.service];
+    const respond = (result: InvokeResult) => {
+      this.serviceSignals.delete(call.callId);
+      this.invoke("service", "resolve", { callId: call.callId, result }).catch(() => undefined);
+    };
+    if (!implementation) {
+      respond({ ok: false, error: { code: "capability.unknown", message: `defineExtension 里没有服务「${call.service}」的实现。` } });
+      return;
+    }
+    const context: ServiceContext = { preferences: call.params.preferences, granted: call.params.granted };
+    const signal = new Cancellation();
+    this.serviceSignals.set(call.callId, signal);
+    const work = (): Promise<unknown> => {
+      switch (call.point) {
+        case "junkClean.engine": {
+          const engine = implementation as JunkCleanEngine;
+          switch (call.method) {
+            case "status":
+              return Promise.resolve(engine.status(context));
+            case "run":
+              return engine.run(
+                context,
+                (progress) => {
+                  if (signal.cancelled) return;
+                  this.invoke("service", "progress", { callId: call.callId, progress }).catch(() => undefined);
+                },
+                signal,
+              );
+            case "action":
+              return Promise.resolve(engine.action ? engine.action(call.params.actionId ?? "", context) : {});
+          }
+        }
+      }
+      return Promise.reject(new JarvisError({ code: "capability.unknown", message: `不认识的服务方法 ${call.point}.${call.method}` }));
+    };
+    let pending: Promise<unknown>;
+    try {
+      pending = work();
+    } catch (error) {
+      pending = Promise.reject(error);
+    }
+    pending.then(
+      (value) => respond({ ok: true, value: value ?? {} }),
+      (error: unknown) => {
+        const shape =
+          error instanceof JarvisError
+            ? { code: error.code, message: error.message, ...(error.detail !== undefined ? { detail: error.detail } : {}) }
+            : { code: "host.failure" as const, message: error instanceof Error ? error.message : String(error) };
+        this.log("error", `服务「${call.service}」的 ${call.method} 抛出了异常`, shape.message);
+        respond({ ok: false, error: shape });
+      },
+    );
+  }
+
   private dispatch(json: string): void {
     const event = JSON.parse(json) as HostEvent;
     const definition = this.definition;
     switch (event.type) {
       case "activate": {
-        const surface: Surface = event.context.surface ?? "page";
+        const surface = event.context.surface;
         this.activeSurface = surface;
         this.commandSummaries = event.context.commands ?? [];
         void Promise.resolve(this.surfaceDefinition(surface)?.activate?.(event.context)).then(() => this.commit());
@@ -246,6 +372,14 @@ class Runtime {
         );
         return;
       }
+      case "service": {
+        this.handleService(event.call);
+        return;
+      }
+      case "serviceCancel": {
+        this.serviceSignals.get(event.callId)?.cancel();
+        return;
+      }
       case "subscription": {
         this.subscriptions.get(event.token)?.(event.payload);
         return;
@@ -253,14 +387,6 @@ class Runtime {
       case "preferencesChanged":
       case "permissionsChanged": {
         this.requestUpdate();
-        return;
-      }
-      case "inboxAction": {
-        void definition?.onInboxAction?.(event.cardId, event.actionId);
-        return;
-      }
-      case "notificationActivated": {
-        void definition?.onNotificationActivated?.();
         return;
       }
     }
@@ -284,6 +410,7 @@ function syncNamespaced(namespace: string) {
 
 const call = {
   panel: namespaced("panel"),
+  window: namespaced("window"),
   commands: namespaced("commands"),
   storage: namespaced("storage"),
   preferences: namespaced("preferences"),
@@ -295,21 +422,41 @@ const call = {
   speech: namespaced("speech"),
   notifications: namespaced("notifications"),
   inbox: namespaced("inbox"),
-  memo: namespaced("memo"),
-  calendar: namespaced("calendar"),
-  tasks: namespaced("tasks"),
   net: namespaced("net"),
-  bigquery: namespaced("bigquery"),
+  process: namespaced("process"),
   files: namespaced("files"),
+  terminal: namespaced("terminal"),
   system: namespaced("system"),
 };
 
 const sync = {
   text: syncNamespaced("text"),
-  time: syncNamespaced("time"),
-  color: syncNamespaced("color"),
   host: syncNamespaced("host"),
 };
+
+/**
+ * `process.run`：标准输出经订阅逐批推过来（`{ lines: string[] }`），进程结束时那次调用兑现。
+ * 宿主保证**所有输出先于结果**到达——这条线上的事件按顺序进同一条队列。
+ */
+function runProcess(options: { executable: string; arguments: string[]; onLine?: (line: string) => void }): ProcessHandle {
+  const token = runtime.token("process", "run");
+  runtime.listen(token, (payload) => {
+    const lines = (payload as { lines?: string[] }).lines ?? [];
+    for (const line of lines) options.onLine?.(line);
+  });
+  const result = runtime
+    .invoke<ProcessResult>("process", "run", { executable: options.executable, arguments: options.arguments, token })
+    .finally(() => runtime.forget(token));
+  let cancelled = false;
+  return {
+    result,
+    cancel() {
+      if (cancelled) return;
+      cancelled = true;
+      call.process("cancel", { token }).catch(() => undefined);
+    },
+  };
+}
 
 /** 扩展里那个全局对象的实现。类型见 `capabilities.ts`。`host` 与 `environment` 延迟到第一次读取才问宿主。 */
 export const jarvis: Jarvis = {
@@ -328,19 +475,24 @@ export const jarvis: Jarvis = {
     hold(reason) {
       let released = false;
       const id = runtime.invoke<string>("panel", "hold", { reason });
+      // 后台会话里 hold 会被拒（surface.unavailable）：那里没有面板可摁，拒了就当没摁。
+      id.catch(() => undefined);
       return {
         release() {
           if (released) return;
           released = true;
-          void id.then((handle) => call.panel("release", { handle }));
+          void id.then((handle) => call.panel("release", { handle })).catch(() => undefined);
         },
       };
     },
     collapse: () => call.panel("collapse"),
     present: () => call.panel("present"),
   },
+  window: {
+    open: () => call.window("open"),
+  },
   commands: {
-    run: (id) => call.commands("run", { id }),
+    run: (id, argument) => call.commands("run", argument === undefined ? { id } : { id, argument }),
   },
   storage: {
     get: (key) => call.storage("get", { key }),
@@ -372,37 +524,15 @@ export const jarvis: Jarvis = {
     hash: {
       digest: (algorithm, text, options) => sync.text("hash.digest", { algorithm, text, ...options }),
     },
-    json: {
-      format: (text, options) => sync.text("json.format", { text, ...options }),
-      minify: (text, options) => sync.text("json.minify", { text, ...options }),
-    },
-    url: {
-      parse: (text) => sync.text("url.parse", { text }),
-      build: (parts) => sync.text("url.build", parts),
-    },
-    regex: {
-      test: (pattern, text, flags) => sync.text("regex.test", { pattern, text, flags }),
-    },
     language: {
       detect: (text, options) => sync.text("language.detect", { text, ...options }),
       displayName: (code) => sync.text("language.displayName", { code }),
     },
   },
-  time: {
-    parse: (text, unit) => sync.time("parse", { text, unit }),
-    format: (epochMilliseconds, pattern, timeZone) => sync.time("format", { epochMilliseconds, pattern, timeZone }),
-    timeZones: () => sync.time("timeZones"),
-  },
-  color: {
-    convert: (hex) => sync.color("convert", { hex }),
-  },
   clipboard: {
     read: () => call.clipboard("read"),
     readImage: () => call.clipboard("readImage"),
     write: (text) => call.clipboard("write", { text }),
-    history: (options) => call.clipboard("history", options),
-    entryText: (id) => call.clipboard("entryText", { id }),
-    observe: (listener) => runtime.subscribe("clipboard", "observe", listener as (payload: unknown) => void),
   },
   quickTransfer: {
     status: () => call.quickTransfer("status"),
@@ -410,8 +540,6 @@ export const jarvis: Jarvis = {
     start: () => call.quickTransfer("start"),
     stop: () => call.quickTransfer("stop"),
     sendText: (text) => call.quickTransfer("sendText", { text }),
-    sendFile: (file) => call.quickTransfer("sendFile", { file }),
-    records: (options) => call.quickTransfer("records", options),
   },
   screenshot: {
     capture: (options) => call.screenshot("capture", options),
@@ -427,34 +555,21 @@ export const jarvis: Jarvis = {
     post: (content) => call.notifications("post", content),
   },
   inbox: {
-    post: (card) => call.inbox("post", card),
-    dismiss: (cardId) => call.inbox("dismiss", { cardId }),
-  },
-  memo: {
-    list: (options) => call.memo("list", options),
-    create: (body) => call.memo("create", { body }),
-    complete: (id) => call.memo("complete", { id }),
-  },
-  calendar: {
-    runs: (range) => call.calendar("runs", range),
-  },
-  tasks: {
-    recent: () => call.tasks("recent"),
-    observe: (listener) => runtime.subscribe("tasks", "observe", listener as (payload: unknown) => void),
+    post: (message) => call.inbox("post", message),
   },
   net: {
     fetch: (url, init) => call.net("fetch", { url, ...init }),
   },
-  bigquery: {
-    query: (request) => call.bigquery("query", request),
-    status: () => call.bigquery("status"),
-    login: () => call.bigquery("login"),
+  process: {
+    locate: (executable) => call.process("locate", { executable }),
+    run: runProcess,
   },
   files: {
-    pick: (options) => call.files("pick", options),
-    readText: (file) => call.files("readText", { file }),
-    readBytes: (file) => call.files("readBytes", { file }),
-    reveal: (file) => call.files("reveal", { file }),
+    stat: (path) => call.files("stat", { path }),
+    tail: (path, offset) => call.files("tail", { path, offset }),
+  },
+  terminal: {
+    run: (scriptId) => call.terminal("run", { id: scriptId }),
   },
   system: {
     openURL: (url) => call.system("openURL", { url }),
@@ -463,13 +578,13 @@ export const jarvis: Jarvis = {
 };
 
 /**
- * 等一会儿（SDK 1.4）。
+ * 等一会儿。
  *
  * **宿主的 JavaScript 环境里有 `setTimeout`，但没有 `setInterval`**：没有哪个扩展需要一个
  * 自己不会停的循环，而一个忘记 clear 的 interval 会在面板关掉之后继续醒着。
  *
  * 会话结束时宿主会把还没到点的定时器全部取消，因此这个 Promise 有可能**永远不 resolve**——
- * 那正是想要的：面板已经没了，接着往下跑的那段代码没有任何人在等它的结果。
+ * 那正是想要的：会话已经没了，接着往下跑的那段代码没有任何人在等它的结果。
  *
  * 上限由宿主定：单次 30s、同时挂起 64 个。超出时那一次调用被丢掉并记一条 warn。
  *

@@ -1,15 +1,16 @@
 /**
- * 面板里的页面：五种状态各答得出"现在怎么了、下一步按哪"。
+ * 工具箱页面（面板里那一屏）：五种状态各答得出"现在怎么了、下一步按哪"。
  *
  * 对应 Figma `jarvis-extension-screenshot-translate` `983:2` 的 `translate-01…05`：
  * 空 / 截到并译出 / 翻译中 / 没有截图授权 / 翻译失败。从原地弹窗「在面板里打开」、钉住，
- * 或跑「翻译剪贴板」之后落在这里。
+ * 跑「翻译剪贴板」，或 `/translate <文字>` 之后落在这里——后两条是 `presentation: "toolbox"` 的命令。
  */
 import { jarvis, ui, type ActionSpec, type UINode } from "@fusionseek/jarvis-extension-sdk";
 import { languageOptions, ocrLanguageOptions, type Session } from "./session.js";
 import { dictionaryRows } from "./dictionary.js";
 
-const FOOTNOTE = "Vision 识别文字、合并段落、检测语言，再经 Google 翻译；免费端点无需 key，填了 API key 走官方接口。";
+/** 空屏脚注。`/translate` 写在这里，是因为 `/` 下拉之外没有别的地方会告诉用户这条指令存在。 */
+const FOOTNOTE = "Vision 识别文字、合并段落、检测语言，再经 Google 翻译；免费端点无需 key，填了 API key 走官方接口。全局搜索里 /translate 后面跟一段字也能直接翻。";
 
 export function renderPage(s: Session): UINode {
   const children: UINode[] = [];

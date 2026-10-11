@@ -2,8 +2,9 @@
 /**
  * 从各扩展的 extension.json 生成仓库根的 registry.json。
  *
- * 宿主只读 registry.json 来罗列扩展库；它是 manifest 的投影加三样宿主安装时要的事实：
- * 目录、产物指纹（SHA-256 与字节数）、更新时间。**不得手改**——每次改动跑一次本脚本；
+ * 宿主只读 registry.json 来罗列扩展商店；v2 的每一条是**整份 manifest** 加三样宿主安装时要的事实：
+ * 目录、产物指纹（SHA-256 与字节数）、更新时间。带整份 manifest 是为了让商店在安装之前就把它
+ * 会跑的可执行文件、会读的文件、会执行的脚本念给用户听。**不得手改**——每次改动跑一次本脚本；
  * CI 用 --check 校验已提交的那一份没有落后。
  *
  * 用法：
@@ -48,17 +49,7 @@ for (const dir of extensionDirectories()) {
   const rel = relative(ROOT, dir).split("\\").join("/");
   const updatedAt = git(["log", "-1", "--format=%cI", "--", rel]) || new Date().toISOString();
   const entry = {
-    id: manifest.id,
-    version: manifest.version,
-    toolbox: manifest.toolbox,
-    description: manifest.description,
-    author: manifest.author,
-    sdk: manifest.sdk,
-    minimumJarvisVersion: manifest.minimumJarvisVersion,
-    capabilities: manifest.capabilities.map((c) => c.id),
-    settings: manifest.settings !== false,
-    inbox: manifest.inbox,
-    background: manifest.background ?? false,
+    manifest,
     path: rel,
     bundle: {
       path: `${rel}/${manifest.main}`,
@@ -67,19 +58,9 @@ for (const dir of extensionDirectories()) {
     },
     updatedAt,
   };
-  if (manifest.repository) entry.repository = manifest.repository;
-  if (manifest.network) entry.network = manifest.network;
-  if (manifest.commands?.length) {
-    entry.commands = manifest.commands.map((c) => ({
-      id: c.id,
-      title: c.title,
-      ...(c.hotkey ? { hotkey: c.hotkey.default } : {}),
-      presentation: c.presentation,
-    }));
-  }
   entries.push(entry);
 }
-entries.sort((a, b) => a.id.localeCompare(b.id));
+entries.sort((a, b) => a.manifest.id.localeCompare(b.manifest.id));
 
 // 校验没过就不生成：一份带着已知问题的 registry 会被宿主原样读走。
 const problems = collectedProblems();
@@ -89,7 +70,7 @@ if (problems.length) {
 }
 
 const registry = {
-  registryVersion: 1,
+  registryVersion: 2,
   generatedAt: new Date().toISOString(),
   source: { repository: REPOSITORY, commit },
   extensions: entries,
@@ -98,12 +79,15 @@ const registry = {
 // 生成物也要过自己的 schema：写出一份宿主读不了的 registry 比不写更糟。
 const Ajv = require("ajv/dist/2020.js");
 const addFormats = require("ajv-formats");
-const ajv = new Ajv({ allErrors: true, strict: true });
+// `strictRequired: false`：schema 用 `anyOf: [{ required: ["toolbox"] }, …]` 表达「至少入驻一个有入口的域」，
+// 那几个分支只写 required、不重复写 properties——Ajv 严格模式会把它当成笔误拒掉，而它是有意的。
+const ajv = new Ajv({ allErrors: true, strict: true, strictRequired: false });
 addFormats(ajv);
-const validate = ajv.compile(JSON.parse(readFileSync(join(ROOT, "schemas", "registry.v1.schema.json"), "utf8")));
+ajv.addSchema(JSON.parse(readFileSync(join(ROOT, "schemas", "extension.v2.schema.json"), "utf8")));
+const validate = ajv.compile(JSON.parse(readFileSync(join(ROOT, "schemas", "registry.v2.schema.json"), "utf8")));
 if (!validate(registry)) {
   for (const err of validate.errors ?? []) console.error(`  - ${err.instancePath || "/"} ${err.message}`);
-  fail("生成的 registry.json 不符合 schemas/registry.v1.schema.json");
+  fail("生成的 registry.json 不符合 schemas/registry.v2.schema.json");
 }
 
 const stable = (r) => ({

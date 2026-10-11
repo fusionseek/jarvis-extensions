@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jarvis.fusionseek.ai/schemas/registry.v2.schema.json",
+  "title": "Jarvis extension registry v2",
+  "description": "仓库根目录的 registry.json。由 scripts/build-registry.mjs 从各扩展的 extension.json 生成，宿主只读它来罗列扩展商店；不得手改。v2 的每一条**原样带着整份 manifest**：商店在安装之前就要把它会跑的可执行文件、会读的文件、会执行的脚本念给用户听，投影出来的摘要做不到这一点。",
+  "type": "object",
+  "required": [
+    "registryVersion",
+    "generatedAt",
+    "source",
+    "extensions"
+  ],
+  "properties": {
+    "registryVersion": {
+      "const": 2
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "repository",
+        "commit"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^https://github\\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "extensions": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "description": "一个扩展：它的 manifest，加上宿主安装时要的三项事实。",
+      "required": [
+        "manifest",
+        "path",
+        "bundle",
+        "updatedAt"
+      ],
+      "properties": {
+        "manifest": {
+          "$ref": "https://jarvis.fusionseek.ai/schemas/extension.v2.schema.json"
+        },
+        "path": {
+          "type": "string",
+          "description": "扩展目录，相对仓库根。恒为 extensions/<id>。",
+          "pattern": "^extensions/[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+        },
+        "bundle": {
+          "type": "object",
+          "description": "宿主安装时要校验的产物指纹。哈希对不上就拒绝安装。",
+          "required": [
+            "path",
+            "sha256",
+            "byteCount"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "pattern": "^extensions/[a-z][a-z0-9]*(-[a-z0-9]+)*/dist/[A-Za-z0-9._-]+\\.js$"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "byteCount": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 524288
+            }
+          },
+          "additionalProperties": false
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
