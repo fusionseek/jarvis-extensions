@@ -437,6 +437,88 @@ export interface TerminalAPI {
   run(scriptId: string): Promise<void>;
 }
 
+// ---------------------------------------------------------------------------
+// Git 操作域（要入驻 Git 域：manifest `contributes.git`）
+// ---------------------------------------------------------------------------
+
+/** Jarvis 最近打开过的一个仓库。**不给本机路径**：扩展要的是「它是谁」，不是「它在哪」。 */
+export interface GitRepositorySummary {
+  /** 仓库目录名。 */
+  name: string;
+  /** 远端主机，如 `github.com`；`origin` 读不出主机时省略。 */
+  host?: string;
+  /** 远端身份 `owner/name`；`origin` 读不出时省略。 */
+  repository?: string;
+}
+
+/**
+ * token 对 Projects 的权限，由宿主从 classic token 的 scope 推断：
+ * `readWrite` = 有 `project`；`readOnly` = 只有 `read:project`；`none` = 两个都没有；
+ * `unknown` = fine-grained token 不报 scope，只能试了才知道。
+ */
+export type GitProjectAccess = "readWrite" | "readOnly" | "none" | "unknown";
+
+/** `git.hosting.viewer` 的结果：此刻那把 token 是谁、能做什么。 */
+export interface GitHostingViewer {
+  /** token 的登录名；读不出时省略。 */
+  login?: string;
+  /** classic token 的 scope；fine-grained token 没有，省略。 */
+  scopes?: string[];
+  projectAccess: GitProjectAccess;
+}
+
+/** 一次 GraphQL 请求。 */
+export interface GitGraphQLRequest {
+  /** 托管服务标识，必须在 `contributes.git.hosting` 里。只声明了一个时可以省略；声明了多个就显式传。 */
+  hosting?: string;
+  /** 一份 GraphQL 文档：**恰好一个操作**，可以带具名片段；≤ 64 KB。用户给的值一律放 `variables`，不要拼进文档。 */
+  query: string;
+  /** 变量，任意 JSON 对象。 */
+  variables?: Record<string, unknown>;
+}
+
+/** GraphQL 响应里的一条错误（GitHub 的形状）。 */
+export interface GitGraphQLError {
+  message: string;
+  /** GitHub 的错误类型，如 `NOT_FOUND`、`FORBIDDEN`、`INSUFFICIENT_SCOPES`。 */
+  type?: string;
+  path?: (string | number)[];
+  locations?: { line: number; column: number }[];
+  extensions?: Record<string, unknown>;
+}
+
+/**
+ * GraphQL 响应原样：`data` 与 `errors` 可以同时出现（部分成功）——**宿主不把部分成功当失败**，
+ * 是否接受由扩展决定。整次失败（服务没开、没 token、`gh` 没装、超时）才以 `host.failure` 拒绝。
+ */
+export interface GitGraphQLResponse<T = unknown> {
+  data?: T | null;
+  errors?: GitGraphQLError[];
+}
+
+/** 托管服务的读写（经宿主的 Git 服务执行；token 只在宿主的钥匙串里）。 */
+export interface GitHostingAPI {
+  /** `git.hosting.read`。此刻那把 token 的身份与 Projects 权限。服务没开、没添加、缺 token 时以 `host.failure` 拒绝。 */
+  viewer(options?: { hosting?: string }): Promise<GitHostingViewer>;
+  /**
+   * `git.hosting.read`。执行一份**查询**；文档里出现 `mutation` / `subscription` 以 `invalid.argument` 拒绝。
+   * 每分钟 ≤ 240 次。
+   */
+  query<T = unknown>(request: GitGraphQLRequest): Promise<GitGraphQLResponse<T>>;
+  /**
+   * `git.hosting.write`。执行一份变更（查询也放行）：顶层字段名必须都在 manifest `git.mutations` 里，
+   * 否则以 `capability.undeclared` 拒绝；顶层不能用片段展开（不让变更字段藏进片段里）。每分钟 ≤ 60 次。
+   */
+  mutate<T = unknown>(request: GitGraphQLRequest): Promise<GitGraphQLResponse<T>>;
+}
+
+/** Git 操作域。没有入驻 Git 域的扩展声明不了这几项能力。 */
+export interface GitAPI {
+  /** `git.repository.read`。Jarvis 最近打开过的仓库（至多 20 个，读不出 `origin` 的跳过）。每分钟 ≤ 60 次。 */
+  repositories(): Promise<GitRepositorySummary[]>;
+  hosting: GitHostingAPI;
+}
+
 /** 系统。 */
 export interface SystemAPI {
   /** `system.openURL`。只放行 https。 */
@@ -481,5 +563,6 @@ export interface Jarvis {
   readonly process: ProcessAPI;
   readonly files: FilesAPI;
   readonly terminal: TerminalAPI;
+  readonly git: GitAPI;
   readonly system: SystemAPI;
 }

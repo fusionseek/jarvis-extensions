@@ -39,6 +39,8 @@ const RESERVED_SLASH = new Set([
 const FORBIDDEN_TOKENS = ["XMLHttpRequest", "WebSocket", "require(", "importScripts", "eval(", "new Function("];
 const MAX_BUNDLE_BYTES = 512 * 1024;
 const REPORTING_CAPABILITIES = ["notifications.post", "clipboard.write", "inbox.post"];
+/** Git 操作域的能力：声明任一项都要入驻 Git 域——没入驻的扩展碰不到 Git。 */
+const GIT_CAPABILITIES = ["git.repository.read", "git.hosting.read", "git.hosting.write"];
 
 let Ajv;
 let addFormats;
@@ -144,6 +146,16 @@ export function checkExtension(dir) {
   if (dupScripts.length) problem(dir, `process.terminal 里重复的 id：${dupScripts.join("、")}`);
   for (const path of manifest.files?.read ?? []) {
     if (path.split("/").includes("..")) problem(dir, `files.read 路径「${path}」里不能有 ..`);
+  }
+
+  // ── Git 操作域（与宿主 ExtensionManifest.checkGit 同一份）──────────────
+  // 变更名不重、格式与个数由 schema 管；这里管 schema 表达不了的两条成对关系。
+  const mutations = manifest.git?.mutations ?? [];
+  if (has("git.hosting.write") !== mutations.length > 0) {
+    problem(dir, "git.hosting.write 能力与 git.mutations 必须同时出现或同时缺席");
+  }
+  if (GIT_CAPABILITIES.some(has) && !contributes.git) {
+    problem(dir, `声明了 Git 操作域的能力（${GIT_CAPABILITIES.filter(has).join("、")}）就要入驻 Git 域（contributes.git）`);
   }
 
   // ── Inbox 通道 ───────────────────────────────────────────────────────

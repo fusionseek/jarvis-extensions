@@ -9,7 +9,8 @@
 
 v2 按**域**组织（[01](01-overview.md)）：身份与能力在顶层，入驻哪几个域写在 `contributes` 里。
 **必填**：`manifestVersion`、`id`、`version`、`name`、`symbol`、`description`、`author`、`main`、`sdk`、
-`minimumJarvisVersion`、`capabilities`、`contributes`、`inbox`；`contributes` 至少要有 `toolbox` / `window` / `commands` / `services` 之一。
+`minimumJarvisVersion`、`capabilities`、`contributes`、`inbox`；`contributes` 至少要有 `toolbox` / `window` / `commands` / `services` 之一
+（`settings` 与 `git` 都不是入口）。
 `inbox` 不要时写 `false`，不能省略——「没想过」与「想过了，不要」在审核里是两件事。
 
 ## Concepts
@@ -98,6 +99,37 @@ v2 按**域**组织（[01](01-overview.md)）：身份与能力在顶层，入�
 }
 ```
 
+### 一个项目引擎（服务域 + Git 域 + Git 操作域）
+
+```json
+{
+  "manifestVersion": 2,
+  "id": "github-project",
+  "version": "1.0.0",
+  "name": "GitHub Project",
+  "symbol": "tablecells",
+  "description": "给 Jarvis「项目」接上 GitHub Projects v2：读 Project 的字段与条目，把需求 / 迭代 / 缺陷页上的修改写回 GitHub。",
+  "author": { "name": "fusionseek", "github": "fusionseek" },
+  "main": "dist/extension.js",
+  "sdk": "^2.1.0",
+  "minimumJarvisVersion": "3.2.1",
+  "capabilities": [
+    { "id": "git.hosting.read", "reason": "读 Project 的字段、条目与 Issue 关系" },
+    { "id": "git.hosting.write", "reason": "把你在项目页上的修改写回 GitHub" }
+  ],
+  "git": { "mutations": ["updateProjectV2ItemFieldValue", "closeIssue"] },
+  "contributes": {
+    "services": [
+      { "point": "project.engine", "id": "github", "title": "GitHub Project", "subtitle": "读写 GitHub Projects v2" }
+    ],
+    "git": { "hosting": ["github"], "summary": "Git 设置「Project 关联」与 Projects 分组" }
+  },
+  "inbox": false
+}
+```
+
+`git.mutations` 这里只留两个示意；真实的项目引擎把它代码里会发的每一个变更都写出来。
+
 ### 身份
 
 | 字段 | 规则 | 为什么 |
@@ -126,12 +158,14 @@ v2 按**域**组织（[01](01-overview.md)）：身份与能力在顶层，入�
 | `process.executables[]` | 声明了 `process.run` 时必填：`{ name, arguments: [[…], …] }`，`name` 不带路径；1–8 组参数，每组 ≤ 8 个，每个参数 1–64 字、**不带空白与 `; & \| \` $ < >`** | 一次调用的参数必须与其中某一组**逐项相等**——不支持通配，读 manifest 就知道它会跑什么 |
 | `process.terminal[]` | 声明了 `terminal.run` 时必填：`{ id, title ≤ 16, script: [行…] }`，1–80 行、每行 ≤ 240 字 | 扩展只能按 id 点名，不能传脚本内容；宿主在前面补 `#!/bin/sh` 与「执行完删掉自己」那一行 |
 | `files.read[]` | 声明了 `files.read` 时必填：1–8 个绝对路径或 `~` 开头的**文件**，不能有通配与 `..` | 宿主展开 `~`、规整之后逐字比；目录读不了 |
+| `git.mutations[]` | 声明了 `git.hosting.write` 时必填：1–32 个不重复的 GraphQL 变更名（`^[_A-Za-z][_0-9A-Za-z]*$`，≤ 80 字） | 宿主只执行顶层字段名**都在这里**的变更（别名不算数、顶层不许片段展开）；授权屏写「会以你的身份修改：…」、商店详情一行「Git 变更」逐字列出 |
 
 能力目录见 [06](06-capabilities.md)。隐式能力（`panel.*`、`window.open`、`commands.run`、`storage.*`、`preferences.*`、
 `permissions.*`、`text.*`、`host.*`、`log`）**不在这里声明**：它们碰不到用户的数据。
 
 **受限执行声明要最小、要逐字**：只写真的会跑的那几组参数、真的会读的那一个文件。多写一组参数，
-用户在授权屏上就多点了一次头去允许一件扩展根本不做的事。
+用户在授权屏上就多点了一次头去允许一件扩展根本不做的事。`git.mutations` 同理：只写代码里真的会发的变更，
+像 `updateIssue` 这种一个名字能改很多东西的变更，README 里要写清你只改了哪一项。
 
 ### `contributes`：入驻的域
 
@@ -183,6 +217,18 @@ time ts timestamp 时间 时间戳 json regex 正则 mind 脑图 flow 流程图 
 todo 待办 memo note 速记 记 find 查找 diff compare 对比 比较 gitdiff gdiff git对比 git gitlog git图 clean cleanup 清理`。
 撞了宿主不加载那一条（设置页写明），`validate.mjs` 在 PR 里就拦下。两个扩展认同一个词时宿主先装先得，仓库里不允许出现。
 
+#### Git 域：`contributes.git`
+
+`{ "hosting": [ … ], "summary": "…" }`，两个键都必填。**它不是入口**：只入驻 Git 域的扩展仍要入驻工具箱、窗口、指令、服务之一。
+
+| 字段 | 规则 | 为什么 |
+| --- | --- | --- |
+| `hosting` | 1–4 个不重复的托管服务标识（与扩展 id 同一套规则），例如 `github` | 与 Jarvis Git 服务的服务标识一致。Git 操作域的能力**只对这里列出的服务放行**：没入驻的服务，扩展碰不到 |
+| `summary` | 1–40 字 | 商店卡片「装上之后」那一行：「Git · <summary>」，告诉用户在 Git 里去哪找它 |
+
+入驻 Git 域的扩展才能声明 Git 操作域的能力（`git.repository.read` / `git.hosting.read` / `git.hosting.write`，见 [06](06-capabilities.md)）；
+宿主在 Git 设置对应托管服务下给它画「关联」区段（项目引擎是「Project 关联」，[10](10-settings.md)）。
+
 #### 设置域：`contributes.settings`
 
 `{ "preferences": [ … ] }`，1–16 项。控件由宿主画在设置页「扩展」区段它那块面板里（[10](10-settings.md)）：
@@ -205,12 +251,12 @@ todo 待办 memo note 速记 记 find 查找 diff compare 对比 比较 gitdiff 
 
 | 字段 | 规则 | 为什么 |
 | --- | --- | --- |
-| `point` | 宿主开放的扩展点：`junkClean.engine` | **扩展点是宿主定的**：方法、载荷、设置画在哪都写死在宿主与 SDK 里 |
+| `point` | 宿主开放的扩展点：`junkClean.engine`（清理引擎）、`project.engine`（项目引擎） | **扩展点是宿主定的**：方法、载荷、设置画在哪都写死在宿主与 SDK 里 |
 | `id` | 与扩展 id 同一套规则，扩展内唯一 | 引擎 id = `<扩展 id>/<服务 id>`；`defineExtension({ services })` 按它对上实现 |
-| `title` | 1–16 字 | 在那个内置能力里的名字，例如「深度清理（Mole）」——设置 · 清理 里那一行开关的标题 |
+| `title` | 1–16 字 | 在那个内置能力里的名字，例如「深度清理（Mole）」——设置 · 清理 里那一行开关的标题；项目引擎的是 Git 设置与「项目」里引擎的名字 |
 | `subtitle` | 1–80 字 | 一句话说它比内置的多做了什么 |
 | `notes` | ≤ 6 条，每条 1–80 字 | 须知：画在设置区段与清理工具的范围说明里 |
-| `preferences` | ≤ 8 项，形状同设置域 | **画在扩展点指定的那个内置区段里**（`junkClean.engine` → 设置 · 清理），不在「扩展」区段 |
+| `preferences` | ≤ 8 项，形状同设置域 | **画在扩展点指定的那个内置区段里**（`junkClean.engine` → 设置 · 清理，`project.engine` → 设置 · Git），不在「扩展」区段 |
 
 偏好的 key 在设置域与全部服务之间**共用一个命名空间**，不能重。
 
@@ -228,7 +274,9 @@ todo 待办 memo note 速记 记 find 查找 diff compare 对比 比较 gitdiff 
 
 ### 跨字段规则（validate.mjs 与宿主同一份）
 
-- `network.https` ⇔ `network`；`process.run` ⇔ `process.executables`；`terminal.run` ⇔ `process.terminal`；`files.read` ⇔ `files`。
+- `network.https` ⇔ `network`；`process.run` ⇔ `process.executables`；`terminal.run` ⇔ `process.terminal`；`files.read` ⇔ `files`；
+  `git.hosting.write` ⇔ `git.mutations`。
+- 声明了任一项 `git.*` 能力 ⇒ 入驻 Git 域（`contributes.git`）。
 - `inbox.messages` ⇔ 声明 `inbox.post`；`inbox.notifications` ⇔ 声明 `notifications.post`；`inbox: false` 时两项都不能声明。
 - 任一命令带 `hotkey` ⇔ 声明 `hotkeys.register`；两条命令不能用同一个快捷键。
 - `presentation: "toolbox" | "popover"` ⇒ 入驻工具箱域；`"window"` ⇒ 入驻窗口域；`"silent"` ⇒ 至少一种交结果的能力。
@@ -254,6 +302,8 @@ node scripts/validate.mjs extensions/foo  # 校验一个
 - `capabilities` 里多声明一项而代码里没用到，审核会问；少声明一项而代码里用到了，运行时得到 `capability.undeclared`。
 - 受限执行的参数组合里出现「为了以后可能用到」的那一组，审核不通过。
 - v1 的 `toolbox.symbol/name`、`commands`、`settings`、`background`、`workspace`、`bigquery`、`inbox.cards` 都不存在了——schema 会直接拒。
+- 顶层 `git`（声明对象）与 `contributes.git`（域）是两样东西：前者说「我会改什么」，后者说「我在 Git 里出现在哪」。
+- 用了 `jarvis.git` 或 `project.engine` 的扩展写 `"sdk": "^2.1.0"`：SDK 是内联进产物的，2.0 的 SDK 里没有这两样。
 
 ## Related Links
 

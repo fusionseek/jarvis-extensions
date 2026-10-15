@@ -1,9 +1,9 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-11T12:51:34.304Z",
+  "generatedAt": "2026-10-15T06:32:54.647Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "2fad3535cd81b008862e29c623061711ebd2d2f5"
+    "commit": "68383617d1fd1d114305947752ab6ee91f9a1931"
   },
   "extensions": [
     {
@@ -142,10 +142,10 @@
       "path": "extensions/http-status",
       "bundle": {
         "path": "extensions/http-status/dist/extension.js",
-        "sha256": "949bece6423e6c7ad4962005c38691fe280dec59f84ef44c15aa24ed77b06a3f",
-        "byteCount": 116182
+        "sha256": "cf0b625676bdd72e71e8963be9a79988a20a93eb4140738913d0e04d0231f633",
+        "byteCount": 117546
       },
-      "updatedAt": "2026-10-06T14:51:08+08:00"
+      "updatedAt": "2026-10-11T20:53:17+08:00"
     },
     {
       "manifest": {
@@ -266,10 +266,10 @@
       "path": "extensions/mole-clean",
       "bundle": {
         "path": "extensions/mole-clean/dist/extension.js",
-        "sha256": "2022044a3d43d1552a78174df9209f34f0267d5318a593692f49dbb5bd5190ba",
-        "byteCount": 50231
+        "sha256": "3d99db24799004ca8537a73d48990d39bb96dcf10f3a3000d1d7789142e74822",
+        "byteCount": 51595
       },
-      "updatedAt": "2026-10-11T12:51:34.010Z"
+      "updatedAt": "2026-10-11T20:53:17+08:00"
     },
     {
       "manifest": {
@@ -358,10 +358,10 @@
       "path": "extensions/send-to-phone",
       "bundle": {
         "path": "extensions/send-to-phone/dist/extension.js",
-        "sha256": "a52c8eaa66a9f0e4237f8b396581d8d6fa9dd4c1a47eef4c6e1ec4408170d7eb",
-        "byteCount": 35219
+        "sha256": "3820d996de3b6b125b00956ec00a148e518983ab2e177e0b738fa79494057c04",
+        "byteCount": 36583
       },
-      "updatedAt": "2026-10-06T14:51:08+08:00"
+      "updatedAt": "2026-10-11T20:53:17+08:00"
     },
     {
       "manifest": {
@@ -597,10 +597,10 @@
       "path": "extensions/translation",
       "bundle": {
         "path": "extensions/translation/dist/extension.js",
-        "sha256": "48a91ecddcbf78f29195d719ee094a7e202a84e044fcf3ab401b6651a17959dc",
-        "byteCount": 80441
+        "sha256": "e47bfc50155119dcce2c926fe946c04c2c8c6af4bb6e98b700f0d1a7acab376c",
+        "byteCount": 81805
       },
-      "updatedAt": "2026-10-06T14:51:08+08:00"
+      "updatedAt": "2026-10-11T20:53:17+08:00"
     }
   ]
 }

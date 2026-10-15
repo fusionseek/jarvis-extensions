@@ -20,7 +20,7 @@ v2 的目录**只列宿主真的做得到的**：声明得到、调不到的能�
 
 | 属性 | 值 |
 | --- | --- |
-| `sdk.version` | SDK 版本，`2.0.0` |
+| `sdk.version` | SDK 版本，`2.1.0` |
 | `host.version` / `host.channel` | 宿主版本（`CFBundleShortVersionString`）、`release` / `development` |
 | `environment` | `reduceMotion` / `reduceTransparency` / `increaseContrast` / `locale`。界面上的适配由宿主做；这里给出来是让扩展自己的逻辑也能让步 |
 
@@ -211,13 +211,54 @@ v1 的卡片动作与 `dismiss` 已删除（[11](11-inbox.md)）。
 宿主在正文前补 `#!/bin/sh` 与「执行完删掉自己」那一行，写到属主独占的临时目录再交给终端打开；打开即返回，不等它跑完。
 每分钟 ≤ 6 次。装完之后的事（工具在不在了）由扩展自己再 `locate` 一次。
 
+### Git 操作域（SDK 2.1）
+
+三项能力只给**入驻了 Git 域**（`contributes.git`）的扩展；托管服务只认 `contributes.git.hosting` 里列出的那几个。
+宿主替扩展执行、把结果交回去：**token 只在宿主的钥匙串里**，`gh` 只在宿主的 Git 服务里跑，扩展拿到的是 JSON。
+
+#### `git.repository.read` — 读取本地仓库
+
+`jarvis.git.repositories()` → `[{ name, host?, repository? }]`：Jarvis 最近打开过的仓库（至多 20 个），
+`name` 是目录名，`host` / `repository`（`owner/name`）从 `origin` 读；读不出 `origin` 的跳过。**不给本机路径**。每分钟 ≤ 60 次。
+
+#### `git.hosting.read` — 读取 Git 服务数据
+
+| 方法 | 说明 |
+| --- | --- |
+| `hosting.viewer({ hosting? })` | 此刻那把 token 的 `{ login?, scopes?, projectAccess }`。`projectAccess` 从 classic token 的 scope 推：`readWrite`（有 `project`）/ `readOnly`（只有 `read:project`）/ `none` / `unknown`（fine-grained token 不报 scope，只能试了才知道） |
+| `hosting.query({ hosting?, query, variables? })` | 执行一份**查询**，原样交回 `{ data, errors? }`。文档里是 `mutation` / `subscription` 以 `invalid.argument` 拒绝 |
+
+#### `git.hosting.write` — 修改 Git 服务数据
+
+`hosting.mutate({ hosting?, query, variables? })`：执行一份变更（查询也放行，方便改完读回）。
+顶层字段名（别名之后的真名）必须**都**在 manifest `git.mutations` 里，否则 `capability.undeclared`；顶层不许片段展开（不让变更字段藏进片段里）。
+
+共同规则：
+
+| 规则 | 值 | 为什么 |
+| --- | --- | --- |
+| 文档 | 恰好一个操作，可以带具名片段；≤ 64 KB | 宿主要先认清它是查询还是哪几个变更，才谈得上放不放行 |
+| `hosting` | 省略时宿主取 `contributes.git.hosting` 里的一个；只声明一个时可以省略，声明多个就显式传。不在声明里 → `capability.undeclared` | 没入驻的服务碰不到 |
+| 部分成功 | `data` 与 `errors` 同时出现时**照样兑现**，由扩展决定接不接受 | GitHub 常见：一条 Issue 在私有仓库里、一个字段没权限，整页其余都好好的 |
+| 整次失败 | 总开关关着、没添加这个服务、缺 token、`gh` 没装、超时 → `host.failure`，`message` 是一句人话 | 原样显示给用户，他知道去 设置 · Git 修哪里 |
+| 限频 | 读 240 次 / 分钟、写 60 次 / 分钟 | 一次全量同步 1,240 项约 13 页加一次字段；上限只挡死循环（GitHub 自己还有每小时 5,000 点） |
+
+```ts
+const { data, errors } = await jarvis.git.hosting.query<{ viewer: { login: string } }>({
+  query: "query { viewer { login } }",
+});
+if (!data) throw new Error(errors?.[0]?.message ?? "GitHub 没有回应");
+```
+
+用户给的值（标签名、登录名、搜索串）**一律放 `variables`**，不要拼进文档：拼进去的引号会把文档变成另一份文档。
+
 ### 错误码
 
 | `code` | 含义 | 扩展该做什么 |
 | --- | --- | --- |
 | `permission.denied` | 用户没授或撤销了 | 画拒绝态 + 一颗 `request` 按钮；服务写进 `status` |
 | `permission.unavailable` | Jarvis 自己没拿到系统权限 | 画说明 + `openSystemSettings` 按钮 |
-| `capability.undeclared` | manifest 没声明，或受限执行的对象不是声明过的那一个 | 开发期错误；改 manifest |
+| `capability.undeclared` | manifest 没声明，或受限执行的对象不是声明过的那一个（含没写进 `git.mutations` 的变更、没入驻的托管服务） | 开发期错误；改 manifest |
 | `capability.unknown` | 宿主不认识这个方法（SDK 比宿主新，或宿主还没接上） | 检查 `minimumJarvisVersion` |
 | `surface.unavailable` | 这一面不存在：后台会话里调了界面类能力，或扩展没有入驻那个域 | 静默命令与服务别碰面板与窗口 |
 | `rate.limited` | 频率或体积超限 | 退避；不要重试风暴 |
@@ -242,9 +283,12 @@ const { exitCode } = await handle.result;
 - `files.tail` 的 `offset` 是**字节**偏移，不是行号；跨调用自己记着。
 - `inbox.post` 不是卡片：没有 id、没有动作、不能撤回；同一件事别每秒投一条。
 - 后台会话里没有界面：静默命令要交结果只能靠剪贴板、横幅与 Inbox。
+- `git.hosting.query` / `mutate` 的部分成功不会被拒：先看 `data` 再看 `errors`，别只看有没有抛错。
+- `git.mutations` 按**顶层字段名**放行：一份文档里放几个变更（别名区分）可以，每一个都要声明。
 
 ## Related Links
 
 - [05 · 能力授权模型](05-permissions.md)
 - [10 · 设置域与服务扩展点](10-settings.md)（服务没有页面，它的东西画在哪）
-- [`sdk/src/capabilities.ts`](../sdk/src/capabilities.ts)、`jarvis-mac/Sources/Jarvis/App/Extensions/ExtensionCapabilityHost.swift`
+- [`sdk/src/capabilities.ts`](../sdk/src/capabilities.ts)、`jarvis-mac/Sources/Jarvis/App/Extensions/ExtensionCapabilityHost.swift`、
+  `jarvis-mac/Sources/Jarvis/Domain/GitHosting/GitHostingGraphQL.swift`（查询 / 变更的认定与放行）

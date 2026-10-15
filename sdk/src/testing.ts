@@ -18,6 +18,7 @@
 import type { CommitRequest, HostEvent, InvokeRequest, InvokeResult, SerializedNode, ServiceCall } from "./bridge.js";
 import type { JarvisErrorShape } from "./capabilities.js";
 import type { ServicePoint } from "./manifest.js";
+import type { ProjectEngineRequest } from "./services.js";
 
 /** 异步桩。第二个参数可以往订阅 token 上推事件（`process.run` 推输出行就靠它）。 */
 export type AsyncStub = (params: unknown, host: TestHost) => Promise<unknown> | unknown;
@@ -58,7 +59,10 @@ export interface TestHost {
   dispatch(event: HostEvent): void;
   /** 往一个订阅 token 上推一次事件。 */
   emit(token: string, payload: unknown): void;
-  /** 调一次服务扩展点的方法，等扩展交回结果。 */
+  /**
+   * 调一次服务扩展点的方法，等扩展交回结果。`point` 省略时是 `junkClean.engine`；
+   * `project.engine` 的方法入参放在 `request`（线缆上的 `params.request`）。
+   */
   callService(request: {
     point?: ServicePoint;
     service: string;
@@ -66,6 +70,7 @@ export interface TestHost {
     preferences?: Record<string, unknown>;
     granted?: string[];
     actionId?: string;
+    request?: ProjectEngineRequest;
   }): Promise<ServiceOutcome>;
   /** 取消一次进行中的服务调用（发 `serviceCancel`）。`callService` 之前先拿 `nextCallId`。 */
   cancelService(callId: number): void;
@@ -150,6 +155,7 @@ export function createTestHost(options: TestHostOptions = {}): TestHost {
               preferences: request.preferences ?? {},
               granted: request.granted ?? [],
               ...(request.actionId !== undefined ? { actionId: request.actionId } : {}),
+              ...(request.request !== undefined ? { request: request.request } : {}),
             },
           },
         });

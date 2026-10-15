@@ -22,7 +22,7 @@
 | 入驻 | 何时问 | 在哪问 |
 | --- | --- | --- |
 | 有界面（工具箱 / 窗口） | **第一次进入**那一面时，一次问完 manifest 声明的全部能力 | 那一面里（面板页面或窗口标签）画授权屏，代替扩展的页面 |
-| 服务 | **第一次启用**它时（例如在设置 · 清理 里打开「深度清理（Mole）」） | 设置窗口里一扇 sheet（420×520），同一个授权屏 |
+| 服务 | **第一次启用**它时（例如在设置 · 清理 里打开「深度清理（Mole）」）；项目引擎在**第一次用它之前**（打开工作区「项目」或 Git 设置「Project 关联」） | 设置窗口或工作区里一扇 sheet（420×520），同一个授权屏 |
 | 只有指令 | 第一次按下它的快捷键或回车它的 `/` 指令时 | 有界面的命令：唤出那一面先问；静默命令跑在后台会话里，**不问**，没点头的能力照常拒绝 |
 
 不在安装时问：装了没用过的扩展不该拿着任何能力。不在每次调用时问：一个每按一下就弹一次的工具教会用户闭着眼点允许。
@@ -51,6 +51,8 @@
 | `process.run` | 会运行：mo clean、mo --version。**运行起来的命令拥有 Jarvis 的全部系统权限（含完全磁盘访问）** |
 | `files.read` | 会读取：~/Library/Logs/mole/operations.log |
 | `terminal.run` | 会在终端里执行：安装 Mole（脚本写在扩展的 manifest 里，执行过程在终端里看得见） |
+| `git.hosting.read` | 会用你在 Git 服务里填的 token 读取数据；token 本身不交给扩展 |
+| `git.hosting.write` | 会以你的身份修改：updateProjectV2ItemFieldValue、closeIssue、…（manifest `git.mutations` 逐字列出） |
 
 - 默认全开、每条可单独关：用户要做的是"关掉不想给的"，不是"逐条勾上"。
 - 主按钮写「允许 N 项」；全部关掉时变成「不授权，仍然打开」——用户关掉全部仍然可以进去看看，扩展要自己画出受限态。
@@ -91,11 +93,16 @@ try {
 | 档 | 能力 | 判据 |
 | --- | --- | --- |
 | 低 | `system.openURL`、`ocr.recognize`、`speech.speak` | 用户看得见后果，或只处理扩展已经拿到的东西 |
-| 中 | `clipboard.read`、`clipboard.write`、`notifications.post`、`inbox.post`、`quickTransfer.status`、`hotkeys.register` | 读或写用户自己的数据但不出本机；或占一组全局按键 |
-| 高 | `screenshot.capture`、`network.https`、`quickTransfer.control`、`quickTransfer.send`、`process.run`、`files.read`、`terminal.run` | 看得见屏幕、出得了本机、开得了端口、跑得了命令、读得了文件 |
+| 中 | `clipboard.read`、`clipboard.write`、`notifications.post`、`inbox.post`、`quickTransfer.status`、`hotkeys.register`、`git.repository.read`、`git.hosting.read` | 读或写用户自己的数据但不出本机；或占一组全局按键；或经宿主**只读**用户已经接上的 Git 服务 |
+| 高 | `screenshot.capture`、`network.https`、`quickTransfer.control`、`quickTransfer.send`、`process.run`、`files.read`、`terminal.run`、`git.hosting.write` | 看得见屏幕、出得了本机、开得了端口、跑得了命令、读得了文件、以用户的身份改远端数据 |
 
 **受限执行为什么是高风险**：被允许 `process.run` 的扩展，跑出来的进程继承 Jarvis 的全部系统权限——
 用户给 Jarvis 的完全磁盘访问，那个进程也有。声明对象逐字列在授权屏上，就是为了让用户知道自己允许的到底是哪一条命令。
+
+**Git 操作域为什么读是中、写是高**：读与写走的是同一把 token（用户在 设置 · Git · Git 服务 里填的），
+但 token **从不交给扩展**——扩展交一份 GraphQL，宿主替它执行、把结果交回去。读只放行查询，碰到的是用户本来就看得到的东西；
+写以用户的身份改远端（关 Issue、改 Project 字段），别人看得见、撤回要人工，因此是高风险，且只放行 manifest `git.mutations` 里逐字写出的变更。
+`git.repository.read` 只给 Jarvis 最近打开过的仓库的名字与远端身份，**不给本机路径**。
 
 ### 系统权限的借用
 
@@ -116,6 +123,8 @@ try {
 - 「暂不」会把每一项都记成拒绝；下一次进入不再问，要改去设置页。
 - 更新后新增的能力在下次进入时问；撤销过的不重问。
 - `panel.*`、`window.open`、`storage.*`、`preferences.*`、`text.*`、`host.*` 不进授权屏——它们碰不到用户的数据。
+- 只授予了 `git.hosting.read`、没授予 `git.hosting.write` 的项目引擎照样能读：宿主把「项目」里的编辑入口置灰（只读浏览），
+  不是整块用不了。
   `copy` 节点写剪贴板也不需要 `clipboard.write`：那是用户按下复制钮的那一下。
 - `permissions.request` 与 `panel.collapse` 只该在用户动作的回调里调用；宿主这一版没有硬拦，审核时查。
 

@@ -2,7 +2,7 @@
  * `extension.json` 的类型。**真源是 `schemas/extension.v2.schema.json`**，这里只是它的
  * TypeScript 投影，供 `defineExtension` 与脚手架做静态检查；两处冲突时以 schema 为准。
  *
- * v2 按「域」组织：一个扩展在 `contributes` 里声明它入驻哪几个域——工具箱、窗口、指令、设置、服务。
+ * v2 按「域」组织：一个扩展在 `contributes` 里声明它入驻哪几个域——工具箱、窗口、指令、设置、服务、Git。
  * **悬浮球不是可入驻的域**：它是 Jarvis 的主入口，手势、动画与状态都是固定的；扩展只能通过
  * 「扩展一个本来就驱动悬浮球的内置能力」（服务域，例如清理引擎）间接影响它。
  */
@@ -27,7 +27,13 @@ export type CapabilityID =
   /** 读 manifest `files.read` 里声明过的文件。 */
   | "files.read"
   /** 在终端里执行 manifest `process.terminal` 里逐字写着的脚本。 */
-  | "terminal.run";
+  | "terminal.run"
+  /** Git 操作域：读 Jarvis 最近打开过的仓库（名字与远端身份，不给本机路径）。要入驻 Git 域。 */
+  | "git.repository.read"
+  /** Git 操作域：经宿主的 Git 服务执行**只读** GraphQL、读 token 的身份与权限范围；token 不交给扩展。要入驻 Git 域。 */
+  | "git.hosting.read"
+  /** Git 操作域：经宿主的 Git 服务执行 manifest `git.mutations` 里逐字声明过的变更。要入驻 Git 域。 */
+  | "git.hosting.write";
 
 /** 授权屏按风险分组；一档一个标签，颜色由宿主决定。 */
 export type CapabilityTier = "low" | "medium" | "high";
@@ -46,6 +52,8 @@ export const capabilityTiers: Readonly<Record<CapabilityID, CapabilityTier>> = {
   "inbox.post": "medium",
   "quickTransfer.status": "medium",
   "hotkeys.register": "medium",
+  "git.repository.read": "medium",
+  "git.hosting.read": "medium",
   "screenshot.capture": "high",
   "network.https": "high",
   "quickTransfer.control": "high",
@@ -53,6 +61,7 @@ export const capabilityTiers: Readonly<Record<CapabilityID, CapabilityTier>> = {
   "process.run": "high",
   "files.read": "high",
   "terminal.run": "high",
+  "git.hosting.write": "high",
 };
 
 /** 一项能力申请。 */
@@ -150,12 +159,18 @@ export interface SettingsContribution {
   preferences: Preference[];
 }
 
-/** 宿主开放的扩展点（服务域）。 */
-export type ServicePoint = "junkClean.engine";
+/**
+ * 宿主开放的扩展点（服务域）。
+ *
+ * - `junkClean.engine`：清理引擎，设置画在「清理」；
+ * - `project.engine`：项目引擎，Jarvis「项目」（需求 / 迭代 / 缺陷）的数据来源，设置画在「Git」。
+ */
+export type ServicePoint = "junkClean.engine" | "project.engine";
 
 /**
  * 服务域：实现宿主开放的一个扩展点。**没有独立界面**——它体现在它扩展的那个内置能力里，
- * 它的 `preferences` 也画在扩展点指定的那个内置设置区段里（`junkClean.engine` → 设置「清理」）。
+ * 它的 `preferences` 也画在扩展点指定的那个内置设置区段里（`junkClean.engine` → 设置「清理」，
+ * `project.engine` → 设置「Git」）。
  */
 export interface ServiceContribution {
   point: ServicePoint;
@@ -171,6 +186,17 @@ export interface ServiceContribution {
   preferences?: Preference[];
 }
 
+/**
+ * Git 域：入驻 Git 的哪些托管服务、在那里是什么。没入驻的扩展碰不到 Git——
+ * Git 操作域的能力（`git.*`）只对这里列出的服务放行。它不是入口：只有它的扩展仍要入驻工具箱、窗口、指令、服务之一。
+ */
+export interface GitContribution {
+  /** 1–4 个不重复的托管服务标识（例如 `github`），与 Jarvis Git 服务的服务标识一致。 */
+  hosting: string[];
+  /** 1–40 字。商店「装上之后」那一行：在 Git 里出现在哪。 */
+  summary: string;
+}
+
 /** 扩展入驻的域。至少要有工具箱、窗口、指令、服务之一。 */
 export interface Contributes {
   toolbox?: ToolboxContribution;
@@ -178,6 +204,8 @@ export interface Contributes {
   commands?: CommandSpec[];
   settings?: SettingsContribution;
   services?: ServiceContribution[];
+  /** 声明了任一项 `git.*` 能力时必填。 */
+  git?: GitContribution;
 }
 
 /** 受限执行里的一个可执行文件。 */
@@ -203,6 +231,15 @@ export interface ProcessDeclaration {
   executables?: ExecutableDeclaration[];
   /** 配 `terminal.run`。 */
   terminal?: TerminalScriptDeclaration[];
+}
+
+/**
+ * Git 操作域的声明。声明了 `git.hosting.write` 时必填：宿主只执行这里逐字写出的 GraphQL 变更
+ * （按顶层字段名比对，别名不算数），查询不受它限制。授权屏与商店详情把它们逐字列给用户。
+ */
+export interface GitDeclaration {
+  /** 1–32 个不重复的变更名（`^[_A-Za-z][_0-9A-Za-z]*$`，≤ 80 字），例如 `updateProjectV2ItemFieldValue`。 */
+  mutations: string[];
 }
 
 /** Inbox 通道。 */
@@ -235,6 +272,8 @@ export interface ExtensionManifest {
   process?: ProcessDeclaration;
   /** 声明了 `files.read` 时必填。 */
   files?: { read: string[] };
+  /** 声明了 `git.hosting.write` 时必填。 */
+  git?: GitDeclaration;
   contributes: Contributes;
   /** false = 不进 Inbox。 */
   inbox: false | InboxParticipation;

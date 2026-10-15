@@ -10,7 +10,8 @@ Jarvis 的开放平台：这个仓库就是**扩展商店**。Jarvis 工具箱�
 | 窗口 | `contributes.window` | 工作区窗口里一枚标签 |
 | 指令 | `contributes.commands` | 全局搜索与速记里的 `/` 指令、全局快捷键；受限执行（跑声明过的命令）归这个域 |
 | 设置 | `contributes.settings` | 设置 › 扩展 里它那块面板，控件由宿主画 |
-| 服务 | `contributes.services` | 没有界面；扩展一个内置能力（`junkClean.engine`：设置 › 清理 里多一个清理引擎） |
+| 服务 | `contributes.services` | 没有界面；扩展一个内置能力（`junkClean.engine`：设置 › 清理 里多一个清理引擎；`project.engine`：Jarvis「项目」的数据来源） |
+| Git | `contributes.git` | 不是入口；Git 设置对应托管服务下它的「关联」区段，Git 操作域的能力（`git.*`）只给入驻了它的扩展 |
 | Inbox（通道） | `inbox` | 一条 Inbox 消息 / 一条系统横幅 |
 
 ```text

@@ -3,7 +3,8 @@
 ## Overview
 
 这一篇不再是分期方案，而是**宿主已经做了什么**的记录：v2 的域模型、受限执行、服务扩展点与清理引擎可插拔，
-在 `jarvis-mac` 的 Speckit feature `specs/20261011-193606-extension-domains-service-engines/` 里落地。
+在 `jarvis-mac` 的 Speckit feature `specs/20261011-193606-extension-domains-service-engines/` 里落地；
+Git 域、Git 操作域与项目引擎（SDK 2.1）在 `specs/20261015-123126-github-project-management/` 里落地，见文末「第二轮」。
 扩展作者读它，是为了知道每一条规则在宿主哪一个类型里被执行；宿主开发者读它，是为了改动时知道牵动哪几处。
 
 文件名保留 `14-host-integration-plan.md`：其余文档、PR 模板与 jarvis-mac 的引用都指向这个名字，改名只会多出一批死链。
@@ -135,6 +136,40 @@ v1 安装的清理靠一条通用不变量完成——「一条跑不起来、�
 命中「对外产品页当前已在演示的界面发生可见变化」（`jarvis-web` 第 16 节「开放扩展」演示商店与授权，能力数由 mac 派生）。
 结论：**需同步**，落在 `jarvis-web` 自己的提交里，不夹带进 `jarvis-mac` 或本仓库。
 
+### 第二轮：Git 域、Git 操作域与项目引擎（spec `20261015-123126-github-project-management` K / H 节）
+
+仓库主人要 GitHub Project 不进主程序，又要原生表格、甘特复用与最好的性能：于是宿主做提供方无关的「项目」框架，
+GitHub Projects v2 的全部专属知识做成扩展 `github-project`，插在新扩展点 `project.engine` 上。
+
+| # | 决策 | 一句话 |
+| --- | --- | --- |
+| K-1 | 宿主做框架、扩展做引擎 | 工作项、通用字段、映射配置、工作流、漂移守卫、镜像、界面在宿主；GraphQL 与字段翻译在扩展 |
+| K-3 | 新扩展点 `project.engine` | `describe` / `listProjects` / `readSchema` / `readItems` / `applyEdit` / `createField` / `createOption`；入参在 `params.request`；引擎只交原始值 |
+| K-4 | 有无引擎 | 没有引擎时「项目」、Projects 分组、Project 行、「Project 关联」都不出现；卸载删镜像、保留配置 |
+| K-5 | 只追加不改名 | 契约方法、字段类型名、能力 id 一经发布不改；`describe` 报契约版本与可选能力，宿主按它降级 |
+| H-1 | 新域 `contributes.git` | `{ hosting[], summary }`；不是入口；Git 操作域的能力只对入驻了的托管服务放行 |
+| H-2 | Git 操作域三项能力 | `git.repository.read`（中）、`git.hosting.read`（中）、`git.hosting.write`（高）；目录 16 → 19。设计稿里的 `git.events`、`git.branch.create` 本期没有调用方，不进目录 |
+| H-2 | 变更白名单 | 顶层 `git.mutations`；宿主按 GraphQL 文档的顶层字段名逐个比对，`git.hosting.write` ⇔ `git.mutations` 成对 |
+| H-3 | 边界不破 | `gh` 仍只在宿主的 `Infrastructure/GitHosting/`；扩展 → 闸门 → 宿主 → `GitHostingService`；token 不交给扩展 |
+
+| 类型 | 文件（相对 `jarvis-mac/Sources/Jarvis/`） | 管什么 |
+| --- | --- | --- |
+| `ExtensionCapabilityID`（+3）、`ExtensionGitDeclaration`、`ExtensionGitContribution`、`ExtensionDomain.git`、`ExtensionServicePoint.projectEngine` | `Domain/Extensions/ExtensionManifest.swift` | 能力与档位、`git.mutations`、Git 域、扩展点（设置画在「Git」、角色「项目引擎」） |
+| `checkGit` | `Domain/Extensions/ExtensionManifestValidation.swift` | `git.hosting.write` ⇔ `git.mutations`、变更名格式 / 不重 / ≤ 32、`contributes.git` 的形状、`git.*` ⇒ 入驻 Git 域 |
+| `ExtensionCapabilityMap`、`ExtensionRateLimitPolicy` | `Domain/Extensions/ExtensionCapabilityMap.swift` | `git.repositories` / `git.hosting.viewer` / `git.hosting.query` / `git.hosting.mutate` → 能力；读 240、写 60、仓库 60 次 / 分钟 |
+| `GitHostingGraphQLPolicy`、`GitHostingIdentity` | `Domain/GitHosting/GitHostingGraphQL.swift` | GraphQL 文档的最小解析：一个操作、查询 / 变更 / 订阅、顶层字段名；token 的 scope → `projectAccess` |
+| `ExtensionProjectEngineContract` | `Domain/Extensions/ExtensionProjectEngineContract.swift` | `project.engine` 各返回值的宽进严出解码、`applyEdit` 请求编码 |
+| `ExtensionCapabilityHost`（Git 操作域一段） | `App/Extensions/ExtensionCapabilityHost.swift` | 闸门之后：认定托管服务、放行判定、经 `GitHostingService` 执行 |
+| `ExtensionSessionModel` | `App/Extensions/ExtensionSessionModel.swift` | 服务调用的 `request` 与超时（`describe` 15 秒、`readItems` 60 秒、其余 45 秒） |
+| `ProjectEngineRegistry`、`ExtensionProjectEngineClient` | `App/Projects/` | 引擎表、第一次用之前的授权、`describe` 缓存、调用 |
+| `ExtensionStorePolicy`、`ExtensionConsentView` | `Domain/Extensions/ExtensionStorePolicy.swift`、`UI/FloatingExtensionHostView.swift` | 商店「Git · summary」与「Git 变更」事实行；授权屏上 `git.hosting.read` / `write` 那一句 |
+
+| 产物 | 位置 |
+| --- | --- |
+| manifest | 本仓 `schemas/extension.v2.schema.json`：能力枚举 +3、顶层 `git`、`contributes.git`、扩展点 `project.engine` |
+| 线缆 | `jarvis-mac/contracts/schemas/extensions/bridge.v2.schema.json`：`serviceCall` 的点与方法、`$defs.projectEngine*` 等；样例 `contracts/fixtures/extensions/bridge/project-engine-*.json` |
+| SDK 2.1 | 本仓 `sdk/src/`：`jarvis.git`（`capabilities.ts`）、`ProjectEngine`（`services.ts`）、`ServiceCall.params.request`（`bridge.ts`）、运行时分派（`index.ts`）、替身 `callService({ request })`（`testing.ts`） |
+
 ## Usage
 
 - 扩展作者：遇到一条规则想知道"是谁在拦"，按上表找到类型名，在 `jarvis-mac` 里读它的文档注释——每条规则都写了为什么。
@@ -150,5 +185,6 @@ v1 安装的清理靠一条通用不变量完成——「一条跑不起来、�
 ## Related Links
 
 - `jarvis-mac/specs/20261011-193606-extension-domains-service-engines/`（`spec.md`、`plan.md`、`tasks.md`、`validation.md`）
+- `jarvis-mac/specs/20261015-123126-github-project-management/`（第二轮：Git 域、Git 操作域、项目引擎；`research.md` 是 GitHub GraphQL 的实测）
 - `jarvis-mac/docs/foundation/extensions.md`、`docs/foundation/junk-clean.md`
 - [02 · 框架层级设计](02-architecture.md)、[05 · 能力授权模型](05-permissions.md)、[10 · 设置域与服务扩展点](10-settings.md)

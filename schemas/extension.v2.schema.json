@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://jarvis.fusionseek.ai/schemas/extension.v2.schema.json",
   "title": "Jarvis extension manifest v2",
-  "description": "每个扩展目录里的 extension.json。v2 按「域」组织：扩展在 contributes 里声明它入驻工具箱、窗口、指令、设置、服务中的哪几个；悬浮球不是可入驻的域。跨字段规则（能力 ⇔ 声明对象、落点 ⇔ 域、键不重）由 scripts/validate.mjs 与宿主各查一遍，见 docs/03-manifest.md。",
+  "description": "每个扩展目录里的 extension.json。v2 按「域」组织：扩展在 contributes 里声明它入驻工具箱、窗口、指令、设置、服务、Git 中的哪几个；悬浮球不是可入驻的域。跨字段规则（能力 ⇔ 声明对象、落点 ⇔ 域、键不重）由 scripts/validate.mjs 与宿主各查一遍，见 docs/03-manifest.md。",
   "type": "object",
   "required": [
     "manifestVersion",
@@ -91,6 +91,9 @@
     "files": {
       "$ref": "#/$defs/files"
     },
+    "git": {
+      "$ref": "#/$defs/git"
+    },
     "contributes": {
       "$ref": "#/$defs/contributes"
     },
@@ -143,7 +146,7 @@
     },
     "capabilityID": {
       "type": "string",
-      "description": "能力目录见 docs/06-capabilities.md。只列宿主真的做得到的；隐式能力（panel.* / storage.* / preferences.* / text.* / time.* / color.* / window.open / service.* / host.* / log）不在这里声明。",
+      "description": "能力目录见 docs/06-capabilities.md。只列宿主真的做得到的；隐式能力（panel.* / storage.* / preferences.* / text.* / time.* / color.* / window.open / service.* / host.* / log）不在这里声明。git.* 三项是 Git 操作域：声明任一项都要入驻 Git 域（contributes.git），git.hosting.write 还要逐字写出 git.mutations。",
       "enum": [
         "clipboard.read",
         "clipboard.write",
@@ -160,7 +163,10 @@
         "hotkeys.register",
         "process.run",
         "files.read",
-        "terminal.run"
+        "terminal.run",
+        "git.repository.read",
+        "git.hosting.read",
+        "git.hosting.write"
       ]
     },
     "capabilityRequest": {
@@ -309,9 +315,31 @@
       },
       "additionalProperties": false
     },
+    "git": {
+      "type": "object",
+      "description": "Git 操作域的声明。声明了 git.hosting.write 时必填：宿主只执行这里逐字写出的 GraphQL 变更（按顶层字段名比对），查询不受它限制。授权屏与商店详情逐字列给用户。",
+      "required": [
+        "mutations"
+      ],
+      "properties": {
+        "mutations": {
+          "type": "array",
+          "description": "GraphQL 变更的顶层字段名，例如 updateProjectV2ItemFieldValue。只写代码里真的会发的那几个。",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[_A-Za-z][_0-9A-Za-z]*$",
+            "maxLength": 80
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "contributes": {
       "type": "object",
-      "description": "扩展入驻的域。至少要有工具箱、窗口、指令、服务之一——只有设置的扩展没有入口。",
+      "description": "扩展入驻的域。至少要有工具箱、窗口、指令、服务之一——只有设置的扩展没有入口；Git 域也不是入口，它只决定扩展在 Git 里出现在哪、碰得到哪些托管服务。",
       "anyOf": [
         {
           "required": [
@@ -359,6 +387,9 @@
           "items": {
             "$ref": "#/$defs/service"
           }
+        },
+        "git": {
+          "$ref": "#/$defs/gitContribution"
         }
       },
       "additionalProperties": false
@@ -526,9 +557,10 @@
       "properties": {
         "point": {
           "enum": [
-            "junkClean.engine"
+            "junkClean.engine",
+            "project.engine"
           ],
-          "description": "扩展点。junkClean.engine = 清理引擎：设置「清理」里出现它的开关与设置，开着时晃球、/clean 与工具箱清理都走它。"
+          "description": "扩展点。junkClean.engine = 清理引擎：设置「清理」里出现它的开关与设置，开着时晃球、/clean 与工具箱清理都走它。project.engine = 项目引擎：Jarvis「项目」（需求 / 迭代 / 缺陷）的数据来源，设置画在「Git」里；它的托管服务读写要配 Git 域与 Git 操作域的能力。"
         },
         "id": {
           "$ref": "#/$defs/identifier"
@@ -562,6 +594,33 @@
           "items": {
             "$ref": "#/$defs/preference"
           }
+        }
+      },
+      "additionalProperties": false
+    },
+    "gitContribution": {
+      "type": "object",
+      "description": "Git 域：入驻 Git 的哪些托管服务、在那里是什么。没入驻的扩展碰不到 Git；Git 操作域的能力只对这里列出的服务放行。",
+      "required": [
+        "hosting",
+        "summary"
+      ],
+      "properties": {
+        "hosting": {
+          "type": "array",
+          "description": "托管服务标识（例如 github），与 Jarvis Git 服务的服务标识一致。只声明一个时 jarvis.git.hosting.* 可以省略 hosting；声明了多个就每次显式传。",
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "summary": {
+          "type": "string",
+          "description": "商店「装上之后」那一行：在 Git 里出现在哪，例如「Git 设置「Project 关联」与 Projects 分组」。",
+          "minLength": 1,
+          "maxLength": 40
         }
       },
       "additionalProperties": false

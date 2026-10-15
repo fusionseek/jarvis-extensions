@@ -15,6 +15,7 @@
 import type { UINode } from "./ui.js";
 import type { JarvisErrorShape } from "./capabilities.js";
 import type { CommandPresentation, ServicePoint } from "./manifest.js";
+import type { JunkCleanMethod, ProjectEngineMethod, ProjectEngineRequest } from "./services.js";
 
 /** 线缆协议版本。宿主与 SDK 主版本不同时，宿主拒绝加载并在扩展页面说明。 */
 export const bridgeProtocolVersion = 2 as const;
@@ -101,14 +102,20 @@ export interface CommandContext {
   preferences: Record<string, unknown>;
 }
 
-/** 宿主 → 后台会话：调一次服务扩展点的方法。 */
+/**
+ * 宿主 → 后台会话：调一次服务扩展点的方法。
+ *
+ * `junkClean.engine` 的方法是 `status` / `run` / `action`（`action` 带 `actionId`）；
+ * `project.engine` 的方法是 `describe` / `listProjects` / `readSchema` / `readItems` / `applyEdit` / `createField` / `createOption`，
+ * 入参放在 `params.request`（`describe` 不带）。
+ */
 export interface ServiceCall {
   callId: number;
   point: ServicePoint;
   /** manifest `contributes.services[].id`。 */
   service: string;
-  method: "status" | "run" | "action";
-  params: { preferences: Record<string, unknown>; granted: string[]; actionId?: string };
+  method: JunkCleanMethod | ProjectEngineMethod;
+  params: { preferences: Record<string, unknown>; granted: string[]; actionId?: string; request?: ProjectEngineRequest };
 }
 
 /** 宿主 → SDK 的事件。 */

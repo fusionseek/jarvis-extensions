@@ -10,7 +10,7 @@
 | 偏好声明在 | 画在 | 为什么 |
 | --- | --- | --- |
 | `contributes.settings.preferences` | 设置 › **扩展** › 该扩展那块面板 | 它是这个扩展自己的设置 |
-| `contributes.services[].preferences` | 那个扩展点所属的**内置区段**，例如 `junkClean.engine` → 设置 › **清理** › 清理引擎 | 服务扩展是内置能力的一部分：用户找「深度清理怎么设」会去「清理」，不会去「扩展」 |
+| `contributes.services[].preferences` | 那个扩展点所属的**内置区段**，例如 `junkClean.engine` → 设置 › **清理** › 清理引擎，`project.engine` → 设置 › **Git** | 服务扩展是内置能力的一部分：用户找「深度清理怎么设」会去「清理」，不会去「扩展」 |
 
 两者共用一个值空间（`extension_preferences` 里 `<id>` 那一行），`jarvis.preferences` 一并读到；key 不得重名。
 
@@ -36,7 +36,7 @@ v1 的「开发者模式 · 从本地目录加载」已删除：v2 只从商店�
 | --- | --- | --- |
 | 头行 | 图标井 + 名 + 版本 + 状态徽标 + 启用开关 | 与集成行（Codex / Claude）同构 |
 | 第二行 | 描述 · 作者 · 「查看源码」 | 用户要知道这是谁写的 |
-| 入驻 | 「入驻：工具箱 · 窗口 · 指令 /http · 设置」；有服务的另写一句「「深度清理（Mole）」的开关与设置在 设置 · 清理」 | 在这里找不到服务的开关，是因为它在「清理」里——说出来，用户就不会以为丢了 |
+| 入驻 | 「入驻：工具箱 · 窗口 · 指令 /http · 设置」；有服务的另写一句「「深度清理（Mole）」的开关与设置在 设置 · 清理」（项目引擎写「设置 · Git」） | 在这里找不到服务的开关，是因为它在「清理」里——说出来，用户就不会以为丢了 |
 | 全局快捷键 | **只列真的注册上了的**，脚注「按了没反应多半是别的应用占着同一组键」 | 跨应用撞键探测不到；没注册上的不列，列表本身就是诊断 |
 | 指令冲突 | 撞了内置词或别的扩展、因而没加载的 `/` 指令，逐条用 `alert` 色写出来 | 不写出来，用户只会觉得「装了却没有这条指令」 |
 | 授权 | 声明的每一项一行：符号 + 名 + 档位 + 「还没问过」（若是）+ 玻璃开关 | 拨动即生效，前台与后台会话都收到 `permissionsChanged`（[05](05-permissions.md)） |
@@ -72,6 +72,44 @@ v1 的「开发者模式 · 从本地目录加载」已删除：v2 只从商店�
 
 悬浮球不变：清理中的状态由宿主照旧画，与用的是哪个引擎无关（悬浮球不对扩展开放）。
 清理工具面板上那张引擎状态卡同样由宿主画，读的是同一份 `status`。
+
+### 设置 › Git · 项目引擎（`project.engine`）
+
+项目引擎是 Jarvis「项目」（需求 / 迭代 / 缺陷的原生表格与甘特）的**数据来源**。宿主有一整套提供方无关的框架——
+工作项、通用字段、映射配置、工作流约束、漂移守卫、本地镜像、界面；**某一家托管服务的专属知识**（GraphQL、字段类型翻译、
+Issue Type / 子 Issue / blocked by 的读写）全在引擎扩展里。先例是清理引擎：宿主有清理框架与界面，Mole 只是一台引擎。
+
+| 规则 | 值 | 为什么 |
+| --- | --- | --- |
+| 有没有它 | 没有启用着的项目引擎时，工作区「项目」、Git 左栏 Projects、Issue 预览页的 Project 行、Git 设置「Project 关联」**都不出现** | 宿主不认识任何一家托管服务的 Project；没有引擎就没有数据 |
+| 设置画在哪 | 设置 › Git，引擎入驻的那个托管服务下（manifest `contributes.git.hosting`）：「Project 关联」区段；服务的 `preferences` 也画在这里 | 用户找「Project 怎么关联仓库」会去 Git，不会去「扩展」 |
+| 授权 | 第一次用它之前（打开「项目」或「Project 关联」）挂一次授权屏，列全部声明；只授予读、没授予写 = 只读浏览，编辑入口置灰 | 后台会话没有界面可以问 |
+| 卸载 | 镜像随之删除；映射配置与 Git 侧关联设置是用户写下的内容，保留（再装即恢复） | 镜像随时能重新同步，配置是用户花时间做出来的 |
+| 引擎 id | `<扩展 id>.<服务 id>`（例如 `github-project.github`） | 镜像、配置与 Git 关联都按它归属 |
+
+**方法**（入参在线缆的 `params.request` 里，SDK 把它作为第一个参数交给实现；类型见 [`sdk/src/services.ts`](../sdk/src/services.ts)，
+形状真源是 jarvis-mac `contracts/schemas/extensions/bridge.v2.schema.json` 的 `$defs.projectEngine*`）：
+
+| 方法 | 入参 | 返回 | 超时 |
+| --- | --- | --- | --- |
+| `describe` | — | `{ contractVersion, ready, summary, problem?, hosting, features[] }` | 15 秒 |
+| `listProjects` | `owner?`、`repository?`（`owner/name`） | `{ projects[] }`（≤ 200） | 45 秒 |
+| `readSchema` | `projectId` | `{ project, fields[] }`（字段 ≤ 100） | 45 秒 |
+| `readItems` | `projectId`、`cursor?`、`since?`（ISO 8601） | `{ items[], nextCursor?, totalCount? }`（一页 ≤ 100） | 60 秒 |
+| `applyEdit` | `projectId`、`itemId`、`contentRef?`、`changes[]`（1–16 步） | `{ item? }`：读回的那一条 | 45 秒 |
+| `createField` | `projectId`、`name`、`dataType`、`options?`、`iterationDurationDays?` | `{ field }` | 45 秒 |
+| `createOption` | `projectId`、`fieldId`、`name` | `{ field }`（已有选项的 id 不变） | 45 秒 |
+
+| 契约规则 | 值 | 为什么 |
+| --- | --- | --- |
+| 只交原始值 | 字段值六种形状恰好一种：`text` / `number` / `date` / `optionId` / `optionIds` / `iterationId` | 翻译成通用字段、工作流校验、漂移守卫都在宿主——**所有引擎同一套规则**，换引擎不换规则 |
+| 日期与时刻 | 日期是 UTC 日历日 `YYYY-MM-DD`；时刻是 ISO 8601 | 甘特按天画；跨时区的同一天不能变成两天 |
+| 字段类型 | `text`、`number`、`date`、`singleSelect`、`multiSelect`、`iteration`（可建），`title`、`assignees`、`labels`、`milestone`、`repository`、`issueType`、`parentIssue`、`subIssuesProgress`、`linkedPullRequests`、`reviewers`（内置），认不出的写 `other` | 宿主的映射页按类型给出可选来源；`other` 不丢字段，只是不能映射 |
+| 条目身份 | Issue / PR 必须带 `content.repository`（`owner/name`）与 `content.number`；草稿没有 | 父子、依赖、Git 关联都按 `owner/name#number` 认；缺了的条目宿主丢掉这一条，不丢整页 |
+| 选项按 id 认 | 映射记的是选项 id，不是名字 | 选项改名不该让映射失效；`createOption` 因此必须保住已有选项的 id |
+| 编辑只执行 | `applyEdit` 的每一步宿主都按工作流、必填与漂移守卫校验过 | 引擎再判断一遍只会与宿主分歧 |
+| 失败 | 抛错；`message` 原样显示在发起处 | 用户要知道是哪一步、被谁拒了 |
+| 可选能力 | `describe.features` ⊆ `nativeHierarchy`、`nativeDependencies`、`issueTypes`、`createFields`、`draftIssues`；`contractVersion` 当前是 1 | 没声明的那一项，宿主把对应入口置灰并说明；契约只追加不改名 |
 
 ### 偏好控件
 
@@ -110,7 +148,8 @@ await jarvis.system.openExtensionSettings();                 // 页面里一颗�
 
 ## Lifecycle / Disposal
 
-- 关掉启用开关：前台会话关掉、后台会话收走、工具箱行消失、`/` 指令与快捷键撤下、选中的服务引擎退回 Jarvis 清理；授权与偏好原样留着。
+- 关掉启用开关：前台会话关掉、后台会话收走、工具箱行消失、`/` 指令与快捷键撤下、选中的服务引擎退回 Jarvis 清理、
+  项目引擎的入口（「项目」、Projects 分组、Project 关联）收起；授权与偏好原样留着。
 - 卸载：删安装目录、`extension_installs` 与 `extension_grants`；选「卸载并删除数据」才删 `extension_preferences`（偏好与 `storage`）与钥匙串里的机密。
 
 ## Gotchas
@@ -127,3 +166,5 @@ await jarvis.system.openExtensionSettings();                 // 页面里一颗�
 - [06 · 能力接口目录](06-capabilities.md)（`jarvis.preferences`）
 - `jarvis-mac/Sources/Jarvis/UI/ExtensionSettingsSection.swift`、`ExtensionPreferenceControls.swift`、`JunkCleanSettingsSection.swift`、
   `App/JunkCleanEngineRegistry.swift`
+- `jarvis-mac/Sources/Jarvis/App/Projects/ProjectEngineRegistry.swift`、`ProjectEngineClient.swift`、
+  `Domain/Extensions/ExtensionProjectEngineContract.swift`（项目引擎的注册、调用与载荷解码）

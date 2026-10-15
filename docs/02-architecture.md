@@ -61,9 +61,9 @@ flowchart LR
 
 | 层 | 类型 | 职责 | 边界 |
 | --- | --- | --- | --- |
-| `Domain` | `ExtensionManifest`（+ 校验）、`ExtensionRegistry`、`ExtensionCapabilityMap`、`ExtensionGatePolicy`、`ExtensionCatalogPolicy`、`ExtensionCommandCatalog`、`ExtensionProcessPolicy`、`ExtensionJunkCleanContract`、`ExtensionSurfacePolicy`、`ExtensionBridgeMessage`、`ExtensionCompatibilityPolicy`、`ExtensionStorePolicy`、`ExtensionUINode`、`MemoSlashMenu`、`JunkCleanEngineDescriptor` | 纯值与纯函数：manifest 解析与跨字段校验、能力映射与档位、闸门六步、目录合并、指令表与冲突、受限执行的放行判定、服务载荷解码、三面的优先级 | **不 import SwiftUI、不碰 JavaScriptCore**，文件系统的问题由调用方注入 |
+| `Domain` | `ExtensionManifest`（+ 校验）、`ExtensionRegistry`、`ExtensionCapabilityMap`、`ExtensionGatePolicy`、`ExtensionCatalogPolicy`、`ExtensionCommandCatalog`、`ExtensionProcessPolicy`、`ExtensionJunkCleanContract`、`ExtensionProjectEngineContract`、`GitHostingGraphQLPolicy`、`ExtensionSurfacePolicy`、`ExtensionBridgeMessage`、`ExtensionCompatibilityPolicy`、`ExtensionStorePolicy`、`ExtensionUINode`、`MemoSlashMenu`、`JunkCleanEngineDescriptor` | 纯值与纯函数：manifest 解析与跨字段校验、能力映射与档位、闸门六步、目录合并、指令表与冲突、受限执行的放行判定、服务载荷解码、三面的优先级 | **不 import SwiftUI、不碰 JavaScriptCore**，文件系统的问题由调用方注入 |
 | `Infrastructure` | `RegistrySnapshotSync`、`ExtensionStore`、`ExtensionInstallDirectory`、`ExtensionBundleVerifier`、`ExtensionJSContext`、`ExtensionNetworkClient`、`ExtensionProcessRunner`、`ExtensionFileReader`、`ExtensionKeychainSecretStore` | 拉快照、解包、校验哈希、建 `JSContext`、SQLite 读写、HTTPS 白名单请求、起外部进程、读声明过的文件、钥匙串 | `OpaquePointer` 与 `JSContext` 不越出本层 |
-| `App` | `ExtensionCenterModel`、`ExtensionSessionModel`、`ExtensionRuntimeCenter`、`ExtensionBackgroundCenter`、`ExtensionCommandDispatcher`、`ExtensionCapabilityHost`、`ExtensionHotKeyCenter`、`ExtensionCommandRegistry`、`JunkCleanEngineRegistry`、`ExtensionPreferencesModel`、`ExtensionGrantsModel`、`ExtensionWindowPresenter` | `@MainActor` 状态；把闸门后的调用转给既有模型；按落点分派命令；按扩展点调服务 | 只调既有模型的公开方法，不复制它们的逻辑 |
+| `App` | `ExtensionCenterModel`、`ExtensionSessionModel`、`ExtensionRuntimeCenter`、`ExtensionBackgroundCenter`、`ExtensionCommandDispatcher`、`ExtensionCapabilityHost`、`ExtensionHotKeyCenter`、`ExtensionCommandRegistry`、`JunkCleanEngineRegistry`、`ProjectEngineRegistry`、`ExtensionPreferencesModel`、`ExtensionGrantsModel`、`ExtensionWindowPresenter` | `@MainActor` 状态；把闸门后的调用转给既有模型；按落点分派命令；按扩展点调服务 | 只调既有模型的公开方法，不复制它们的逻辑 |
 | `UI` | `FloatingExtensionStoreView`、`ExtensionStoreDetailView`、`FloatingExtensionHostView`（工具箱与窗口两面共用）、`ExtensionWorkspacePage`、`ExtensionPopoverWindow`、`ExtensionRendererView`、`ExtensionConsentView`、`ExtensionSettingsSection`、`ExtensionPreferenceControls`、`JunkCleanSettingsSection` | 画 | 不承载协议解析；节点视图只读 `JarvisDesign` |
 
 ## Concepts
@@ -158,7 +158,7 @@ manifest 声明的东西分两类，判据是**扩展的 JS 需不需要在跑**
 
 | 面 | 内容 | 谁持有 |
 | --- | --- | --- |
-| 静态面 | 工具箱那一行、窗口入口、`/` 指令表、全局快捷键、设置页面板与偏好控件、服务引擎在「清理」里的那一行 | **宿主**按 manifest 与库里的记录画与注册，扩展的 JS 可以完全没加载 |
+| 静态面 | 工具箱那一行、窗口入口、`/` 指令表、全局快捷键、设置页面板与偏好控件、服务引擎在「清理」里的那一行、项目引擎在「Git」里的那一段 | **宿主**按 manifest 与库里的记录画与注册，扩展的 JS 可以完全没加载 |
 | 动态面 | 页面（`render()` 出来的树）、命令的执行、服务调用、订阅回调 | 扩展的 `JSContext` |
 
 因此 `/http` 在应用启动后就出现在 `/` 下拉里、`⌥⌘H` 就能按，服务引擎就出现在设置 · 清理 里——

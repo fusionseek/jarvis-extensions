@@ -13,6 +13,7 @@
  * | 指令 | `contributes.commands` | `commands` |
  * | 设置 | `contributes.settings` | —（宿主画控件，扩展读 `jarvis.preferences`） |
  * | 服务 | `contributes.services` | `services` |
+ * | Git | `contributes.git` | —（宿主在 Git 里画入口；扩展经 `jarvis.git` 读写托管服务） |
  *
  * 悬浮球不是可入驻的域。
  */
@@ -20,7 +21,7 @@ import type { EnvironmentInfo, HostInfo, Jarvis, ProcessHandle, ProcessResult, U
 import { JarvisError } from "./capabilities.js";
 import type { ActivationContext, CommandContext, HostEvent, InvokeResult, HostBridge, CommandSummary, ServiceCall, Surface } from "./bridge.js";
 import { bridgeProtocolVersion, countNodes, serialize } from "./bridge.js";
-import type { CancelSignal, ServiceContext, ServiceImplementation, JunkCleanEngine } from "./services.js";
+import type { CancelSignal, ServiceContext, ServiceImplementation, JunkCleanEngine, ProjectEngine } from "./services.js";
 import type { UINode } from "./ui.js";
 import { maximumNodesPerRender, ui } from "./ui.js";
 import { ocr } from "./ocr.js";
@@ -43,7 +44,7 @@ export type {
 export { bridgeProtocolVersion } from "./bridge.js";
 
 /** SDK 版本。主版本必须与宿主运行时一致。 */
-export const sdkVersion = "2.0.0";
+export const sdkVersion = "2.1.0";
 
 /** 一面的实现：工具箱页面、原地弹窗或窗口标签。 */
 export interface PageDefinition {
@@ -303,6 +304,31 @@ class Runtime {
             case "action":
               return Promise.resolve(engine.action ? engine.action(call.params.actionId ?? "", context) : {});
           }
+          break;
+        }
+        case "project.engine": {
+          const engine = implementation as ProjectEngine;
+          // 入参的形状由宿主按 bridge schema 保证；SDK 只转交，不替引擎判断哪几项该在。
+          const request = call.params.request ?? {};
+          switch (call.method) {
+            case "describe":
+              return Promise.resolve(engine.describe(context));
+            case "listProjects":
+              return engine.listProjects(request, context, signal);
+            case "readSchema":
+              return engine.readSchema(request as Parameters<ProjectEngine["readSchema"]>[0], context, signal);
+            case "readItems":
+              return engine.readItems(request as Parameters<ProjectEngine["readItems"]>[0], context, signal);
+            case "applyEdit":
+              return engine.applyEdit(request as Parameters<ProjectEngine["applyEdit"]>[0], context, signal);
+            case "createField":
+              if (!engine.createField) break;
+              return engine.createField(request as Parameters<NonNullable<ProjectEngine["createField"]>>[0], context, signal);
+            case "createOption":
+              if (!engine.createOption) break;
+              return engine.createOption(request as Parameters<NonNullable<ProjectEngine["createOption"]>>[0], context, signal);
+          }
+          break;
         }
       }
       return Promise.reject(new JarvisError({ code: "capability.unknown", message: `不认识的服务方法 ${call.point}.${call.method}` }));
@@ -426,6 +452,7 @@ const call = {
   process: namespaced("process"),
   files: namespaced("files"),
   terminal: namespaced("terminal"),
+  git: namespaced("git"),
   system: namespaced("system"),
 };
 
@@ -570,6 +597,14 @@ export const jarvis: Jarvis = {
   },
   terminal: {
     run: (scriptId) => call.terminal("run", { id: scriptId }),
+  },
+  git: {
+    repositories: () => call.git("repositories"),
+    hosting: {
+      viewer: (options) => call.git("hosting.viewer", options ?? {}),
+      query: (request) => call.git("hosting.query", request),
+      mutate: (request) => call.git("hosting.mutate", request),
+    },
   },
   system: {
     openURL: (url) => call.system("openURL", { url }),

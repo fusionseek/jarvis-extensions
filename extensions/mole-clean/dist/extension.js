@@ -1,4 +1,4 @@
-// jarvis-extension bundle · mole-clean@1.0.0 · sdk 2.0.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · mole-clean@1.0.0 · sdk 2.1.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -107,7 +107,7 @@
   };
 
   // sdk/src/index.ts
-  var sdkVersion = "2.0.0";
+  var sdkVersion = "2.1.0";
   var Cancellation = class {
     constructor() {
       this.listeners = [];
@@ -302,6 +302,30 @@
               case "action":
                 return Promise.resolve(engine.action ? engine.action(call2.params.actionId ?? "", context) : {});
             }
+            break;
+          }
+          case "project.engine": {
+            const engine = implementation;
+            const request = call2.params.request ?? {};
+            switch (call2.method) {
+              case "describe":
+                return Promise.resolve(engine.describe(context));
+              case "listProjects":
+                return engine.listProjects(request, context, signal);
+              case "readSchema":
+                return engine.readSchema(request, context, signal);
+              case "readItems":
+                return engine.readItems(request, context, signal);
+              case "applyEdit":
+                return engine.applyEdit(request, context, signal);
+              case "createField":
+                if (!engine.createField) break;
+                return engine.createField(request, context, signal);
+              case "createOption":
+                if (!engine.createOption) break;
+                return engine.createOption(request, context, signal);
+            }
+            break;
           }
         }
         return Promise.reject(new JarvisError({ code: "capability.unknown", message: `\u4E0D\u8BA4\u8BC6\u7684\u670D\u52A1\u65B9\u6CD5 ${call2.point}.${call2.method}` }));
@@ -414,6 +438,7 @@
     process: namespaced("process"),
     files: namespaced("files"),
     terminal: namespaced("terminal"),
+    git: namespaced("git"),
     system: namespaced("system")
   };
   var sync = {
@@ -547,6 +572,14 @@
     },
     terminal: {
       run: (scriptId) => call.terminal("run", { id: scriptId })
+    },
+    git: {
+      repositories: () => call.git("repositories"),
+      hosting: {
+        viewer: (options) => call.git("hosting.viewer", options ?? {}),
+        query: (request) => call.git("hosting.query", request),
+        mutate: (request) => call.git("hosting.mutate", request)
+      }
     },
     system: {
       openURL: (url) => call.system("openURL", { url }),

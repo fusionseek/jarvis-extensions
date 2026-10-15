@@ -17,7 +17,8 @@
 - [ ] CI · `version` 相对主干递增（新扩展从 `0.1.0` 或 `1.0.0` 起）；`package-lock.json` 跟上
 - [ ] CI · `contributes` 至少入驻工具箱、窗口、指令、服务之一
 - [ ] CI · 跨字段：`network.https` ⇔ `network.hosts`；`process.run` ⇔ `process.executables`；`terminal.run` ⇔ `process.terminal`；
-      `files.read` 能力 ⇔ `files.read` 路径；`inbox.messages` ⇔ `inbox.post`；`inbox.notifications` ⇔ `notifications.post`
+      `files.read` 能力 ⇔ `files.read` 路径；`inbox.messages` ⇔ `inbox.post`；`inbox.notifications` ⇔ `notifications.post`；
+      `git.hosting.write` ⇔ `git.mutations`；声明了 `git.*` 能力 ⇒ 入驻 Git 域
 - [ ] CI · 命令：id 唯一、快捷键不重复、带快捷键 ⇔ 声明 `hotkeys.register`；落点 `toolbox` / `popover` 要有工具箱域、`window` 要有窗口域；
       `silent` 至少有 `clipboard.write` / `notifications.post` / `inbox.post` 之一
 - [ ] CI · `/` 指令词不撞内置保留词、不撞仓库里别的扩展
@@ -46,9 +47,20 @@
 - [ ] README 的授权一节逐项写出会运行的命令与参数、会读取的路径、终端脚本做什么，与 manifest 逐字一致，
       并写明「运行起来的命令拥有 Jarvis 的全部系统权限（含完全磁盘访问）」
 
+### Git 操作域（声明了 `git.*` 的扩展）
+
+- [ ] `git.mutations` 逐个读完：每一个都能在 `src/` 里找到发它的那份文档，**一个不多**；README 逐字列出并说清各自改什么
+- [ ] 一个名字能改很多东西的变更（`updateIssue`）只传它真的要改的那一项，README 写明是哪一项
+- [ ] 用户给的值（标签名、登录名、标题）一律经 `variables` 传，没有拼进 GraphQL 文档的字符串
+- [ ] 查询走 `git.hosting.query`、变更走 `git.hosting.mutate`；没有把查询塞进 `mutate` 来绕过只读授权
+- [ ] 部分成功（`data` 与 `errors` 同时在）有明确的处理：要么接受并记日志，要么报一句人话；不静默吞掉
+- [ ] 测试里每一份发出去的文档都过一遍「一个操作、顶层字段都在声明里」
+
 ### 服务（`contributes.services`）
 
-- [ ] `point` 是宿主开放的扩展点（这一版只有 `junkClean.engine`）
+- [ ] `point` 是宿主开放的扩展点（`junkClean.engine` 或 `project.engine`）
+- [ ] 项目引擎：`describe` 快、不抛错，用不了写 `ready: false` 与原因；只交原始值，不在引擎里做工作流或映射判断；
+      `applyEdit` 失败的 `message` 说清是哪一步、被谁拒了；`createOption` 保住已有选项的 id
 - [ ] `title` / `subtitle` / `notes` 写的是它比内置的**多做了什么**、以及会永久删除什么
 - [ ] `status()` 快：不跑清理、不联网、不弹终端；只 `locate` 与读版本
 - [ ] `status()` 在缺授权、找不到工具、工具版本不对时给 `ready: false` 与一句人话，以及能修好它的动作
