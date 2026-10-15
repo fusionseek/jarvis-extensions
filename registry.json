@@ -1,9 +1,9 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-15T06:49:08.759Z",
+  "generatedAt": "2026-10-15T07:39:10.526Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "48579cb4367d880f5c25d4a837a92e2075b1960a"
+    "commit": "e6ea97da5fec955e47e2f8232c9abaa56bd18820"
   },
   "extensions": [
     {
@@ -82,13 +82,13 @@
         "sha256": "bfd58fc406305c4e3c40930a3a6c245f352b860a6cc6f0e5a20174513fc20f94",
         "byteCount": 72443
       },
-      "updatedAt": "2026-10-15T06:49:08.168Z"
+      "updatedAt": "2026-10-15T14:49:50+08:00"
     },
     {
       "manifest": {
         "manifestVersion": 2,
         "id": "http-status",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "name": "HTTP 状态码",
         "symbol": "number.circle",
         "description": "输入状态码或关键词，给出这个码的读法、语义、常见成因、怎么处理、相关的码与 RFC 出处。/http 404 或 ⌥⌘/（从剪贴板里抓码）的结果贴着指针原地弹出；也能在工作区窗口里开一枚标签。62 个标准码与 12 个常见非标准码都编在扩展里，不联网。",
@@ -220,7 +220,7 @@
       "path": "extensions/http-status",
       "bundle": {
         "path": "extensions/http-status/dist/extension.js",
-        "sha256": "cf0b625676bdd72e71e8963be9a79988a20a93eb4140738913d0e04d0231f633",
+        "sha256": "3b69392791dcb2b0881fb61c320b4f02fcf8ffff99cd78f8fe0b15b2409f2d30",
         "byteCount": 117546
       },
       "updatedAt": "2026-10-15T14:33:51+08:00"
@@ -229,7 +229,7 @@
       "manifest": {
         "manifestVersion": 2,
         "id": "mole-clean",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "name": "Mole 深度清理",
         "symbol": "bubbles.and.sparkles",
         "description": "给 Jarvis 清理换一台更深的引擎：开着时，晃球、/clean 与工具箱清理改走你装好的 Mole（mo clean），覆盖浏览器、开发工具、云盘、已卸载应用残留等更多类别，并读 Mole 的操作日志逐项显示正在删什么。没装 mo 时可以一键在终端里安装。",
@@ -344,7 +344,7 @@
       "path": "extensions/mole-clean",
       "bundle": {
         "path": "extensions/mole-clean/dist/extension.js",
-        "sha256": "3d99db24799004ca8537a73d48990d39bb96dcf10f3a3000d1d7789142e74822",
+        "sha256": "4042cd800f6c5fa8621827dfe32f787f95fe777e42c46055ffcba50683051c8f",
         "byteCount": 51595
       },
       "updatedAt": "2026-10-15T14:33:51+08:00"
@@ -353,7 +353,7 @@
       "manifest": {
         "manifestVersion": 2,
         "id": "send-to-phone",
-        "version": "2.0.0",
+        "version": "2.0.1",
         "name": "发到手机",
         "symbol": "iphone.and.arrow.forward",
         "description": "读一次剪贴板，经 Jarvis 快传把文字或链接推到已配对的手机上；快传没开时给一颗按钮替你打开，发完在 Inbox 留一条消息。/phone 后面跟一段字，不开面板直接发。",
@@ -436,7 +436,7 @@
       "path": "extensions/send-to-phone",
       "bundle": {
         "path": "extensions/send-to-phone/dist/extension.js",
-        "sha256": "3820d996de3b6b125b00956ec00a148e518983ab2e177e0b738fa79494057c04",
+        "sha256": "55c4f14cffee401f22b4afee6558a763f12a54e235f017cefc5a73c82e8dd1b5",
         "byteCount": 36583
       },
       "updatedAt": "2026-10-15T14:33:51+08:00"
@@ -445,7 +445,7 @@
       "manifest": {
         "manifestVersion": 2,
         "id": "translation",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "name": "截屏翻译",
         "symbol": "translate",
         "description": "按一下快捷键框选屏幕上任意一块，Vision 识别文字、合并段落、检测语言，再经 Google 翻译；译文就贴着选区原地弹出。框到的是一个词时，译文下面还有读音与按词性分行的全部词义。也能翻译剪贴板里的文字或图片，或 /translate 后面跟的一段字。免费端点无需 key，填了 API key 走官方接口。",
@@ -675,7 +675,7 @@
       "path": "extensions/translation",
       "bundle": {
         "path": "extensions/translation/dist/extension.js",
-        "sha256": "e47bfc50155119dcce2c926fe946c04c2c8c6af4bb6e98b700f0d1a7acab376c",
+        "sha256": "854f2a32b82bc7f65a4ecba1a3d90e0c5dd6d57d55f6222f7b93b298d14a5f2a",
         "byteCount": 81805
       },
       "updatedAt": "2026-10-15T14:33:51+08:00"
