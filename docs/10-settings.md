@@ -111,6 +111,8 @@ Issue Type / 子 Issue / blocked by 的读写）全在引擎扩展里。先例�
 | 失败 | 抛错；`message` 原样显示在发起处 | 用户要知道是哪一步、被谁拒了 |
 | 可选能力 | `describe.features` ⊆ `nativeHierarchy`、`nativeDependencies`、`issueTypes`、`createFields`、`draftIssues`；`contractVersion` 当前是 1 | 没声明的那一项，宿主把对应入口置灰并说明；契约只追加不改名 |
 
+参考实现：[`extensions/github-project`](../extensions/github-project)（GitHub Projects v2）。
+
 ### 偏好控件
 
 控件由宿主画（`ExtensionPreferenceRows`，设置 › 扩展 与 设置 › 清理 共用），左标题 + 说明，右控件：

@@ -24,4 +24,4 @@ v2 按**域**组织扩展（悬浮球不开放；工具箱、窗口、指令、�
 [`sdk/src`](../sdk/src) 是节点、能力、服务扩展点与线缆的类型真源。
 示例：[`templates/hello-extension`](../templates/hello-extension)（工具箱 + 指令）、[`extensions/http-status`](../extensions/http-status)（工具箱 + 窗口 + 弹窗 + 设置）、
 [`extensions/translation`](../extensions/translation)（截图 OCR + 网络 + 快捷键 + 静默命令）、[`extensions/send-to-phone`](../extensions/send-to-phone)（快传 + Inbox）、
-[`extensions/mole-clean`](../extensions/mole-clean)（服务扩展 + 受限执行）。
+[`extensions/mole-clean`](../extensions/mole-clean)（服务扩展 + 受限执行）、[`extensions/github-project`](../extensions/github-project)（项目引擎 + Git 域 + Git 操作域）。

@@ -106,7 +106,7 @@ v2 按**域**组织（[01](01-overview.md)）：身份与能力在顶层，入�
   "manifestVersion": 2,
   "id": "github-project",
   "version": "1.0.0",
-  "name": "GitHub Project",
+  "name": "GitHub 项目",
   "symbol": "tablecells",
   "description": "给 Jarvis「项目」接上 GitHub Projects v2：读 Project 的字段与条目，把需求 / 迭代 / 缺陷页上的修改写回 GitHub。",
   "author": { "name": "fusionseek", "github": "fusionseek" },
@@ -128,7 +128,7 @@ v2 按**域**组织（[01](01-overview.md)）：身份与能力在顶层，入�
 }
 ```
 
-`git.mutations` 这里只留两个示意；真实的项目引擎把它代码里会发的每一个变更都写出来。
+`git.mutations` 这里只留两个示意；真实的 [`extensions/github-project`](../extensions/github-project/extension.json) 把代码里会发的 16 个变更都写出来。
 
 ### 身份
 

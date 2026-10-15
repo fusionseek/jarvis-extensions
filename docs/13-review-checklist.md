@@ -54,7 +54,7 @@
 - [ ] 用户给的值（标签名、登录名、标题）一律经 `variables` 传，没有拼进 GraphQL 文档的字符串
 - [ ] 查询走 `git.hosting.query`、变更走 `git.hosting.mutate`；没有把查询塞进 `mutate` 来绕过只读授权
 - [ ] 部分成功（`data` 与 `errors` 同时在）有明确的处理：要么接受并记日志，要么报一句人话；不静默吞掉
-- [ ] 测试里每一份发出去的文档都过一遍「一个操作、顶层字段都在声明里」
+- [ ] 测试里每一份发出去的文档都过一遍「一个操作、顶层字段都在声明里」（[`github-project`](../extensions/github-project/test/support.mjs) 的 `fakeGitHub()` 是现成的移植）
 
 ### 服务（`contributes.services`）
 

@@ -1,0 +1,69 @@
+{
+  "manifestVersion": 2,
+  "id": "github-project",
+  "version": "1.0.0",
+  "name": "GitHub 项目",
+  "symbol": "tablecells",
+  "description": "给 Jarvis「项目」接上 GitHub Projects v2：读 Project 的字段、条目、迭代与 Issue 的父子 / 依赖关系，把你在需求、迭代、缺陷页上的修改写回 GitHub。页面与规则由 Jarvis 画，它只负责读写数据。",
+  "author": {
+    "name": "fusionseek",
+    "github": "fusionseek"
+  },
+  "main": "dist/extension.js",
+  "sdk": "^2.1.0",
+  "minimumJarvisVersion": "3.2.1",
+  "capabilities": [
+    {
+      "id": "git.hosting.read",
+      "reason": "读 Project 的字段、条目，以及 Issue 的父子与依赖关系"
+    },
+    {
+      "id": "git.hosting.write",
+      "reason": "把你在「项目」里的修改写回 Project 与 Issue"
+    }
+  ],
+  "git": {
+    "mutations": [
+      "updateProjectV2ItemFieldValue",
+      "clearProjectV2ItemFieldValue",
+      "closeIssue",
+      "reopenIssue",
+      "updateIssueIssueType",
+      "addLabelsToLabelable",
+      "removeLabelsFromLabelable",
+      "updateIssue",
+      "addAssigneesToAssignable",
+      "removeAssigneesFromAssignable",
+      "addSubIssue",
+      "removeSubIssue",
+      "addBlockedBy",
+      "removeBlockedBy",
+      "createProjectV2Field",
+      "updateProjectV2Field"
+    ]
+  },
+  "contributes": {
+    "services": [
+      {
+        "point": "project.engine",
+        "id": "github",
+        "title": "GitHub Project",
+        "subtitle": "读写 GitHub Projects v2：字段、条目、迭代、Issue Type 与 Issue 的父子 / 依赖关系",
+        "notes": [
+          "token 要有 read:project 才能读、project 才能写回；在 设置 · Git · GitHub 里更新",
+          "只执行 Jarvis 校验过的修改；不删字段、不删条目、不删选项",
+          "Issue Type 只在组织仓库里有；用户仓库里改类型会被 GitHub 拒绝",
+          "增量同步按天过滤、往前多读一天；每页 100 条",
+          "加选项时原样保留已有选项的 id，映射不会因此失效"
+        ]
+      }
+    ],
+    "git": {
+      "hosting": [
+        "github"
+      ],
+      "summary": "Git 设置「Project 关联」与 Projects 分组"
+    }
+  },
+  "inbox": false
+}

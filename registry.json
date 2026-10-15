@@ -1,11 +1,89 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-15T06:32:54.647Z",
+  "generatedAt": "2026-10-15T06:49:08.759Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "68383617d1fd1d114305947752ab6ee91f9a1931"
+    "commit": "48579cb4367d880f5c25d4a837a92e2075b1960a"
   },
   "extensions": [
+    {
+      "manifest": {
+        "manifestVersion": 2,
+        "id": "github-project",
+        "version": "1.0.0",
+        "name": "GitHub 项目",
+        "symbol": "tablecells",
+        "description": "给 Jarvis「项目」接上 GitHub Projects v2：读 Project 的字段、条目、迭代与 Issue 的父子 / 依赖关系，把你在需求、迭代、缺陷页上的修改写回 GitHub。页面与规则由 Jarvis 画，它只负责读写数据。",
+        "author": {
+          "name": "fusionseek",
+          "github": "fusionseek"
+        },
+        "main": "dist/extension.js",
+        "sdk": "^2.1.0",
+        "minimumJarvisVersion": "3.2.1",
+        "capabilities": [
+          {
+            "id": "git.hosting.read",
+            "reason": "读 Project 的字段、条目，以及 Issue 的父子与依赖关系"
+          },
+          {
+            "id": "git.hosting.write",
+            "reason": "把你在「项目」里的修改写回 Project 与 Issue"
+          }
+        ],
+        "git": {
+          "mutations": [
+            "updateProjectV2ItemFieldValue",
+            "clearProjectV2ItemFieldValue",
+            "closeIssue",
+            "reopenIssue",
+            "updateIssueIssueType",
+            "addLabelsToLabelable",
+            "removeLabelsFromLabelable",
+            "updateIssue",
+            "addAssigneesToAssignable",
+            "removeAssigneesFromAssignable",
+            "addSubIssue",
+            "removeSubIssue",
+            "addBlockedBy",
+            "removeBlockedBy",
+            "createProjectV2Field",
+            "updateProjectV2Field"
+          ]
+        },
+        "contributes": {
+          "services": [
+            {
+              "point": "project.engine",
+              "id": "github",
+              "title": "GitHub Project",
+              "subtitle": "读写 GitHub Projects v2：字段、条目、迭代、Issue Type 与 Issue 的父子 / 依赖关系",
+              "notes": [
+                "token 要有 read:project 才能读、project 才能写回；在 设置 · Git · GitHub 里更新",
+                "只执行 Jarvis 校验过的修改；不删字段、不删条目、不删选项",
+                "Issue Type 只在组织仓库里有；用户仓库里改类型会被 GitHub 拒绝",
+                "增量同步按天过滤、往前多读一天；每页 100 条",
+                "加选项时原样保留已有选项的 id，映射不会因此失效"
+              ]
+            }
+          ],
+          "git": {
+            "hosting": [
+              "github"
+            ],
+            "summary": "Git 设置「Project 关联」与 Projects 分组"
+          }
+        },
+        "inbox": false
+      },
+      "path": "extensions/github-project",
+      "bundle": {
+        "path": "extensions/github-project/dist/extension.js",
+        "sha256": "bfd58fc406305c4e3c40930a3a6c245f352b860a6cc6f0e5a20174513fc20f94",
+        "byteCount": 72443
+      },
+      "updatedAt": "2026-10-15T06:49:08.168Z"
+    },
     {
       "manifest": {
         "manifestVersion": 2,
@@ -145,7 +223,7 @@
         "sha256": "cf0b625676bdd72e71e8963be9a79988a20a93eb4140738913d0e04d0231f633",
         "byteCount": 117546
       },
-      "updatedAt": "2026-10-11T20:53:17+08:00"
+      "updatedAt": "2026-10-15T14:33:51+08:00"
     },
     {
       "manifest": {
@@ -269,7 +347,7 @@
         "sha256": "3d99db24799004ca8537a73d48990d39bb96dcf10f3a3000d1d7789142e74822",
         "byteCount": 51595
       },
-      "updatedAt": "2026-10-11T20:53:17+08:00"
+      "updatedAt": "2026-10-15T14:33:51+08:00"
     },
     {
       "manifest": {
@@ -361,7 +439,7 @@
         "sha256": "3820d996de3b6b125b00956ec00a148e518983ab2e177e0b738fa79494057c04",
         "byteCount": 36583
       },
-      "updatedAt": "2026-10-11T20:53:17+08:00"
+      "updatedAt": "2026-10-15T14:33:51+08:00"
     },
     {
       "manifest": {
@@ -600,7 +678,7 @@
         "sha256": "e47bfc50155119dcce2c926fe946c04c2c8c6af4bb6e98b700f0d1a7acab376c",
         "byteCount": 81805
       },
-      "updatedAt": "2026-10-11T20:53:17+08:00"
+      "updatedAt": "2026-10-15T14:33:51+08:00"
     }
   ]
 }

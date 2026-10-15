@@ -139,7 +139,7 @@ v1 安装的清理靠一条通用不变量完成——「一条跑不起来、�
 ### 第二轮：Git 域、Git 操作域与项目引擎（spec `20261015-123126-github-project-management` K / H 节）
 
 仓库主人要 GitHub Project 不进主程序，又要原生表格、甘特复用与最好的性能：于是宿主做提供方无关的「项目」框架，
-GitHub Projects v2 的全部专属知识做成扩展 `github-project`，插在新扩展点 `project.engine` 上。
+GitHub Projects v2 的全部专属知识做成扩展 [`github-project`](../extensions/github-project)，插在新扩展点 `project.engine` 上。
 
 | # | 决策 | 一句话 |
 | --- | --- | --- |
