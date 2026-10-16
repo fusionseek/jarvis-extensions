@@ -1,7 +1,7 @@
 {
   "manifestVersion": 2,
   "id": "send-to-phone",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "name": "发到手机",
   "symbol": "iphone.and.arrow.forward",
   "description": "读一次剪贴板，经 Jarvis 快传把文字或链接推到已配对的手机上；快传没开时给一颗按钮替你打开，发完在 Inbox 留一条消息。/phone 后面跟一段字，不开面板直接发。",

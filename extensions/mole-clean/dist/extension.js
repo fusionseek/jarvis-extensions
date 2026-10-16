@@ -1,4 +1,4 @@
-// jarvis-extension bundle · mole-clean@1.0.1 · sdk 2.1.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · mole-clean@1.0.2 · sdk 2.2.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -107,7 +107,7 @@
   };
 
   // sdk/src/index.ts
-  var sdkVersion = "2.1.0";
+  var sdkVersion = "2.2.0";
   var Cancellation = class {
     constructor() {
       this.listeners = [];
@@ -324,6 +324,9 @@
               case "createOption":
                 if (!engine.createOption) break;
                 return engine.createOption(request, context, signal);
+              case "createIteration":
+                if (!engine.createIteration) break;
+                return engine.createIteration(request, context, signal);
             }
             break;
           }
