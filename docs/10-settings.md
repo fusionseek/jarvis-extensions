@@ -100,6 +100,7 @@ Issue Type / 子 Issue / blocked by 的读写）全在引擎扩展里。先例�
 | `createField` | `projectId`、`name`、`dataType`、`options?`、`iterationDurationDays?` | `{ field }` | 45 秒 |
 | `createOption` | `projectId`、`fieldId`、`name` | `{ field }`（已有选项的 id 不变） | 45 秒 |
 | `createIteration`（SDK 2.2） | `projectId`、`fieldId`、`name`、`startDate`（`YYYY-MM-DD`）、`iterationDurationDays` | `{ field }`（已有迭代——含已结束的——的 id 不变） | 45 秒 |
+| `createItem`（SDK 2.3） | `projectId`、`repository`、`title`、`body?` | `{ item }`：建好、已加进 Project 的那一条 | 45 秒 |
 
 | 契约规则 | 值 | 为什么 |
 | --- | --- | --- |
@@ -111,7 +112,7 @@ Issue Type / 子 Issue / blocked by 的读写）全在引擎扩展里。先例�
 | 迭代按 id 认 | 条目上的迭代值记的是迭代 id | GitHub 的迭代配置是整组替换：`createIteration` 只写进行中的会把已结束的迭代连同条目上的值一起删掉 |
 | 编辑只执行 | `applyEdit` 的每一步宿主都按工作流、必填与漂移守卫校验过 | 引擎再判断一遍只会与宿主分歧 |
 | 失败 | 抛错；`message` 原样显示在发起处 | 用户要知道是哪一步、被谁拒了 |
-| 可选能力 | `describe.features` ⊆ `nativeHierarchy`、`nativeDependencies`、`issueTypes`、`createFields`、`draftIssues`、`createIterations`（SDK 2.2）；`contractVersion` 当前是 1 | 没声明的那一项，宿主把对应入口置灰并说明；契约只追加不改名 |
+| 可选能力 | `describe.features` ⊆ `nativeHierarchy`、`nativeDependencies`、`issueTypes`、`createFields`、`draftIssues`、`createIterations`（SDK 2.2）、`createItems`（SDK 2.3）；`contractVersion` 当前是 1 | 没声明的那一项，宿主把对应入口置灰并说明；契约只追加不改名 |
 
 参考实现：[`extensions/github-project`](../extensions/github-project)（GitHub Projects v2）。
 

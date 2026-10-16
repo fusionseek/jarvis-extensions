@@ -20,7 +20,7 @@ v2 的目录**只列宿主真的做得到的**：声明得到、调不到的能�
 
 | 属性 | 值 |
 | --- | --- |
-| `sdk.version` | SDK 版本，`2.2.0` |
+| `sdk.version` | SDK 版本，`2.3.0` |
 | `host.version` / `host.channel` | 宿主版本（`CFBundleShortVersionString`）、`release` / `development` |
 | `environment` | `reduceMotion` / `reduceTransparency` / `increaseContrast` / `locale`。界面上的适配由宿主做；这里给出来是让扩展自己的逻辑也能让步 |
 

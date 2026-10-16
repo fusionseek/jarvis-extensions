@@ -170,6 +170,7 @@ GitHub Projects v2 的全部专属知识做成扩展 [`github-project`](../exten
 | 线缆 | `jarvis-mac/contracts/schemas/extensions/bridge.v2.schema.json`：`serviceCall` 的点与方法、`$defs.projectEngine*` 等；样例 `contracts/fixtures/extensions/bridge/project-engine-*.json` |
 | SDK 2.1 | 本仓 `sdk/src/`：`jarvis.git`（`capabilities.ts`）、`ProjectEngine`（`services.ts`）、`ServiceCall.params.request`（`bridge.ts`）、运行时分派（`index.ts`）、替身 `callService({ request })`（`testing.ts`） |
 | SDK 2.2 | `project.engine` 加 `createIteration` 与能力 `createIterations`（jarvis-mac 同 spec 第八轮 U-5「新增迭代」）：线缆 `serviceCall.method` 与 `projectEngineRequest.startDate`、样例 `project-engine-request.create-iteration*.json`；只追加，2.1 的引擎照常工作（宿主见不到这项能力时把入口置灰） |
+| SDK 2.3 | `project.engine` 加 `createItem` 与能力 `createItems`（jarvis-mac 同 spec 第十八轮 AG-1「新建条目」）：线缆 `serviceCall.method`、`projectEngineRequest.title` / `body` 与 `$defs.projectEngineCreatedItem`、样例 `project-engine-request.create-item*.json` / `project-engine-created-item*.json`；只追加，2.2 的引擎照常工作（宿主见不到这项能力时把「新建」置灰） |
 
 ## Usage
 

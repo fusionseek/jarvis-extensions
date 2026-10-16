@@ -127,9 +127,10 @@ export const projectEngineContractVersion = 1 as const;
  * - `issueTypes`：组织级 Issue Type；
  * - `createFields`：能在 Project 里建字段与选项（`createField` / `createOption`）；
  * - `draftIssues`：草稿条目；
- * - `createIterations`：能在迭代字段末尾加一个迭代（`createIteration`）。没声明时宿主迭代页的「新增迭代」置灰、提示更新扩展。
+ * - `createIterations`：能在迭代字段末尾加一个迭代（`createIteration`）。没声明时宿主迭代页的「新增迭代」置灰、提示更新扩展；
+ * - `createItems`（SDK 2.3）：能在仓库里建一条 Issue 并加进 Project（`createItem`）。没声明时宿主的「新建」置灰、提示更新扩展。
  */
-export type ProjectEngineFeature = "nativeHierarchy" | "nativeDependencies" | "issueTypes" | "createFields" | "draftIssues" | "createIterations";
+export type ProjectEngineFeature = "nativeHierarchy" | "nativeDependencies" | "issueTypes" | "createFields" | "draftIssues" | "createIterations" | "createItems";
 
 /** `describe` 的返回：契约版本、此刻能不能用、托管服务、可选能力。要快（宿主给 15 秒）。 */
 export interface ProjectEngineDescription {
@@ -368,11 +369,36 @@ export interface ProjectCreateIterationRequest {
 }
 
 /**
+ * `createItem` 的入参（SDK 2.3）：在 `repository` 里建一条 Issue，再把它加进 `projectId` 这个 Project。
+ *
+ * 标题宿主已经校验过（非空、≤ 256 字）——引擎照写（顶多去掉首尾空白），不改写、不补前缀。
+ * 返回时这一条**必须已经在 Project 里**：
+ * 宿主拿返回的条目并进镜像，随后经 `applyEdit` 写预填的字段，条目不在 Project 里那几步就无处可写。
+ */
+export interface ProjectCreateItemRequest {
+  projectId: string;
+  /** 建 Issue 的仓库，`owner/name`。 */
+  repository: string;
+  /** Issue 标题，1–256 字（GitHub 的上限）。 */
+  title: string;
+  /** Issue 正文（Markdown，≤ 65,536 字）；省略 = 空正文。 */
+  body?: string;
+}
+
+/**
  * 线缆上 `params.request` 的全集（`$defs.projectEngineRequest`）：每个方法只用到其中几项。
  * SDK 不替你检查哪几项该在——宿主按 schema 发，引擎按自己方法的入参读。
  */
 export type ProjectEngineRequest = ProjectListRequest &
-  Partial<ProjectSchemaRequest & ProjectItemsRequest & ProjectEditRequest & ProjectCreateFieldRequest & ProjectCreateOptionRequest & ProjectCreateIterationRequest>;
+  Partial<
+    ProjectSchemaRequest &
+      ProjectItemsRequest &
+      ProjectEditRequest &
+      ProjectCreateFieldRequest &
+      ProjectCreateOptionRequest &
+      ProjectCreateIterationRequest &
+      ProjectCreateItemRequest
+  >;
 
 /** `listProjects` 的返回（≤ 200 个）。 */
 export interface ProjectList {
@@ -404,6 +430,11 @@ export interface ProjectFieldResult {
   field: ProjectField;
 }
 
+/** `createItem` 的返回（SDK 2.3）：建好、已经加进 Project 的那一条（与 `readItems` 同一个形状），必填。 */
+export interface ProjectCreatedItem {
+  item: ProjectItem;
+}
+
 /**
  * 项目引擎（`project.engine`）：Jarvis「项目」（需求 / 迭代 / 缺陷的表格与甘特）的数据来源。
  * 界面、映射配置、工作流、漂移守卫都在宿主；引擎只读写托管服务，通常经 `jarvis.git.hosting.*`。
@@ -429,10 +460,15 @@ export interface ProjectEngine {
   createOption?(request: ProjectCreateOptionRequest, context: ServiceContext, signal: CancelSignal): Promise<ProjectFieldResult>;
   /** 在迭代字段末尾加一个迭代（声明了 `createIterations` 才会被调），**已有迭代的 id 必须保持不变**。 */
   createIteration?(request: ProjectCreateIterationRequest, context: ServiceContext, signal: CancelSignal): Promise<ProjectFieldResult>;
+  /**
+   * 在仓库里建一条 Issue 并加进 Project（SDK 2.3；声明了 `createItems` 才会被调）。交回的条目必须已经在 Project 里；
+   * 字段值不在这里写——宿主随后经 `applyEdit` 写预填的字段。
+   */
+  createItem?(request: ProjectCreateItemRequest, context: ServiceContext, signal: CancelSignal): Promise<ProjectCreatedItem>;
 }
 
 /** 项目引擎的方法名（线缆上 `service` 事件的 `method`）。 */
-export type ProjectEngineMethod = "describe" | "listProjects" | "readSchema" | "readItems" | "applyEdit" | "createField" | "createOption" | "createIteration";
+export type ProjectEngineMethod = "describe" | "listProjects" | "readSchema" | "readItems" | "applyEdit" | "createField" | "createOption" | "createIteration" | "createItem";
 
 /** 清理引擎的方法名（线缆上 `service` 事件的 `method`）。 */
 export type JunkCleanMethod = "status" | "run" | "action";
