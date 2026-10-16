@@ -23,7 +23,7 @@
 | 能力 | 档位 | 拿来做什么 | 宿主替你拦住的 |
 | --- | --- | --- | --- |
 | `git.hosting.read` | 中 | 读 Project 列表、字段结构、条目（含 Issue 的标签、指派人、里程碑、类型、父子、依赖）；改之前先把名字换成 id；改完读回那一条 | 只放行**查询**；token 不交给扩展 |
-| `git.hosting.write` | 高 | 把你在「项目」里的修改写回 Project 与 Issue | 只放行下面 16 个变更（按顶层字段名逐个比对），别的一律拒绝 |
+| `git.hosting.write` | 高 | 把你在「项目」里的修改写回 Project 与 Issue；「新建」时在你选的仓库里建 Issue | 只放行下面 18 个变更（按顶层字段名逐个比对），别的一律拒绝 |
 
 **token 从不经过扩展。** 它用的是你在 `设置 · Git · Git 服务 · GitHub` 里填的那一把，留在 Jarvis 的钥匙串里；
 扩展交一份 GraphQL，Jarvis 替它执行、把 JSON 交回来。扩展**不联网**（没有 `network.https`）、**不跑命令**、**不读文件**。
@@ -52,7 +52,8 @@
 | `OrganizationIssueTypes` | Project 属于组织、且有 Issue Type 字段时，读组织启用着的 Issue Type 当作它的选项 |
 | `ReadItems` / `ReadItemsSince` | 同步条目，一页 100 条；增量同步带过滤串 `updated:>=YYYY-MM-DD` |
 | `ResolveEdit` | 每次编辑之前一次：要改的 Issue / PR 的 id 与当前状态、父 Issue、指派人，以及这次要用到的标签、里程碑、Issue Type、用户、其它 Issue 的 id |
-| `ReadItem` / `ReadField` | 改完读回那一条；加选项之前读字段的当前选项 |
+| `ReadItem` / `ReadField` | 改完、新建完读回那一条；加选项之前读字段的当前选项 |
+| `RepositoryId` | 新建条目之前认出你选的仓库（`createIssue` 只认仓库的节点 id） |
 
 ### 改（`git.hosting.write`，manifest `git.mutations` 逐字）
 
@@ -70,6 +71,8 @@
 | `addBlockedBy` / `removeBlockedBy` | 加 / 去掉「被谁阻塞」 | 这条 Issue、阻塞它的 Issue |
 | `createProjectV2Field` | 映射页上「在 Project 里建这个字段」 | Project、名字、类型、选项（灰色）或迭代配置 |
 | `updateProjectV2Field` | 字段设置上「把新取值写回 Project」：给单选 / 多选加一个选项；迭代页「新增迭代」：给迭代字段加一个迭代 | 字段、**全部已有选项原样**（id、名字、颜色、说明）+ 新选项；或**全部已有迭代原样**（含已结束的：id、名字、开始日、天数）+ 新迭代 |
+| `createIssue` | 「项目」里的「新建」：在你选的仓库里建一条 Issue | 仓库、标题、正文（你写的 Markdown）——**只传这三项**：状态、迭代、标签这些由 Jarvis 随后经上面的变更写上 |
+| `addProjectV2ItemById` | 「新建」的第二步：把刚建的 Issue 加进这个 Project | Project、刚建的 Issue |
 
 **不删任何东西**：没有删字段、删条目、删选项、删 Issue 的变更。Jarvis 也从不自己发起这些写入——
 每一次都是你在界面上的一个动作，或你在「Project 关联」里写下的 Git 事件规则，并且先过 Jarvis 的工作流与漂移守卫。
@@ -92,6 +95,9 @@
   GitHub 若不认这个过滤串，这一次回落到全量从头读，之后的游标带 `all:` 前缀，翻页时不会拿全量的游标去配增量的查询。
 - **加选项保住已有 id。** GitHub 的 `updateProjectV2Field` 是整组替换选项，但输入里带 `id`：已有选项连 id 原样写回，
   映射不会失效。同名选项已经在就什么都不改。
+- **新建 = 认出仓库 + 建 Issue + 加进 Project + 读回。** 交回给 Jarvis 的那一条已经在 Project 里，Jarvis 再经 `applyEdit`
+  写上你在「新建」里预填的字段。Issue 建好之后就不理会取消：停在两步之间会留下一条不在 Project 里的 Issue，
+  你在「项目」里看不到它、以为没建成，再点一次就重复了。读回失败不算失败，先交回 Issue 的编号、标题与链接，下次同步校正。
 
 ## 已知边界
 
@@ -102,6 +108,8 @@
 - **新建的迭代字段从今天（UTC）起排三个迭代**（`Iteration 1…3`，周期默认 14 天），与 GitHub 网页上新建迭代字段一致；
   之后要加，在 Jarvis 迭代页左栏点「新增迭代」（1.1.0 起；需要 Jarvis 带「新增迭代」的版本）：名字接着编号、从最后一个迭代结束的第二天开始。
 - **加迭代会把已结束的迭代一起写回。** GitHub 的迭代配置是整组替换：只写进行中 / 未开始的，已结束的迭代连同条目上的迭代值都会被删掉。
+- **新建只建 Issue。** 1.2.0 起（需要 Jarvis 带「新建」的版本）；不建草稿、不建 PR。仓库由你在「新建」里选，token 要能在那个仓库里建 Issue。
+- **加进 Project 失败时 Issue 不撤回。** 没有删 Issue 的变更；报错写明「Issue #编号 已建在 owner/name」，可以去 GitHub 上把它加进 Project 或关掉。
 - **新选项一律灰色、没有说明。** 颜色与说明在 GitHub 上改，不影响映射（映射认 id）。
 - **一次至多：** 列 Project 50 个（最近更新的在前）、字段 100 个、一页条目 100 条、每条字段值 50 个、指派人 20、标签 50、blocked by 20。
   被截掉的部分在表格里看不到；一个 Project 的字段本来就至多 50 个。

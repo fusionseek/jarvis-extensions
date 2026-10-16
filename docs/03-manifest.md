@@ -128,7 +128,7 @@ v2 按**域**组织（[01](01-overview.md)）：身份与能力在顶层，入�
 }
 ```
 
-`git.mutations` 这里只留两个示意；真实的 [`extensions/github-project`](../extensions/github-project/extension.json) 把代码里会发的 16 个变更都写出来。
+`git.mutations` 这里只留两个示意；真实的 [`extensions/github-project`](../extensions/github-project/extension.json) 把代码里会发的 18 个变更都写出来。
 
 ### 身份
 

@@ -1,5 +1,5 @@
 /**
- * 对着构建产物跑：宿主替身在线缆另一端扮演 Jarvis，经 `project.engine` 调七个方法；
+ * 对着构建产物跑：宿主替身在线缆另一端扮演 Jarvis，经 `project.engine` 调九个方法；
  * `git.hosting.*` 由假 GitHub 接住（按宿主闸门的规则判每一份文档）。**从不访问真的 GitHub。**
  *
  * 最后一条测试钉住：测试里真的发出去过的变更 = manifest `git.mutations`，一个不多一个不少。
@@ -52,13 +52,13 @@ beforeEach(() => {
 // describe
 // ---------------------------------------------------------------------------
 
-test("describe：token 有 project 时可用，六项可选能力，契约版本 1", async () => {
+test("describe：token 有 project 时可用，七项可选能力，契约版本 1", async () => {
   assert.deepEqual(await value("describe", undefined, "projectEngineDescribe"), {
     contractVersion: 1,
     ready: true,
     summary: "已接上 GitHub · fusionseek",
     hosting: "github",
-    features: ["nativeHierarchy", "nativeDependencies", "issueTypes", "createFields", "draftIssues", "createIterations"],
+    features: ["nativeHierarchy", "nativeDependencies", "issueTypes", "createFields", "draftIssues", "createIterations", "createItems"],
   });
 });
 
@@ -572,6 +572,150 @@ test("createIterationInput：空字段从新迭代起算；读不懂的旧迭代
   const input = source.createIterationInput("F", { duration: 7, iterations: [], completedIterations: [] }, { projectId: "P", fieldId: "F", name: "Iteration 1", startDate: "2026-10-20", iterationDurationDays: 7 });
   assert.deepEqual(input.iterationConfiguration, { startDate: "2026-10-20", duration: 7, iterations: [{ title: "Iteration 1", startDate: "2026-10-20", duration: 7 }] });
   assert.deepEqual(source.existingIterations({ iterations: [{ id: "x", title: "坏的" }] }), [], "缺开始日 / 天数的迭代不写回（读不懂就不碰）");
+});
+
+// ---------------------------------------------------------------------------
+// createItem（jarvis-mac 第十八轮 AG-1「新建条目」）
+// ---------------------------------------------------------------------------
+
+const NEW_ISSUE_URL = "https://github.com/fusionseek/jarvis-mac/issues/130";
+
+/** 新建的 Issue 读回来的样子：没有父子、依赖、标签，也还没有字段值（宿主随后经 applyEdit 写）。 */
+const newIssueNode = (id) => ({
+  ...issueNode,
+  id,
+  updatedAt: "2026-10-17T08:00:00Z",
+  fieldValues: { nodes: [] },
+  content: {
+    ...issueNode.content,
+    number: 130,
+    title: "登录页支持 Passkey",
+    url: NEW_ISSUE_URL,
+    createdAt: "2026-10-17T08:00:00Z",
+    assignees: { nodes: [] },
+    labels: { nodes: [] },
+    milestone: null,
+    issueType: null,
+    parent: null,
+    blockedBy: { nodes: [] },
+    subIssuesSummary: { total: 0, completed: 0 },
+  },
+});
+
+function createHandlers() {
+  github.handlers.RepositoryId = (variables) => ({ data: { repository: { id: `R_${variables.owner}_${variables.name}` } } });
+  github.handlers.CreateIssue = () => ({ data: { createIssue: { issue: { id: "I_130", number: 130, url: NEW_ISSUE_URL } } } });
+  github.handlers.AddProjectV2ItemById = () => ({ data: { addProjectV2ItemById: { item: { id: "PVTI_new" } } } });
+  github.handlers.ReadItem = (variables) => ({ data: { node: newIssueNode(variables.id) } });
+}
+
+const createRequest = { projectId: "PVT_kwHOAA", repository: "fusionseek/jarvis-mac", title: "  登录页支持 Passkey ", body: "## 背景\n\n- [ ] 设计稿" };
+
+test("createItem：认出仓库 → 建 Issue → 加进 Project → 读回，交回已在 Project 里的那一条", async () => {
+  createHandlers();
+  const result = await value("createItem", createRequest, "projectEngineCreatedItem");
+  assert.deepEqual(
+    github.calls.map((c) => c.name),
+    ["RepositoryId", "CreateIssue", "AddProjectV2ItemById", "ReadItem"],
+  );
+  assert.deepEqual(github.callsOf("RepositoryId")[0].variables, { owner: "fusionseek", name: "jarvis-mac" });
+  assert.deepEqual(
+    inputsOf("createIssue")[0],
+    { repositoryId: "R_fusionseek_jarvis-mac", title: "登录页支持 Passkey", body: "## 背景\n\n- [ ] 设计稿" },
+    "标题去掉首尾空白；正文原样",
+  );
+  assert.deepEqual(inputsOf("addProjectV2ItemById")[0], { projectId: "PVT_kwHOAA", contentId: "I_130" });
+  assert.deepEqual(github.callsOf("ReadItem")[0].variables, { id: "PVTI_new" });
+  assert.equal(result.item.id, "PVTI_new");
+  assert.equal(result.item.contentType, "issue");
+  assert.deepEqual(result.item.content, {
+    title: "登录页支持 Passkey",
+    repository: "fusionseek/jarvis-mac",
+    number: 130,
+    url: NEW_ISSUE_URL,
+    isOpen: true,
+    author: "fusionseek",
+    createdAt: "2026-10-17T08:00:00Z",
+  });
+
+  github.reset();
+  createHandlers();
+  await value("createItem", { projectId: "P", repository: "fusionseek/jarvis-mac", title: "没有正文" }, "projectEngineCreatedItem");
+  assert.deepEqual(inputsOf("createIssue")[0], { repositoryId: "R_fusionseek_jarvis-mac", title: "没有正文" }, "没有正文就不传 body");
+});
+
+test("createItem：加进 Project 失败时写明 Issue 已建在哪、编号是多少；宿主的拒绝保留错误码", async () => {
+  createHandlers();
+  github.handlers.AddProjectV2ItemById = () => ({
+    data: { addProjectV2ItemById: null },
+    errors: [{ type: "FORBIDDEN", message: "Resource not accessible by integration" }],
+  });
+  const rejected = await call("createItem", createRequest);
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.error.code, "host.failure");
+  assert.equal(
+    rejected.error.message,
+    "Issue #130 已建在 fusionseek/jarvis-mac，但没能加进 Project：GitHub 拒绝了「加进 Project」：Resource not accessible by integration",
+  );
+  assert.equal(github.callsOf("ReadItem").length, 0, "没加进去就不读回");
+
+  github.handlers.AddProjectV2ItemById = () => {
+    throw { code: "permission.denied", message: "没有授权修改 Git 服务数据" };
+  };
+  const denied = await call("createItem", createRequest);
+  assert.deepEqual([denied.ok, denied.error.code], [false, "permission.denied"]);
+  assert.equal(denied.error.message, "Issue #130 已建在 fusionseek/jarvis-mac，但没能加进 Project：没有授权修改 Git 服务数据");
+});
+
+test("createItem：读回失败不算失败，交回最小的条目（Issue 的身份、标题、链接）", async () => {
+  createHandlers();
+  github.handlers.ReadItem = () => ({ data: { node: null }, errors: [{ type: "NOT_FOUND", message: "gone" }] });
+  const unreadable = await value("createItem", createRequest, "projectEngineCreatedItem");
+  const { updatedAt, ...rest } = unreadable.item;
+  assert.ok(!Number.isNaN(Date.parse(updatedAt)), "updatedAt 是一个时刻");
+  assert.deepEqual(rest, {
+    id: "PVTI_new",
+    contentType: "issue",
+    content: { repository: "fusionseek/jarvis-mac", number: 130, title: "登录页支持 Passkey", isOpen: true, url: NEW_ISSUE_URL },
+    values: {},
+  });
+
+  github.handlers.ReadItem = () => ({ data: null, errors: [{ type: "RATE_LIMITED", message: "slow down" }] });
+  const limited = await value("createItem", createRequest, "projectEngineCreatedItem");
+  assert.equal(limited.item.id, "PVTI_new", "读回整个失败也交回最小条目");
+  assert.equal(limited.item.content.number, 130);
+});
+
+test("createItem：标题为空、仓库不是 owner/name 时什么都不发；找不到仓库时不建 Issue", async () => {
+  createHandlers();
+  const blank = await call("createItem", { projectId: "P", repository: "fusionseek/jarvis-mac", title: "   " });
+  assert.match(blank.error.message, /Issue 标题不能是空的/);
+  const badRepository = await call("createItem", { projectId: "P", repository: "jarvis-mac", title: "x" });
+  assert.match(badRepository.error.message, /仓库要写成 owner\/name/);
+  const tooLong = await call("createItem", { projectId: "P", repository: "fusionseek/jarvis-mac", title: "长".repeat(257) });
+  assert.match(tooLong.error.message, /Issue 标题超过 256 字/);
+  assert.equal(github.calls.length, 0, "入参不对时一个请求都不发");
+
+  github.handlers.RepositoryId = () => ({ data: { repository: null }, errors: [{ type: "NOT_FOUND", message: "Could not resolve to a Repository" }] });
+  const missing = await call("createItem", { projectId: "P", repository: "fusionseek/nope", title: "x" });
+  assert.equal(missing.error.message, "找不到仓库 fusionseek/nope（或 token 看不到它）");
+  assert.equal(inputsOf("createIssue").length, 0);
+});
+
+test("planCreateItem / minimalItem：标题去空白、空正文省略、正文按码点数限 65,536", async () => {
+  const source = await loadSource();
+  assert.deepEqual(source.planCreateItem({ projectId: "P", repository: "a/b", title: " t ", body: "" }), {
+    projectId: "P",
+    repository: "a/b",
+    owner: "a",
+    name: "b",
+    title: "t",
+  });
+  assert.equal(source.planCreateItem({ projectId: "P", repository: "a/b", title: "t", body: "😀".repeat(65_536) }).body.length, 131_072, "按码点数算，不按 UTF-16");
+  assert.throws(() => source.planCreateItem({ projectId: "P", repository: "a/b", title: "t", body: "x".repeat(65_537) }), /正文超过 65,536 字/);
+  assert.throws(() => source.planCreateItem({ projectId: "", repository: "a/b", title: "t" }), /缺少 projectId/);
+  const item = source.minimalItem("PVTI_x", source.planCreateItem({ projectId: "P", repository: "a/b", title: "t" }), { id: "I", number: 7 });
+  assert.deepEqual({ ...item, updatedAt: "" }, { id: "PVTI_x", contentType: "issue", updatedAt: "", content: { repository: "a/b", number: 7, title: "t", isOpen: true }, values: {} });
 });
 
 // ---------------------------------------------------------------------------

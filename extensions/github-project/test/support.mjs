@@ -40,6 +40,7 @@ export async function loadSource() {
         'export { planResolve, fieldValueInput, refKey, changeTitle } from "./src/edit.ts";',
         'export { sinceFilter, planPage, fullScanPrefix } from "./src/items.ts";',
         'export { createFieldInput, iterationConfiguration, existingOptions, existingIterations, createIterationInput } from "./src/fields.ts";',
+        'export { planCreateItem, minimalItem } from "./src/create.ts";',
         'export { describeErrors } from "./src/graphql.ts";',
       ].join("\n"),
       resolveDir: extensionRoot,

@@ -1,4 +1,4 @@
-// jarvis-extension bundle · github-project@1.1.0 · sdk 2.2.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · github-project@1.2.0 · sdk 2.3.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -110,7 +110,7 @@
   var projectEngineContractVersion = 1;
 
   // sdk/src/index.ts
-  var sdkVersion = "2.2.0";
+  var sdkVersion = "2.3.0";
   var Cancellation = class {
     constructor() {
       this.listeners = [];
@@ -330,6 +330,9 @@
               case "createIteration":
                 if (!engine.createIteration) break;
                 return engine.createIteration(request, context, signal);
+              case "createItem":
+                if (!engine.createItem) break;
+                return engine.createItem(request, context, signal);
             }
             break;
           }
@@ -641,86 +644,6 @@
     return new Date(time).toISOString().slice(0, 10);
   }
 
-  // extensions/github-project/src/graphql.ts
-  var terminalErrorTypes = /* @__PURE__ */ new Set(["NOT_FOUND", "FORBIDDEN", "INSUFFICIENT_SCOPES", "RATE_LIMITED"]);
-  function describeErrors(errors) {
-    const list2 = errors ?? [];
-    if (list2.some((error) => error.type === "INSUFFICIENT_SCOPES")) {
-      return "token \u7F3A\u5C11 Projects \u6743\u9650\uFF08\u53EA\u8BFB\u9700 read:project\uFF0C\u5199\u56DE\u9700 project\uFF09\uFF1A\u5230 \u8BBE\u7F6E \xB7 Git \xB7 GitHub \u66F4\u65B0 token";
-    }
-    if (list2.some((error) => error.type === "RATE_LIMITED")) return "GitHub \u9650\u6D41\u4E86\uFF1A\u7B49\u4E00\u4F1A\u513F\u518D\u8BD5";
-    const first = list2[0];
-    if (!first) return "GitHub \u6CA1\u6709\u8FD4\u56DE\u6570\u636E";
-    return clamp(first.message || first.type || "GitHub \u8FD4\u56DE\u4E86\u9519\u8BEF", maxLength.summary);
-  }
-  function throwIfCancelled(signal) {
-    if (signal?.cancelled) throw new JarvisError({ code: "cancelled", message: "\u5DF2\u53D6\u6D88" });
-  }
-  function rawQuery(document, variables) {
-    return jarvis.git.hosting.query({ hosting, query: document, variables });
-  }
-  async function query(document, variables, what) {
-    return outcome(await rawQuery(document, variables), what);
-  }
-  function outcome(response, what) {
-    const errors = response.errors ?? [];
-    if (response.data === null || response.data === void 0) {
-      throw new GitHubError(`${what}${/[A-Za-z0-9]$/.test(what) ? " " : ""}\u5931\u8D25\uFF1A${describeErrors(errors)}`, errors);
-    }
-    if (errors.length) jarvis.log.warn(`${what}\uFF1AGitHub \u90E8\u5206\u6210\u529F`, errors.slice(0, 3).map((error) => error.message));
-    return { data: response.data, errors };
-  }
-  async function mutate(document, variables, what) {
-    const response = await jarvis.git.hosting.mutate({ hosting, query: document, variables });
-    const errors = response.errors ?? [];
-    if (errors.length || response.data === null || response.data === void 0) {
-      throw new GitHubError(`GitHub \u62D2\u7EDD\u4E86\u300C${what}\u300D\uFF1A${describeErrors(errors)}`, errors);
-    }
-    return response.data;
-  }
-  var GitHubError = class extends Error {
-    constructor(message, errors) {
-      super(message);
-      this.name = "GitHubError";
-      this.errors = errors;
-    }
-  };
-  function messageOf(error) {
-    if (error instanceof Error) return error.message;
-    if (error && typeof error === "object" && "message" in error) return String(error.message);
-    return String(error);
-  }
-
-  // extensions/github-project/src/describe.ts
-  var features = ["nativeHierarchy", "nativeDependencies", "issueTypes", "createFields", "draftIssues", "createIterations"];
-  var missingScopeProblem = "token \u7F3A\u5C11 project \u6743\u9650\uFF08\u53EA\u8BFB\u9700 read:project\uFF09";
-  async function describe(context) {
-    const base = { contractVersion: projectEngineContractVersion, hosting, features };
-    const unavailable = (summary2, problem) => ({
-      ...base,
-      ready: false,
-      summary: clamp(summary2, maxLength.summary),
-      problem: clamp(problem, maxLength.summary)
-    });
-    if (!context.granted.includes("git.hosting.read")) {
-      return unavailable("\u8FD8\u6CA1\u6709\u6388\u6743\u8BFB\u53D6 GitHub", "\u6CA1\u6709\u300C\u8BFB\u53D6 Git \u670D\u52A1\u6570\u636E\u300D\u6388\u6743\uFF1A\u5230 \u8BBE\u7F6E \xB7 \u6269\u5C55 \xB7 GitHub \u9879\u76EE \u91CC\u6253\u5F00\u5B83");
-    }
-    let viewer;
-    try {
-      viewer = await jarvis.git.hosting.viewer({ hosting });
-    } catch (error) {
-      return unavailable("\u8FDE\u4E0D\u4E0A GitHub", messageOf(error));
-    }
-    const who = viewer.login ? `GitHub \xB7 ${viewer.login}` : "GitHub";
-    if (viewer.projectAccess === "none") return unavailable(`\u5DF2\u63A5\u4E0A ${who}\uFF0C\u4F46 token \u8BFB\u4E0D\u4E86 Project`, missingScopeProblem);
-    const limits = [];
-    if (viewer.projectAccess === "readOnly") limits.push("token \u53EA\u6709 read:project\uFF0C\u53EA\u80FD\u8BFB");
-    if (viewer.projectAccess === "unknown") limits.push("fine-grained token \u770B\u4E0D\u51FA Projects \u6743\u9650\uFF0C\u8BFB\u5199\u65F6\u624D\u77E5\u9053");
-    if (!context.granted.includes("git.hosting.write")) limits.push("\u6CA1\u6709\u6388\u6743\u4FEE\u6539\uFF0C\u53EA\u8BFB\u6D4F\u89C8");
-    const summary = limits.length ? `\u5DF2\u63A5\u4E0A ${who}\uFF08${limits.join("\uFF1B")}\uFF09` : `\u5DF2\u63A5\u4E0A ${who}`;
-    return { ...base, ready: true, summary: clamp(summary, maxLength.summary) };
-  }
-
   // extensions/github-project/src/documents.ts
   var projectSummaryFragment = `fragment ProjectSummaryFields on ProjectV2 {
   id
@@ -871,6 +794,9 @@ ${itemFragment}`;
   }
 }
 ${itemFragment}`;
+  var repositoryId = `query RepositoryId($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) { id }
+}`;
   var readField = `query ReadField($id: ID!) {
   node(id: $id) {
     __typename
@@ -914,11 +840,63 @@ ${spec.fragments}` : ""}`;
       title: "\u52A0\u9009\u9879",
       selection: "projectV2Field { ...FieldConfig }",
       fragments: fieldConfigFragment
-    }
+    },
+    createIssue: { field: "createIssue", input: "CreateIssueInput", title: "\u5EFA Issue", selection: "issue { id number url }" },
+    addProjectV2ItemById: { field: "addProjectV2ItemById", input: "AddProjectV2ItemByIdInput", title: "\u52A0\u8FDB Project", selection: "item { id }" }
   };
   var mutations = Object.fromEntries(
     Object.entries(specs).map(([name, spec]) => [name, { name, title: spec.title, document: mutationDocument(spec) }])
   );
+
+  // extensions/github-project/src/graphql.ts
+  var terminalErrorTypes = /* @__PURE__ */ new Set(["NOT_FOUND", "FORBIDDEN", "INSUFFICIENT_SCOPES", "RATE_LIMITED"]);
+  function describeErrors(errors) {
+    const list2 = errors ?? [];
+    if (list2.some((error) => error.type === "INSUFFICIENT_SCOPES")) {
+      return "token \u7F3A\u5C11 Projects \u6743\u9650\uFF08\u53EA\u8BFB\u9700 read:project\uFF0C\u5199\u56DE\u9700 project\uFF09\uFF1A\u5230 \u8BBE\u7F6E \xB7 Git \xB7 GitHub \u66F4\u65B0 token";
+    }
+    if (list2.some((error) => error.type === "RATE_LIMITED")) return "GitHub \u9650\u6D41\u4E86\uFF1A\u7B49\u4E00\u4F1A\u513F\u518D\u8BD5";
+    const first = list2[0];
+    if (!first) return "GitHub \u6CA1\u6709\u8FD4\u56DE\u6570\u636E";
+    return clamp(first.message || first.type || "GitHub \u8FD4\u56DE\u4E86\u9519\u8BEF", maxLength.summary);
+  }
+  function throwIfCancelled(signal) {
+    if (signal?.cancelled) throw new JarvisError({ code: "cancelled", message: "\u5DF2\u53D6\u6D88" });
+  }
+  function rawQuery(document, variables) {
+    return jarvis.git.hosting.query({ hosting, query: document, variables });
+  }
+  async function query(document, variables, what) {
+    return outcome(await rawQuery(document, variables), what);
+  }
+  function outcome(response, what) {
+    const errors = response.errors ?? [];
+    if (response.data === null || response.data === void 0) {
+      throw new GitHubError(`${what}${/[A-Za-z0-9]$/.test(what) ? " " : ""}\u5931\u8D25\uFF1A${describeErrors(errors)}`, errors);
+    }
+    if (errors.length) jarvis.log.warn(`${what}\uFF1AGitHub \u90E8\u5206\u6210\u529F`, errors.slice(0, 3).map((error) => error.message));
+    return { data: response.data, errors };
+  }
+  async function mutate(document, variables, what) {
+    const response = await jarvis.git.hosting.mutate({ hosting, query: document, variables });
+    const errors = response.errors ?? [];
+    if (errors.length || response.data === null || response.data === void 0) {
+      throw new GitHubError(`GitHub \u62D2\u7EDD\u4E86\u300C${what}\u300D\uFF1A${describeErrors(errors)}`, errors);
+    }
+    return response.data;
+  }
+  var GitHubError = class extends Error {
+    constructor(message, errors) {
+      super(message);
+      this.name = "GitHubError";
+      this.errors = errors;
+    }
+  };
+  function messageOf(error) {
+    if (error instanceof Error) return error.message;
+    if (error && typeof error === "object" && "message" in error) return String(error.message);
+    return String(error);
+  }
 
   // extensions/github-project/src/mapping.ts
   function object(value) {
@@ -1204,6 +1182,121 @@ ${spec.fragments}` : ""}`;
     }
     const fields = rawFields.map((field) => mapField(field, issueTypes)).filter((field) => field !== null);
     return { project, fields };
+  }
+
+  // extensions/github-project/src/create.ts
+  var maxIssueTitle = 256;
+  var maxIssueBody = 65536;
+  function planCreateItem(request) {
+    if (!request.projectId) throw new Error("\u7F3A\u5C11 projectId");
+    if (!request.repository) throw new Error("\u7F3A\u5C11\u8981\u5EFA Issue \u7684\u4ED3\u5E93");
+    const { owner, name } = splitRepository(request.repository);
+    const title = typeof request.title === "string" ? request.title.trim() : "";
+    if (!title) throw new Error("Issue \u6807\u9898\u4E0D\u80FD\u662F\u7A7A\u7684");
+    if (Array.from(title).length > maxIssueTitle) throw new Error(`Issue \u6807\u9898\u8D85\u8FC7 ${maxIssueTitle} \u5B57`);
+    const plan = { projectId: request.projectId, repository: request.repository, owner, name, title };
+    if (typeof request.body === "string" && request.body.length > 0) {
+      if (Array.from(request.body).length > maxIssueBody) throw new Error("Issue \u6B63\u6587\u8D85\u8FC7 65,536 \u5B57");
+      plan.body = request.body;
+    }
+    return plan;
+  }
+  function minimalItem(itemId, plan, issue) {
+    const content = {
+      repository: plan.repository,
+      number: issue.number,
+      title: clamp(plan.title, maxLength.itemTitle),
+      isOpen: true
+    };
+    const url = nonEmpty(issue.url, maxLength.url);
+    if (url) content.url = url;
+    return { id: itemId, contentType: "issue", updatedAt: (/* @__PURE__ */ new Date()).toISOString(), content, values: {} };
+  }
+  function createdIssue(raw) {
+    const id = raw?.["id"];
+    const number = raw?.["number"];
+    if (typeof id !== "string" || !id || typeof number !== "number" || !Number.isInteger(number) || number < 1) return null;
+    const url = raw?.["url"];
+    return typeof url === "string" ? { id, number, url } : { id, number };
+  }
+  async function createItem(request, signal) {
+    const plan = planCreateItem(request);
+    throwIfCancelled(signal);
+    const { data } = await query(repositoryId, { owner: plan.owner, name: plan.name }, "\u8BFB\u4ED3\u5E93");
+    const repositoryNode = data.repository?.["id"];
+    if (typeof repositoryNode !== "string" || !repositoryNode) {
+      throw new GitHubError(`\u627E\u4E0D\u5230\u4ED3\u5E93 ${plan.repository}\uFF08\u6216 token \u770B\u4E0D\u5230\u5B83\uFF09`, []);
+    }
+    throwIfCancelled(signal);
+    const create = mutations.createIssue;
+    const input = { repositoryId: repositoryNode, title: plan.title };
+    if (plan.body !== void 0) input["body"] = plan.body;
+    const created = await mutate(create.document, { input }, create.title);
+    const issue = createdIssue(created.createIssue?.issue);
+    if (!issue) throw new GitHubError(`GitHub \u62D2\u7EDD\u4E86\u300C${create.title}\u300D\uFF1A\u6CA1\u6709\u4EA4\u56DE\u5EFA\u597D\u7684 Issue`, []);
+    let itemId;
+    try {
+      const add = mutations.addProjectV2ItemById;
+      const added = await mutate(
+        add.document,
+        { input: { projectId: plan.projectId, contentId: issue.id } },
+        add.title
+      );
+      const id = added.addProjectV2ItemById?.item?.["id"];
+      if (typeof id !== "string" || !id) throw new GitHubError(`GitHub \u62D2\u7EDD\u4E86\u300C${add.title}\u300D\uFF1A\u6CA1\u6709\u4EA4\u56DE Project \u6761\u76EE`, []);
+      itemId = id;
+    } catch (error) {
+      const message = `Issue #${issue.number} \u5DF2\u5EFA\u5728 ${plan.repository}\uFF0C\u4F46\u6CA1\u80FD\u52A0\u8FDB Project\uFF1A${messageOf(error)}`;
+      if (error instanceof JarvisError) throw new JarvisError({ code: error.code, message, ...error.detail ? { detail: error.detail } : {} });
+      throw new Error(message);
+    }
+    try {
+      const { data: read } = await query(readItem, { id: itemId }, "\u8BFB\u56DE\u6761\u76EE");
+      const item = mapItem(read.node);
+      if (item) return { item };
+      jarvis.log.warn("Issue \u5DF2\u5EFA\u597D\u5E76\u52A0\u8FDB Project\uFF0C\u8BFB\u56DE\u7684\u90A3\u4E00\u6761\u8BFB\u4E0D\u51FA\uFF1B\u5148\u4EA4\u56DE\u6700\u5C0F\u6761\u76EE\uFF0C\u5BBF\u4E3B\u4E0B\u6B21\u540C\u6B65\u4F1A\u6821\u6B63", itemId);
+    } catch (error) {
+      jarvis.log.warn("Issue \u5DF2\u5EFA\u597D\u5E76\u52A0\u8FDB Project\uFF0C\u8BFB\u56DE\u90A3\u4E00\u6761\u5931\u8D25\uFF1B\u5148\u4EA4\u56DE\u6700\u5C0F\u6761\u76EE\uFF0C\u5BBF\u4E3B\u4E0B\u6B21\u540C\u6B65\u4F1A\u6821\u6B63", messageOf(error));
+    }
+    return { item: minimalItem(itemId, plan, issue) };
+  }
+
+  // extensions/github-project/src/describe.ts
+  var features = [
+    "nativeHierarchy",
+    "nativeDependencies",
+    "issueTypes",
+    "createFields",
+    "draftIssues",
+    "createIterations",
+    "createItems"
+  ];
+  var missingScopeProblem = "token \u7F3A\u5C11 project \u6743\u9650\uFF08\u53EA\u8BFB\u9700 read:project\uFF09";
+  async function describe(context) {
+    const base = { contractVersion: projectEngineContractVersion, hosting, features };
+    const unavailable = (summary2, problem) => ({
+      ...base,
+      ready: false,
+      summary: clamp(summary2, maxLength.summary),
+      problem: clamp(problem, maxLength.summary)
+    });
+    if (!context.granted.includes("git.hosting.read")) {
+      return unavailable("\u8FD8\u6CA1\u6709\u6388\u6743\u8BFB\u53D6 GitHub", "\u6CA1\u6709\u300C\u8BFB\u53D6 Git \u670D\u52A1\u6570\u636E\u300D\u6388\u6743\uFF1A\u5230 \u8BBE\u7F6E \xB7 \u6269\u5C55 \xB7 GitHub \u9879\u76EE \u91CC\u6253\u5F00\u5B83");
+    }
+    let viewer;
+    try {
+      viewer = await jarvis.git.hosting.viewer({ hosting });
+    } catch (error) {
+      return unavailable("\u8FDE\u4E0D\u4E0A GitHub", messageOf(error));
+    }
+    const who = viewer.login ? `GitHub \xB7 ${viewer.login}` : "GitHub";
+    if (viewer.projectAccess === "none") return unavailable(`\u5DF2\u63A5\u4E0A ${who}\uFF0C\u4F46 token \u8BFB\u4E0D\u4E86 Project`, missingScopeProblem);
+    const limits = [];
+    if (viewer.projectAccess === "readOnly") limits.push("token \u53EA\u6709 read:project\uFF0C\u53EA\u80FD\u8BFB");
+    if (viewer.projectAccess === "unknown") limits.push("fine-grained token \u770B\u4E0D\u51FA Projects \u6743\u9650\uFF0C\u8BFB\u5199\u65F6\u624D\u77E5\u9053");
+    if (!context.granted.includes("git.hosting.write")) limits.push("\u6CA1\u6709\u6388\u6743\u4FEE\u6539\uFF0C\u53EA\u8BFB\u6D4F\u89C8");
+    const summary = limits.length ? `\u5DF2\u63A5\u4E0A ${who}\uFF08${limits.join("\uFF1B")}\uFF09` : `\u5DF2\u63A5\u4E0A ${who}`;
+    return { ...base, ready: true, summary: clamp(summary, maxLength.summary) };
   }
 
   // extensions/github-project/src/edit.ts
@@ -1732,7 +1825,8 @@ ${atRoot.map((line) => `  ${line}`).join("\n")}
     applyEdit: (request, _context, signal) => applyEdit(request, signal),
     createField: (request, _context, signal) => createField(request, signal),
     createOption: (request, _context, signal) => createOption(request, signal),
-    createIteration: (request, _context, signal) => createIteration(request, signal)
+    createIteration: (request, _context, signal) => createIteration(request, signal),
+    createItem: (request, _context, signal) => createItem(request, signal)
   };
 
   // extensions/github-project/src/index.ts

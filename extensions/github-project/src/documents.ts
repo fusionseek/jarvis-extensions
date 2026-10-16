@@ -185,6 +185,11 @@ export const readItem = `query ReadItem($id: ID!) {
 }
 ${itemFragment}`;
 
+/** 一个仓库的节点 id（`createItem` 建 Issue 要用：`createIssue` 只认仓库 id）。 */
+export const repositoryId = `query RepositoryId($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) { id }
+}`;
+
 /** 读一个字段的当前结构（`createOption` / `createIteration` 要原样带回已有选项 / 迭代）。 */
 export const readField = `query ReadField($id: ID!) {
   node(id: $id) {
@@ -195,7 +200,8 @@ export const readField = `query ReadField($id: ID!) {
 ${fieldConfigFragment}`;
 
 // ---------------------------------------------------------------------------
-// 变更：每份一个顶层字段，名字与 manifest `git.mutations` 逐字对应。只取 clientMutationId，结果另读。
+// 变更：每份一个顶层字段，名字与 manifest `git.mutations` 逐字对应。默认只取 clientMutationId、结果另读；
+// 后面要用到结果的那几份（建字段、建 Issue、加进 Project）带自己的选择集。
 // ---------------------------------------------------------------------------
 
 /** 一种变更：GraphQL 顶层字段名 + 输入类型。 */
@@ -246,6 +252,8 @@ const specs = {
     selection: "projectV2Field { ...FieldConfig }",
     fragments: fieldConfigFragment,
   },
+  createIssue: { field: "createIssue", input: "CreateIssueInput", title: "建 Issue", selection: "issue { id number url }" },
+  addProjectV2ItemById: { field: "addProjectV2ItemById", input: "AddProjectV2ItemByIdInput", title: "加进 Project", selection: "item { id }" },
 } satisfies Record<string, MutationSpec>;
 
 /** 代码里会发的变更名。manifest `git.mutations` 必须与它逐字相同（测试钉住）。 */

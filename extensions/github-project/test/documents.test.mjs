@@ -17,6 +17,7 @@ const queries = {
   ReadItemsSince: source.readItemsSince,
   ReadItem: source.readItem,
   ReadField: source.readField,
+  RepositoryId: source.repositoryId,
 };
 
 test("每一份查询都是恰好一个具名查询（可以带片段），过得了宿主的读闸门", () => {
@@ -35,7 +36,7 @@ test("每一份变更只有一个顶层字段，就是它的名字；变更集�
     assert.deepEqual(operation.fields, [name]);
   }
   assert.deepEqual([...names].sort(), [...declaredMutations].sort(), "代码会发的变更 = manifest 声明的变更，一个不多一个不少");
-  assert.equal(manifest.git.mutations.length, 16);
+  assert.equal(manifest.git.mutations.length, 18);
 });
 
 test("宿主闸门的移植：顶层片段展开、两个操作、订阅都被认出来", () => {
