@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createTestHost } from "../../../sdk/dist/testing.js";
-import { contract, declaredMutations, fakeGitHub, issueNode, ok } from "./support.mjs";
+import { contract, declaredMutations, fakeGitHub, issueNode, loadSource, ok } from "./support.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const github = fakeGitHub();
@@ -52,13 +52,13 @@ beforeEach(() => {
 // describe
 // ---------------------------------------------------------------------------
 
-test("describe：token 有 project 时可用，五项可选能力，契约版本 1", async () => {
+test("describe：token 有 project 时可用，六项可选能力，契约版本 1", async () => {
   assert.deepEqual(await value("describe", undefined, "projectEngineDescribe"), {
     contractVersion: 1,
     ready: true,
     summary: "已接上 GitHub · fusionseek",
     hosting: "github",
-    features: ["nativeHierarchy", "nativeDependencies", "issueTypes", "createFields", "draftIssues"],
+    features: ["nativeHierarchy", "nativeDependencies", "issueTypes", "createFields", "draftIssues", "createIterations"],
   });
 });
 
@@ -504,6 +504,74 @@ test("createOption：同名选项已在就不改；多选用 multiSelectOptions�
   github.handlers.ReadField = () => ({ data: { node: { id: "PVTF_target", name: "Target date", dataType: "DATE" } } });
   const date = await call("createOption", { projectId: "P", fieldId: "PVTF_target", name: "x" });
   assert.match(date.error.message, /「Target date」不是单选或多选字段/);
+});
+
+// ---------------------------------------------------------------------------
+// createIteration（jarvis-mac U-5「在迭代部分，可以选择新增迭代」）
+// ---------------------------------------------------------------------------
+
+const sprintField = {
+  __typename: "ProjectV2IterationField",
+  id: "PVTIF_sprint",
+  name: "Sprint",
+  dataType: "ITERATION",
+  configuration: {
+    duration: 14,
+    iterations: [{ id: "i42", title: "Sprint 42", startDate: "2026-10-06", duration: 14 }],
+    completedIterations: [{ id: "i41", title: "Sprint 41", startDate: "2026-09-22", duration: 14 }],
+  },
+};
+
+test("createIteration：已结束的迭代也连 id 原样写回，新的按开始日接进去", async () => {
+  github.handlers.ReadField = () => ({ data: { node: sprintField } });
+  github.handlers.UpdateProjectV2Field = (variables) => {
+    const all = variables.input.iterationConfiguration.iterations.map((it) => ({ ...it, id: it.id ?? "i43" }));
+    return {
+      data: {
+        updateProjectV2Field: {
+          projectV2Field: { ...sprintField, configuration: { duration: 14, completedIterations: [all[0]], iterations: all.slice(1) } },
+        },
+      },
+    };
+  };
+  const result = await value(
+    "createIteration",
+    { projectId: "P", fieldId: "PVTIF_sprint", name: "Sprint 43", startDate: "2026-10-20", iterationDurationDays: 14 },
+    "projectEngineFieldResult",
+  );
+  assert.deepEqual(github.callsOf("UpdateProjectV2Field")[0].variables.input, {
+    fieldId: "PVTIF_sprint",
+    iterationConfiguration: {
+      startDate: "2026-09-22",
+      duration: 14,
+      iterations: [
+        { id: "i41", title: "Sprint 41", startDate: "2026-09-22", duration: 14 },
+        { id: "i42", title: "Sprint 42", startDate: "2026-10-06", duration: 14 },
+        { title: "Sprint 43", startDate: "2026-10-20", duration: 14 },
+      ],
+    },
+  });
+  assert.deepEqual(result.field.iterations.map((it) => it.id), ["i41", "i42", "i43"]);
+  assert.equal(result.field.iterations[0].completed, true);
+});
+
+test("createIteration：重名、不是迭代字段、日期写错都在发变更之前拦下", async () => {
+  github.handlers.ReadField = () => ({ data: { node: sprintField } });
+  const duplicate = await call("createIteration", { projectId: "P", fieldId: "PVTIF_sprint", name: " sprint 41 ", startDate: "2026-11-01", iterationDurationDays: 7 });
+  assert.match(duplicate.error.message, /已经有叫「sprint 41」的迭代/);
+  const badDate = await call("createIteration", { projectId: "P", fieldId: "PVTIF_sprint", name: "Sprint 44", startDate: "11/01", iterationDurationDays: 7 });
+  assert.match(badDate.error.message, /YYYY-MM-DD/);
+  github.handlers.ReadField = () => ({ data: { node: statusField } });
+  const wrongType = await call("createIteration", { projectId: "P", fieldId: "PVTSSF_status", name: "x", startDate: "2026-11-01", iterationDurationDays: 7 });
+  assert.match(wrongType.error.message, /「Status」不是迭代字段/);
+  assert.equal(github.callsOf("UpdateProjectV2Field").length, 0);
+});
+
+test("createIterationInput：空字段从新迭代起算；读不懂的旧迭代不碰", async () => {
+  const source = await loadSource();
+  const input = source.createIterationInput("F", { duration: 7, iterations: [], completedIterations: [] }, { projectId: "P", fieldId: "F", name: "Iteration 1", startDate: "2026-10-20", iterationDurationDays: 7 });
+  assert.deepEqual(input.iterationConfiguration, { startDate: "2026-10-20", duration: 7, iterations: [{ title: "Iteration 1", startDate: "2026-10-20", duration: 7 }] });
+  assert.deepEqual(source.existingIterations({ iterations: [{ id: "x", title: "坏的" }] }), [], "缺开始日 / 天数的迭代不写回（读不懂就不碰）");
 });
 
 // ---------------------------------------------------------------------------

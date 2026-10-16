@@ -185,7 +185,7 @@ export const readItem = `query ReadItem($id: ID!) {
 }
 ${itemFragment}`;
 
-/** 读一个字段的当前结构（`createOption` 要原样带回已有选项）。 */
+/** 读一个字段的当前结构（`createOption` / `createIteration` 要原样带回已有选项 / 迭代）。 */
 export const readField = `query ReadField($id: ID!) {
   node(id: $id) {
     __typename

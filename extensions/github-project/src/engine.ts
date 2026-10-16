@@ -4,7 +4,7 @@
 import type { ProjectEngine } from "@fusionseek/jarvis-extension-sdk";
 import { describe } from "./describe.js";
 import { applyEdit } from "./edit.js";
-import { createField, createOption } from "./fields.js";
+import { createField, createIteration, createOption } from "./fields.js";
 import { readItems } from "./items.js";
 import { listProjects, readSchema } from "./projects.js";
 
@@ -17,4 +17,5 @@ export const githubProjectEngine: ProjectEngine = {
   applyEdit: (request, _context, signal) => applyEdit(request, signal),
   createField: (request, _context, signal) => createField(request, signal),
   createOption: (request, _context, signal) => createOption(request, signal),
+  createIteration: (request, _context, signal) => createIteration(request, signal),
 };

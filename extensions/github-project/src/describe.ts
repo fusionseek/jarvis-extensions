@@ -8,10 +8,10 @@ import { messageOf } from "./graphql.js";
 import { clamp, hosting, maxLength } from "./limits.js";
 
 /**
- * GitHub Projects v2 原生就有的五样：子 Issue、blocked by、组织的 Issue Type、在 Project 里建字段与选项、草稿条目。
+ * GitHub Projects v2 原生就有的六样：子 Issue、blocked by、组织的 Issue Type、在 Project 里建字段与选项、草稿条目、给迭代字段加迭代。
  * 写成常量：这是 GitHub 的能力，不随 token 变——token 不够时是 `ready` 与说明的事，不是能力表的事。
  */
-export const features: ProjectEngineFeature[] = ["nativeHierarchy", "nativeDependencies", "issueTypes", "createFields", "draftIssues"];
+export const features: ProjectEngineFeature[] = ["nativeHierarchy", "nativeDependencies", "issueTypes", "createFields", "draftIssues", "createIterations"];
 
 /** 缺 Projects 权限时那一句（宿主原样显示在「项目」的说明卡上）。 */
 export const missingScopeProblem = "token 缺少 project 权限（只读需 read:project）";

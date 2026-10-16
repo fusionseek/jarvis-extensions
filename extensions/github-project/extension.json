@@ -1,7 +1,7 @@
 {
   "manifestVersion": 2,
   "id": "github-project",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "GitHub 项目",
   "symbol": "tablecells",
   "description": "给 Jarvis「项目」接上 GitHub Projects v2：读 Project 的字段、条目、迭代与 Issue 的父子 / 依赖关系，把你在需求、迭代、缺陷页上的修改写回 GitHub。页面与规则由 Jarvis 画，它只负责读写数据。",
@@ -10,7 +10,7 @@
     "github": "fusionseek"
   },
   "main": "dist/extension.js",
-  "sdk": "^2.1.0",
+  "sdk": "^2.2.0",
   "minimumJarvisVersion": "3.2.1",
   "capabilities": [
     {
@@ -54,7 +54,8 @@
           "只执行 Jarvis 校验过的修改；不删字段、不删条目、不删选项",
           "Issue Type 只在组织仓库里有；用户仓库里改类型会被 GitHub 拒绝",
           "增量同步按天过滤、往前多读一天；每页 100 条",
-          "加选项时原样保留已有选项的 id，映射不会因此失效"
+          "加选项时原样保留已有选项的 id，映射不会因此失效",
+          "新增迭代时已有迭代（含已结束的）连 id 原样保留，条目上的迭代值不受影响"
         ]
       }
     ],

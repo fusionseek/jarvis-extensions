@@ -1,4 +1,4 @@
-// jarvis-extension bundle · github-project@1.0.0 · sdk 2.1.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · github-project@1.1.0 · sdk 2.2.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -110,7 +110,7 @@
   var projectEngineContractVersion = 1;
 
   // sdk/src/index.ts
-  var sdkVersion = "2.1.0";
+  var sdkVersion = "2.2.0";
   var Cancellation = class {
     constructor() {
       this.listeners = [];
@@ -327,6 +327,9 @@
               case "createOption":
                 if (!engine.createOption) break;
                 return engine.createOption(request, context, signal);
+              case "createIteration":
+                if (!engine.createIteration) break;
+                return engine.createIteration(request, context, signal);
             }
             break;
           }
@@ -689,7 +692,7 @@
   }
 
   // extensions/github-project/src/describe.ts
-  var features = ["nativeHierarchy", "nativeDependencies", "issueTypes", "createFields", "draftIssues"];
+  var features = ["nativeHierarchy", "nativeDependencies", "issueTypes", "createFields", "draftIssues", "createIterations"];
   var missingScopeProblem = "token \u7F3A\u5C11 project \u6743\u9650\uFF08\u53EA\u8BFB\u9700 read:project\uFF09";
   async function describe(context) {
     const base = { contractVersion: projectEngineContractVersion, hosting, features };
@@ -1620,6 +1623,57 @@ ${atRoot.map((line) => `  ${line}`).join("\n")}
     if (lost.length) jarvis.log.warn("\u52A0\u9009\u9879\u4E4B\u540E\uFF0C\u5DF2\u6709\u9009\u9879\u7684 id \u53D8\u4E86", lost.map((option) => option.name));
     return { field };
   }
+  function existingIterations(configuration) {
+    const raw = configuration ?? {};
+    const lists = [raw?.["completedIterations"], raw?.["iterations"]];
+    return lists.flatMap((list2) => Array.isArray(list2) ? list2 : []).flatMap((entry) => {
+      const iteration = entry;
+      const id = iteration?.["id"];
+      const title = iteration?.["title"];
+      const startDate = day(iteration?.["startDate"]);
+      const duration = iteration?.["duration"];
+      if (typeof id !== "string" || typeof title !== "string" || !startDate || typeof duration !== "number") return [];
+      return [{ id, title, startDate, duration }];
+    }).sort((a, b) => a.startDate.localeCompare(b.startDate));
+  }
+  function createIterationInput(fieldId, configuration, request) {
+    const title = request.name?.trim();
+    if (!title) throw new Error("\u8FED\u4EE3\u540D\u4E0D\u80FD\u662F\u7A7A\u7684");
+    const startDate = day(request.startDate);
+    if (!startDate) throw new Error("\u5F00\u59CB\u65E5\u8981\u5199\u6210 YYYY-MM-DD");
+    const days = request.iterationDurationDays;
+    if (!Number.isInteger(days) || days < 1 || days > 365) throw new Error("\u8FED\u4EE3\u5468\u671F\u8981\u5728 1\u2013365 \u5929\u4E4B\u95F4");
+    const existing = existingIterations(configuration);
+    if (existing.some((iteration) => iteration.title.trim().toLowerCase() === title.toLowerCase())) {
+      throw new GitHubError(`\u5DF2\u7ECF\u6709\u53EB\u300C${title}\u300D\u7684\u8FED\u4EE3`, []);
+    }
+    const iterations = [...existing, { title: clamp(title, maxLength.name), startDate, duration: days }].sort(
+      (a, b) => a.startDate.localeCompare(b.startDate)
+    );
+    const configured = (configuration ?? {})?.["duration"];
+    const duration = typeof configured === "number" && configured >= 1 && configured <= 365 ? configured : days;
+    return { fieldId, iterationConfiguration: { startDate: iterations[0].startDate, duration, iterations } };
+  }
+  async function createIteration(request, signal) {
+    if (!request.fieldId) throw new Error("\u7F3A\u5C11 fieldId");
+    throwIfCancelled(signal);
+    const { data } = await query(readField, { id: request.fieldId }, "\u8BFB\u5B57\u6BB5");
+    const node = data.node;
+    if (!node) throw new GitHubError("\u627E\u4E0D\u5230\u8FD9\u4E2A\u5B57\u6BB5\uFF08\u6216 token \u770B\u4E0D\u5230\u5B83\uFF09", []);
+    if (node["dataType"] !== "ITERATION") {
+      throw new GitHubError(`\u300C${String(node["name"] ?? request.fieldId)}\u300D\u4E0D\u662F\u8FED\u4EE3\u5B57\u6BB5\uFF0C\u52A0\u4E0D\u4E86\u8FED\u4EE3`, []);
+    }
+    const existing = existingIterations(node["configuration"]);
+    const input = createIterationInput(request.fieldId, node["configuration"], request);
+    throwIfCancelled(signal);
+    const mutation = mutations.updateProjectV2Field;
+    const result = await mutate(mutation.document, { input }, "\u52A0\u8FED\u4EE3");
+    const field = fieldFrom(result.updateProjectV2Field?.projectV2Field, "\u52A0\u8FED\u4EE3");
+    const kept = new Set((field.iterations ?? []).map((iteration) => iteration.id));
+    const lost = existing.filter((iteration) => iteration.id && !kept.has(iteration.id));
+    if (lost.length) jarvis.log.warn("\u52A0\u8FED\u4EE3\u4E4B\u540E\uFF0C\u5DF2\u6709\u8FED\u4EE3\u7684 id \u53D8\u4E86", lost.map((iteration) => iteration.title));
+    return { field };
+  }
 
   // extensions/github-project/src/items.ts
   var fullScanPrefix = "all:";
@@ -1677,7 +1731,8 @@ ${atRoot.map((line) => `  ${line}`).join("\n")}
     readItems: (request, _context, signal) => readItems2(request, signal),
     applyEdit: (request, _context, signal) => applyEdit(request, signal),
     createField: (request, _context, signal) => createField(request, signal),
-    createOption: (request, _context, signal) => createOption(request, signal)
+    createOption: (request, _context, signal) => createOption(request, signal),
+    createIteration: (request, _context, signal) => createIteration(request, signal)
   };
 
   // extensions/github-project/src/index.ts

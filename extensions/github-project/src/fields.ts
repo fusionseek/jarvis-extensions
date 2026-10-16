@@ -1,13 +1,16 @@
 /**
- * `createField` 与 `createOption`：在 Project 里建字段、给单选 / 多选字段加选项。
+ * `createField`、`createOption` 与 `createIteration`：在 Project 里建字段、给单选 / 多选字段加选项、给迭代字段加一个迭代。
  *
  * 宿主只在用户在映射页明确要「写回 Project」时调它们（不静默修复：宿主从不自己建字段）。
  * **已有选项的 id 必须保持不变**——宿主的映射按选项 id 认。GitHub 的 `updateProjectV2Field` 是**整组替换**选项，
  * 但 `ProjectV2SingleSelectFieldOptionInput` 带 `id`：把已有选项连 id、名字、颜色、说明原样写回去，再接上新的那一个。
+ * 迭代同理：`iterationConfiguration.iterations` 也是整组替换，`ProjectV2Iteration` 带 `id`——**已结束的迭代也要写回去**，
+ * 只写进行中 / 未开始的会把历史迭代连同条目上的迭代值一起删掉。
  */
 import type {
   CancelSignal,
   ProjectCreateFieldRequest,
+  ProjectCreateIterationRequest,
   ProjectCreateOptionRequest,
   ProjectField,
   ProjectFieldResult,
@@ -17,7 +20,7 @@ import { mutations, readField } from "./documents.js";
 import { GitHubError, mutate, query, throwIfCancelled } from "./graphql.js";
 import type { Raw } from "./mapping.js";
 import { creatableTypes, mapField } from "./mapping.js";
-import { addDays, clamp, maxLength } from "./limits.js";
+import { addDays, clamp, day, maxLength } from "./limits.js";
 
 /** 新选项的颜色：GitHub 要求必填；灰色是它自己界面上新建选项的默认色。 */
 export const newOptionColor = "GRAY";
@@ -153,5 +156,89 @@ export async function createOption(request: ProjectCreateOptionRequest, signal?:
   const kept = new Set((field.options ?? []).map((option) => option.id));
   const lost = existing.filter((option) => !kept.has(option.id));
   if (lost.length) jarvis.log.warn("加选项之后，已有选项的 id 变了", lost.map((option) => option.name));
+  return { field };
+}
+
+interface IterationInput {
+  id?: string;
+  title: string;
+  startDate: string;
+  duration: number;
+}
+
+/**
+ * 把已有迭代（已结束的 + 进行中 / 未开始的）原样写回去的输入：id、名字、开始日、天数一样不改。
+ * @param configuration GitHub 的 `configuration`。
+ * @returns 输入数组，按开始日排好。
+ */
+export function existingIterations(configuration: unknown): IterationInput[] {
+  const raw = (configuration ?? {}) as Raw;
+  const lists = [raw?.["completedIterations"], raw?.["iterations"]];
+  return lists
+    .flatMap((list) => (Array.isArray(list) ? list : []))
+    .flatMap((entry) => {
+      const iteration = entry as Raw;
+      const id = iteration?.["id"];
+      const title = iteration?.["title"];
+      const startDate = day(iteration?.["startDate"]);
+      const duration = iteration?.["duration"];
+      if (typeof id !== "string" || typeof title !== "string" || !startDate || typeof duration !== "number") return [];
+      return [{ id, title, startDate, duration }];
+    })
+    .sort((a, b) => a.startDate.localeCompare(b.startDate));
+}
+
+/**
+ * `updateProjectV2Field` 加一个迭代的输入：已有迭代原样带上，新的接进去，按开始日排；整组配置的起始日取最早的那个、周期保持字段原来的。
+ * @param fieldId 字段 id。
+ * @param configuration GitHub 的 `configuration`。
+ * @param request 入参。
+ * @returns 输入对象。
+ */
+export function createIterationInput(fieldId: string, configuration: unknown, request: ProjectCreateIterationRequest): Record<string, unknown> {
+  const title = request.name?.trim();
+  if (!title) throw new Error("迭代名不能是空的");
+  const startDate = day(request.startDate);
+  if (!startDate) throw new Error("开始日要写成 YYYY-MM-DD");
+  const days = request.iterationDurationDays;
+  if (!Number.isInteger(days) || days < 1 || days > 365) throw new Error("迭代周期要在 1–365 天之间");
+  const existing = existingIterations(configuration);
+  if (existing.some((iteration) => iteration.title.trim().toLowerCase() === title.toLowerCase())) {
+    throw new GitHubError(`已经有叫「${title}」的迭代`, []);
+  }
+  const iterations = [...existing, { title: clamp(title, maxLength.name), startDate, duration: days }].sort((a, b) =>
+    a.startDate.localeCompare(b.startDate),
+  );
+  const configured = ((configuration ?? {}) as Raw)?.["duration"];
+  const duration = typeof configured === "number" && configured >= 1 && configured <= 365 ? configured : days;
+  return { fieldId, iterationConfiguration: { startDate: iterations[0]!.startDate, duration, iterations } };
+}
+
+/**
+ * 在迭代字段末尾加一个迭代（宿主迭代页的「新增迭代」）。
+ * @param request 入参。
+ * @param signal 取消信号。
+ * @returns 改好的字段。
+ */
+export async function createIteration(request: ProjectCreateIterationRequest, signal?: CancelSignal): Promise<ProjectFieldResult> {
+  if (!request.fieldId) throw new Error("缺少 fieldId");
+  throwIfCancelled(signal);
+  const { data } = await query<{ node: Raw }>(readField, { id: request.fieldId }, "读字段");
+  const node = data.node;
+  if (!node) throw new GitHubError("找不到这个字段（或 token 看不到它）", []);
+  if (node["dataType"] !== "ITERATION") {
+    throw new GitHubError(`「${String(node["name"] ?? request.fieldId)}」不是迭代字段，加不了迭代`, []);
+  }
+  const existing = existingIterations(node["configuration"]);
+  const input = createIterationInput(request.fieldId, node["configuration"], request);
+  throwIfCancelled(signal);
+  const mutation = mutations.updateProjectV2Field;
+  const result = await mutate<{ updateProjectV2Field: { projectV2Field: Raw } | null }>(mutation.document, { input }, "加迭代");
+  const field = fieldFrom(result.updateProjectV2Field?.projectV2Field, "加迭代");
+
+  // 同 createOption：id 没保住时宿主的漂移守卫会接住（条目上的迭代值对不上），这里记一条日志。
+  const kept = new Set((field.iterations ?? []).map((iteration) => iteration.id));
+  const lost = existing.filter((iteration) => iteration.id && !kept.has(iteration.id));
+  if (lost.length) jarvis.log.warn("加迭代之后，已有迭代的 id 变了", lost.map((iteration) => iteration.title));
   return { field };
 }
