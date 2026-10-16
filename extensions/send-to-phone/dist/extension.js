@@ -1,4 +1,4 @@
-// jarvis-extension bundle · send-to-phone@2.0.2 · sdk 2.2.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · send-to-phone@2.0.3 · sdk 2.3.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -107,7 +107,7 @@
   };
 
   // sdk/src/index.ts
-  var sdkVersion = "2.2.0";
+  var sdkVersion = "2.3.0";
   var Cancellation = class {
     constructor() {
       this.listeners = [];
@@ -327,6 +327,9 @@
               case "createIteration":
                 if (!engine.createIteration) break;
                 return engine.createIteration(request, context, signal);
+              case "createItem":
+                if (!engine.createItem) break;
+                return engine.createItem(request, context, signal);
             }
             break;
           }

@@ -1,16 +1,16 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-16T01:45:00.368Z",
+  "generatedAt": "2026-10-16T23:32:32.912Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "0f76523e0e3ef231f194627bb376f41508abfa6e"
+    "commit": "b2baaaccfe4b4e7311ca956e225bc40bfd1b24c2"
   },
   "extensions": [
     {
       "manifest": {
         "manifestVersion": 2,
         "id": "github-project",
-        "version": "1.1.0",
+        "version": "1.2.0",
         "name": "GitHub 项目",
         "symbol": "tablecells",
         "description": "给 Jarvis「项目」接上 GitHub Projects v2：读 Project 的字段、条目、迭代与 Issue 的父子 / 依赖关系，把你在需求、迭代、缺陷页上的修改写回 GitHub。页面与规则由 Jarvis 画，它只负责读写数据。",
@@ -19,7 +19,7 @@
           "github": "fusionseek"
         },
         "main": "dist/extension.js",
-        "sdk": "^2.2.0",
+        "sdk": "^2.3.0",
         "minimumJarvisVersion": "3.2.1",
         "capabilities": [
           {
@@ -48,7 +48,9 @@
             "addBlockedBy",
             "removeBlockedBy",
             "createProjectV2Field",
-            "updateProjectV2Field"
+            "updateProjectV2Field",
+            "createIssue",
+            "addProjectV2ItemById"
           ]
         },
         "contributes": {
@@ -63,8 +65,8 @@
                 "只执行 Jarvis 校验过的修改；不删字段、不删条目、不删选项",
                 "Issue Type 只在组织仓库里有；用户仓库里改类型会被 GitHub 拒绝",
                 "增量同步按天过滤、往前多读一天；每页 100 条",
-                "加选项时原样保留已有选项的 id，映射不会因此失效",
-                "新增迭代时已有迭代（含已结束的）连 id 原样保留，条目上的迭代值不受影响"
+                "加选项、加迭代都原样保留已有的 id（含已结束的迭代），映射与条目上的值不受影响",
+                "新建：在你选的仓库里建一条 Issue，加进这个 Project；字段由 Jarvis 随后写上"
               ]
             }
           ],
@@ -80,16 +82,16 @@
       "path": "extensions/github-project",
       "bundle": {
         "path": "extensions/github-project/dist/extension.js",
-        "sha256": "32fd25e96844850cfa08a70098dec5d13cad6fb2e828b9f400da9bb22fb1867f",
-        "byteCount": 76055
+        "sha256": "3b2b2a581a6ebc78532268230626e928319e7c67b7132a5cbb5171dd2b410215",
+        "byteCount": 81094
       },
-      "updatedAt": "2026-10-15T14:49:50+08:00"
+      "updatedAt": "2026-10-16T09:45:46+08:00"
     },
     {
       "manifest": {
         "manifestVersion": 2,
         "id": "http-status",
-        "version": "1.0.2",
+        "version": "1.0.3",
         "name": "HTTP 状态码",
         "symbol": "number.circle",
         "description": "输入状态码或关键词，给出这个码的读法、语义、常见成因、怎么处理、相关的码与 RFC 出处。/http 404 或 ⌥⌘/（从剪贴板里抓码）的结果贴着指针原地弹出；也能在工作区窗口里开一枚标签。62 个标准码与 12 个常见非标准码都编在扩展里，不联网。",
@@ -221,16 +223,16 @@
       "path": "extensions/http-status",
       "bundle": {
         "path": "extensions/http-status/dist/extension.js",
-        "sha256": "429c4e91a83881d8881e83fc8fba30fd9f523386dba7dc250cc4ee999315eb64",
-        "byteCount": 117709
+        "sha256": "3612c066fae744e4aed04790b849b82a0ce97319468db5d5078efafdc6ffd396",
+        "byteCount": 117857
       },
-      "updatedAt": "2026-10-15T15:39:36+08:00"
+      "updatedAt": "2026-10-16T09:45:46+08:00"
     },
     {
       "manifest": {
         "manifestVersion": 2,
         "id": "mole-clean",
-        "version": "1.0.2",
+        "version": "1.0.3",
         "name": "Mole 深度清理",
         "symbol": "bubbles.and.sparkles",
         "description": "给 Jarvis 清理换一台更深的引擎：开着时，晃球、/clean 与工具箱清理改走你装好的 Mole（mo clean），覆盖浏览器、开发工具、云盘、已卸载应用残留等更多类别，并读 Mole 的操作日志逐项显示正在删什么。没装 mo 时可以一键在终端里安装。",
@@ -345,16 +347,16 @@
       "path": "extensions/mole-clean",
       "bundle": {
         "path": "extensions/mole-clean/dist/extension.js",
-        "sha256": "8931a745d44210d574acaa985712c311ae2dcc8b6ce0e8119fa174e90248c129",
-        "byteCount": 51758
+        "sha256": "53cae6f17ec48b75a5e264e6a708c253533664011212460e961fd8a6c0a02950",
+        "byteCount": 51906
       },
-      "updatedAt": "2026-10-15T15:39:36+08:00"
+      "updatedAt": "2026-10-16T09:45:46+08:00"
     },
     {
       "manifest": {
         "manifestVersion": 2,
         "id": "send-to-phone",
-        "version": "2.0.2",
+        "version": "2.0.3",
         "name": "发到手机",
         "symbol": "iphone.and.arrow.forward",
         "description": "读一次剪贴板，经 Jarvis 快传把文字或链接推到已配对的手机上；快传没开时给一颗按钮替你打开，发完在 Inbox 留一条消息。/phone 后面跟一段字，不开面板直接发。",
@@ -437,16 +439,16 @@
       "path": "extensions/send-to-phone",
       "bundle": {
         "path": "extensions/send-to-phone/dist/extension.js",
-        "sha256": "07d3206ef0e2afbfeb8ff288e80a3046d4760fe570d2e78111d4089a2a5639d7",
-        "byteCount": 36746
+        "sha256": "6d620563a53f466c2e8f7aa374b25cf60aea783bcd0318c1e5a51c92e471622c",
+        "byteCount": 36894
       },
-      "updatedAt": "2026-10-15T15:39:36+08:00"
+      "updatedAt": "2026-10-16T09:45:46+08:00"
     },
     {
       "manifest": {
         "manifestVersion": 2,
         "id": "translation",
-        "version": "1.0.2",
+        "version": "1.0.3",
         "name": "截屏翻译",
         "symbol": "translate",
         "description": "按一下快捷键框选屏幕上任意一块，Vision 识别文字、合并段落、检测语言，再经 Google 翻译；译文就贴着选区原地弹出。框到的是一个词时，译文下面还有读音与按词性分行的全部词义。也能翻译剪贴板里的文字或图片，或 /translate 后面跟的一段字。免费端点无需 key，填了 API key 走官方接口。",
@@ -676,10 +678,10 @@
       "path": "extensions/translation",
       "bundle": {
         "path": "extensions/translation/dist/extension.js",
-        "sha256": "5337002a1e280b3e2a367dcc31632459fbc5c030b75d33769a940b7172fac884",
-        "byteCount": 81968
+        "sha256": "544df70ea0ba80bc17167acd8c77800e963ef2ee54c76a69b7a1f59e8e4fc1ec",
+        "byteCount": 82116
       },
-      "updatedAt": "2026-10-15T15:39:36+08:00"
+      "updatedAt": "2026-10-16T09:45:46+08:00"
     }
   ]
 }
