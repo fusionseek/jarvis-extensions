@@ -57,6 +57,9 @@ defineExtension({
       },
       createField: async (request) => ({ field: { id: "F", name: request.name, dataType: request.dataType } }),
       // createOption 故意不实现：宿主应收到 capability.unknown。
+      createIteration: async (request) => ({
+        field: { id: request.fieldId, name: "Sprint", dataType: "iteration", iterations: [{ id: "I", title: request.name, startDate: request.startDate, durationDays: request.iterationDurationDays, completed: false }] },
+      }),
     },
   },
 });
@@ -65,7 +68,7 @@ const call = (method, request, granted = ["git.hosting.read"]) =>
   host.callService({ point: "project.engine", service: "github", method, granted, ...(request ? { request } : {}) });
 
 test("SDK 版本与 Git 操作域的档位", () => {
-  assert.equal(sdkVersion, "2.1.0");
+  assert.equal(sdkVersion, "2.2.0");
   assert.equal(capabilityTiers["git.repository.read"], "medium");
   assert.equal(capabilityTiers["git.hosting.read"], "medium");
   assert.equal(capabilityTiers["git.hosting.write"], "high");
@@ -89,6 +92,8 @@ test("各方法的入参来自 params.request", async () => {
   assert.deepEqual((await call("createField", { projectId: "PVT_1", name: "估点", dataType: "number" })).result.value, {
     field: { id: "F", name: "估点", dataType: "number" },
   });
+  const iteration = await call("createIteration", { projectId: "PVT_1", fieldId: "IT", name: "Sprint 43", startDate: "2026-10-20", iterationDurationDays: 14 });
+  assert.equal(iteration.result.value.field.iterations[0].title, "Sprint 43", "createIteration（SDK 2.2）按 params.request 分派");
 });
 
 test("抛出的 JarvisError 原样交回，别的错误变成 host.failure；没实现的方法是 capability.unknown", async () => {

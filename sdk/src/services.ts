@@ -126,9 +126,10 @@ export const projectEngineContractVersion = 1 as const;
  * - `nativeDependencies`：原生依赖（blocked by）；
  * - `issueTypes`：组织级 Issue Type；
  * - `createFields`：能在 Project 里建字段与选项（`createField` / `createOption`）；
- * - `draftIssues`：草稿条目。
+ * - `draftIssues`：草稿条目；
+ * - `createIterations`：能在迭代字段末尾加一个迭代（`createIteration`）。没声明时宿主迭代页的「新增迭代」置灰、提示更新扩展。
  */
-export type ProjectEngineFeature = "nativeHierarchy" | "nativeDependencies" | "issueTypes" | "createFields" | "draftIssues";
+export type ProjectEngineFeature = "nativeHierarchy" | "nativeDependencies" | "issueTypes" | "createFields" | "draftIssues" | "createIterations";
 
 /** `describe` 的返回：契约版本、此刻能不能用、托管服务、可选能力。要快（宿主给 15 秒）。 */
 export interface ProjectEngineDescription {
@@ -354,12 +355,24 @@ export interface ProjectCreateOptionRequest {
   name: string;
 }
 
+/** `createIteration` 的入参：在迭代字段末尾加一个迭代。已有迭代（含已结束的）必须原样保留——宿主按迭代 id 认。 */
+export interface ProjectCreateIterationRequest {
+  projectId: string;
+  fieldId: string;
+  /** 迭代名，≤ 100 字。 */
+  name: string;
+  /** 开始那一天，UTC 日历日 `YYYY-MM-DD`。 */
+  startDate: string;
+  /** 周期（天，1–365）。 */
+  iterationDurationDays: number;
+}
+
 /**
  * 线缆上 `params.request` 的全集（`$defs.projectEngineRequest`）：每个方法只用到其中几项。
  * SDK 不替你检查哪几项该在——宿主按 schema 发，引擎按自己方法的入参读。
  */
 export type ProjectEngineRequest = ProjectListRequest &
-  Partial<ProjectSchemaRequest & ProjectItemsRequest & ProjectEditRequest & ProjectCreateFieldRequest & ProjectCreateOptionRequest>;
+  Partial<ProjectSchemaRequest & ProjectItemsRequest & ProjectEditRequest & ProjectCreateFieldRequest & ProjectCreateOptionRequest & ProjectCreateIterationRequest>;
 
 /** `listProjects` 的返回（≤ 200 个）。 */
 export interface ProjectList {
@@ -386,7 +399,7 @@ export interface ProjectEditResult {
   item?: ProjectItem;
 }
 
-/** `createField` / `createOption` 的返回：建好（或改好）的字段。 */
+/** `createField` / `createOption` / `createIteration` 的返回：建好（或改好）的字段。 */
 export interface ProjectFieldResult {
   field: ProjectField;
 }
@@ -414,10 +427,12 @@ export interface ProjectEngine {
   createField?(request: ProjectCreateFieldRequest, context: ServiceContext, signal: CancelSignal): Promise<ProjectFieldResult>;
   /** 给单选 / 多选字段加一个选项，**已有选项的 id 必须保持不变**（宿主的映射按 id 认）。 */
   createOption?(request: ProjectCreateOptionRequest, context: ServiceContext, signal: CancelSignal): Promise<ProjectFieldResult>;
+  /** 在迭代字段末尾加一个迭代（声明了 `createIterations` 才会被调），**已有迭代的 id 必须保持不变**。 */
+  createIteration?(request: ProjectCreateIterationRequest, context: ServiceContext, signal: CancelSignal): Promise<ProjectFieldResult>;
 }
 
 /** 项目引擎的方法名（线缆上 `service` 事件的 `method`）。 */
-export type ProjectEngineMethod = "describe" | "listProjects" | "readSchema" | "readItems" | "applyEdit" | "createField" | "createOption";
+export type ProjectEngineMethod = "describe" | "listProjects" | "readSchema" | "readItems" | "applyEdit" | "createField" | "createOption" | "createIteration";
 
 /** 清理引擎的方法名（线缆上 `service` 事件的 `method`）。 */
 export type JunkCleanMethod = "status" | "run" | "action";

@@ -1,6 +1,6 @@
 {
   "name": "@fusionseek/jarvis-extension-sdk",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Jarvis 扩展 SDK 2：按域组织的 manifest 类型、工具箱 / 窗口 / 指令 / 服务的入口（含清理引擎与项目引擎两个扩展点）、声明式 UI 节点、宿主能力接口（含 Git 操作域）、OCR 段落合并与 JavaScriptCore 桥。",
   "type": "module",
   "main": "./dist/index.js",

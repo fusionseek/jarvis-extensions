@@ -44,7 +44,7 @@ export type {
 export { bridgeProtocolVersion } from "./bridge.js";
 
 /** SDK 版本。主版本必须与宿主运行时一致。 */
-export const sdkVersion = "2.1.0";
+export const sdkVersion = "2.2.0";
 
 /** 一面的实现：工具箱页面、原地弹窗或窗口标签。 */
 export interface PageDefinition {
@@ -327,6 +327,9 @@ class Runtime {
             case "createOption":
               if (!engine.createOption) break;
               return engine.createOption(request as Parameters<NonNullable<ProjectEngine["createOption"]>>[0], context, signal);
+            case "createIteration":
+              if (!engine.createIteration) break;
+              return engine.createIteration(request as Parameters<NonNullable<ProjectEngine["createIteration"]>>[0], context, signal);
           }
           break;
         }

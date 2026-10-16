@@ -106,7 +106,7 @@ export interface CommandContext {
  * 宿主 → 后台会话：调一次服务扩展点的方法。
  *
  * `junkClean.engine` 的方法是 `status` / `run` / `action`（`action` 带 `actionId`）；
- * `project.engine` 的方法是 `describe` / `listProjects` / `readSchema` / `readItems` / `applyEdit` / `createField` / `createOption`，
+ * `project.engine` 的方法是 `describe` / `listProjects` / `readSchema` / `readItems` / `applyEdit` / `createField` / `createOption` / `createIteration`，
  * 入参放在 `params.request`（`describe` 不带）。
  */
 export interface ServiceCall {

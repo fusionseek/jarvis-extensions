@@ -47,7 +47,7 @@ defineExtension({ services: { mole: engine } });
 | `src/manifest.ts` | `extension.json` v2 的类型：域（`contributes`）、命令与落点、受限执行的声明对象、偏好、能力风险档位 |
 | `src/ui.ts` | 31 种节点与 `ui.*` 构造器；输入框的文本由宿主持有 |
 | `src/capabilities.ts` | 全局 `jarvis` 的接口（含 `process` / `files` / `terminal` / `window` / `inbox`，2.1 起含 Git 操作域 `git`）与错误码（含 `surface.unavailable`） |
-| `src/services.ts` | 服务扩展点的契约：`junkClean.engine`（`status` / `run` / `action`，取消信号）；2.1 起 `project.engine`（`describe` / `listProjects` / `readSchema` / `readItems` / `applyEdit` / `createField` / `createOption`） |
+| `src/services.ts` | 服务扩展点的契约：`junkClean.engine`（`status` / `run` / `action`，取消信号）；2.1 起 `project.engine`（`describe` / `listProjects` / `readSchema` / `readItems` / `applyEdit` / `createField` / `createOption`；2.2 起加 `createIteration`） |
 | `src/bridge.ts` | 宿主 ⇄ 扩展的线缆协议 2：三面、命令上下文、`service` / `serviceCancel`、节点序列化 |
 | `src/ocr.ts` | 行 → 段落合并、按句分块（纯函数，node 里可测） |
 | `src/index.ts` | `defineExtension`、`jarvis` 实现、运行时（对宿主延迟绑定；前台的三面与后台的服务调用走同一条桥） |

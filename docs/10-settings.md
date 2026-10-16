@@ -99,6 +99,7 @@ Issue Type / 子 Issue / blocked by 的读写）全在引擎扩展里。先例�
 | `applyEdit` | `projectId`、`itemId`、`contentRef?`、`changes[]`（1–16 步） | `{ item? }`：读回的那一条 | 45 秒 |
 | `createField` | `projectId`、`name`、`dataType`、`options?`、`iterationDurationDays?` | `{ field }` | 45 秒 |
 | `createOption` | `projectId`、`fieldId`、`name` | `{ field }`（已有选项的 id 不变） | 45 秒 |
+| `createIteration`（SDK 2.2） | `projectId`、`fieldId`、`name`、`startDate`（`YYYY-MM-DD`）、`iterationDurationDays` | `{ field }`（已有迭代——含已结束的——的 id 不变） | 45 秒 |
 
 | 契约规则 | 值 | 为什么 |
 | --- | --- | --- |
@@ -107,9 +108,10 @@ Issue Type / 子 Issue / blocked by 的读写）全在引擎扩展里。先例�
 | 字段类型 | `text`、`number`、`date`、`singleSelect`、`multiSelect`、`iteration`（可建），`title`、`assignees`、`labels`、`milestone`、`repository`、`issueType`、`parentIssue`、`subIssuesProgress`、`linkedPullRequests`、`reviewers`（内置），认不出的写 `other` | 宿主的映射页按类型给出可选来源；`other` 不丢字段，只是不能映射 |
 | 条目身份 | Issue / PR 必须带 `content.repository`（`owner/name`）与 `content.number`；草稿没有 | 父子、依赖、Git 关联都按 `owner/name#number` 认；缺了的条目宿主丢掉这一条，不丢整页 |
 | 选项按 id 认 | 映射记的是选项 id，不是名字 | 选项改名不该让映射失效；`createOption` 因此必须保住已有选项的 id |
+| 迭代按 id 认 | 条目上的迭代值记的是迭代 id | GitHub 的迭代配置是整组替换：`createIteration` 只写进行中的会把已结束的迭代连同条目上的值一起删掉 |
 | 编辑只执行 | `applyEdit` 的每一步宿主都按工作流、必填与漂移守卫校验过 | 引擎再判断一遍只会与宿主分歧 |
 | 失败 | 抛错；`message` 原样显示在发起处 | 用户要知道是哪一步、被谁拒了 |
-| 可选能力 | `describe.features` ⊆ `nativeHierarchy`、`nativeDependencies`、`issueTypes`、`createFields`、`draftIssues`；`contractVersion` 当前是 1 | 没声明的那一项，宿主把对应入口置灰并说明；契约只追加不改名 |
+| 可选能力 | `describe.features` ⊆ `nativeHierarchy`、`nativeDependencies`、`issueTypes`、`createFields`、`draftIssues`、`createIterations`（SDK 2.2）；`contractVersion` 当前是 1 | 没声明的那一项，宿主把对应入口置灰并说明；契约只追加不改名 |
 
 参考实现：[`extensions/github-project`](../extensions/github-project)（GitHub Projects v2）。
 
