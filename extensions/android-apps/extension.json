@@ -1,0 +1,32 @@
+{
+  "manifestVersion": 2,
+  "id": "android-apps",
+  "version": "1.0.0",
+  "name": "手机应用",
+  "symbol": "apps.iphone",
+  "description": "经 adb 扫描连着的安卓手机上装的全部应用：包名、安装包与数据大小，再一屏一屏读出应用名与图标；点一下把包名交给 APK 扫描或数据导出接着处理。",
+  "author": {
+    "name": "fusionseek",
+    "github": "fusionseek"
+  },
+  "main": "dist/extension.js",
+  "sdk": "^2.4.0",
+  "minimumJarvisVersion": "3.2.1",
+  "capabilities": [
+    {
+      "id": "android.apps.read",
+      "reason": "列出手机上装的应用、它们的大小，再读应用名与图标"
+    },
+    {
+      "id": "android.tools.open",
+      "reason": "点行尾按钮时把包名交给 APK 扫描或数据导出"
+    }
+  ],
+  "contributes": {
+    "toolbox": {
+      "subtitle": "扫描手机应用的大小与包名",
+      "keywords": ["android", "adb", "apk", "app", "package", "安卓", "图标", "存储"]
+    }
+  },
+  "inbox": false
+}
