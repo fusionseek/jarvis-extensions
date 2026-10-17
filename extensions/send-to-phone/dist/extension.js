@@ -1,4 +1,4 @@
-// jarvis-extension bundle · send-to-phone@2.0.3 · sdk 2.3.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · send-to-phone@2.0.4 · sdk 2.4.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -107,7 +107,7 @@
   };
 
   // sdk/src/index.ts
-  var sdkVersion = "2.3.0";
+  var sdkVersion = "2.4.0";
   var Cancellation = class {
     constructor() {
       this.listeners = [];
@@ -445,6 +445,7 @@
     files: namespaced("files"),
     terminal: namespaced("terminal"),
     git: namespaced("git"),
+    android: namespaced("android"),
     system: namespaced("system")
   };
   var sync = {
@@ -586,6 +587,13 @@
         query: (request) => call.git("hosting.query", request),
         mutate: (request) => call.git("hosting.mutate", request)
       }
+    },
+    // Android 操作域（SDK 2.4）：参数原样上线缆，校验（1…8 个包、设备是否 ready）在宿主那一侧。
+    android: {
+      devices: () => call.android("devices"),
+      apps: (options) => call.android("apps", options),
+      appDetails: (options) => call.android("appDetails", options),
+      openTool: (options) => call.android("openTool", options)
     },
     system: {
       openURL: (url) => call.system("openURL", { url }),
