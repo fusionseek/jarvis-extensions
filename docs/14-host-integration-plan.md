@@ -4,7 +4,8 @@
 
 这一篇不再是分期方案，而是**宿主已经做了什么**的记录：v2 的域模型、受限执行、服务扩展点与清理引擎可插拔，
 在 `jarvis-mac` 的 Speckit feature `specs/20261011-193606-extension-domains-service-engines/` 里落地；
-Git 域、Git 操作域与项目引擎（SDK 2.1）在 `specs/20261015-123126-github-project-management/` 里落地，见文末「第二轮」。
+Git 域、Git 操作域与项目引擎（SDK 2.1）在 `specs/20261015-123126-github-project-management/` 里落地，见文末「第二轮」；
+Android 操作域与行首图标（SDK 2.4）在 `specs/20261017-170440-issue-derive-app-scan/` 里落地，见「第三轮」。
 扩展作者读它，是为了知道每一条规则在宿主哪一个类型里被执行；宿主开发者读它，是为了改动时知道牵动哪几处。
 
 文件名保留 `14-host-integration-plan.md`：其余文档、PR 模板与 jarvis-mac 的引用都指向这个名字，改名只会多出一批死链。
@@ -172,6 +173,31 @@ GitHub Projects v2 的全部专属知识做成扩展 [`github-project`](../exten
 | SDK 2.2 | `project.engine` 加 `createIteration` 与能力 `createIterations`（jarvis-mac 同 spec 第八轮 U-5「新增迭代」）：线缆 `serviceCall.method` 与 `projectEngineRequest.startDate`、样例 `project-engine-request.create-iteration*.json`；只追加，2.1 的引擎照常工作（宿主见不到这项能力时把入口置灰） |
 | SDK 2.3 | `project.engine` 加 `createItem` 与能力 `createItems`（jarvis-mac 同 spec 第十八轮 AG-1「新建条目」）：线缆 `serviceCall.method`、`projectEngineRequest.title` / `body` 与 `$defs.projectEngineCreatedItem`、样例 `project-engine-request.create-item*.json` / `project-engine-created-item*.json`；只追加，2.2 的引擎照常工作（宿主见不到这项能力时把「新建」置灰） |
 
+### 第三轮：Android 操作域与行首图标（spec `20261017-170440-issue-derive-app-scan` D 节）
+
+仓库主人要一个「扫描手机上所有应用：大小、包名、应用名，最好有图标」的工具，**界面与交互写成扩展**，只要 adb 的权限，
+扫到的应用能按包名交给已有的「APK 扫描」「数据导出」接着做。扩展此前做不到：`process.run` 只能跑逐字写死的参数（带不了 `-s <serial>`、
+`pm path <pkg>`），设备上的 shell 给不出应用名（要 aapt2 读 APK），`image` 节点之外没有地方放一张图，也没有任何接口能打开内置工具。
+
+| # | 决策 | 一句话 |
+| --- | --- | --- |
+| D-1 | Android 操作域两项能力 | `android.apps.read`（中，`apps.iphone`，「读取手机上的应用」）、`android.tools.open`（低，`arrow.up.forward.app`，「交给 APK 扫描 / 数据导出」）；目录 19 → 21 |
+| D-1 | 宿主跑、扩展点名 | adb 与 aapt2 只在宿主里跑宿主写死的命令；扩展只给序列号与包名，因此没有声明对象、不入驻新域 |
+| D-1 | 方法 | `android.devices` / `android.apps` / `android.appDetails`（1…8 个包）/ `android.openTool`；限频 120 次（读三项合计）与 30 次 / 分钟 |
+| D-1 | 行首图标 | `row.image`：宿主颁发的句柄（`appDetails` 交回的图标），有它就不画 `symbol` |
+
+| 类型 | 文件（相对 `jarvis-mac/Sources/Jarvis/`） | 管什么 |
+| --- | --- | --- |
+| `ExtensionCapabilityID`（+2） | `Domain/Extensions/ExtensionManifest.swift` | 能力、档位、授权屏标题与符号 |
+| `ExtensionCapabilityMap`、`ExtensionRateLimitPolicy` | `Domain/Extensions/ExtensionCapabilityMap.swift` | `android.devices` / `android.apps` / `android.appDetails` → `android.apps.read`，`android.openTool` → `android.tools.open`；120 / 30 次 / 分钟 |
+| `ExtensionConsentView` | `UI/FloatingExtensionHostView.swift` | 授权屏上 `android.apps.read` 那一句（「…把安装包临时拉到本机，读完即删」） |
+
+| 产物 | 位置 |
+| --- | --- |
+| manifest | 本仓 `schemas/extension.v2.schema.json`：能力枚举 +2 |
+| SDK 2.4 | 本仓 `sdk/src/`：`jarvis.android` 与 `AndroidDevice` / `AndroidApp` / `AndroidAppDetail` / `maximumAndroidAppDetailsPerCall`（`capabilities.ts`）、档位（`manifest.ts`）、`RowNode.image`（`ui.ts`）、运行时绑定（`index.ts`）、替身 `fakeAndroid()`（`testing.ts`）；只追加，2.3 的扩展照常工作 |
+| 扩展 | [`extensions/android-apps`](../extensions/android-apps)「手机应用」：工具箱一页，只声明这两项能力 |
+
 ## Usage
 
 - 扩展作者：遇到一条规则想知道"是谁在拦"，按上表找到类型名，在 `jarvis-mac` 里读它的文档注释——每条规则都写了为什么。
@@ -188,5 +214,6 @@ GitHub Projects v2 的全部专属知识做成扩展 [`github-project`](../exten
 
 - `jarvis-mac/specs/20261011-193606-extension-domains-service-engines/`（`spec.md`、`plan.md`、`tasks.md`、`validation.md`）
 - `jarvis-mac/specs/20261015-123126-github-project-management/`（第二轮：Git 域、Git 操作域、项目引擎；`research.md` 是 GitHub GraphQL 的实测）
+- `jarvis-mac/specs/20261017-170440-issue-derive-app-scan/`（第三轮：Android 操作域、`row.image`）
 - `jarvis-mac/docs/foundation/extensions.md`、`docs/foundation/junk-clean.md`
 - [02 · 框架层级设计](02-architecture.md)、[05 · 能力授权模型](05-permissions.md)、[10 · 设置域与服务扩展点](10-settings.md)

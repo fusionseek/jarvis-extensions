@@ -101,6 +101,13 @@ export interface TextNode extends Keyed {
 export interface RowNode extends Keyed {
   kind: "row";
   symbol?: string;
+  /**
+   * 行首图标换成宿主颁发的一张图（例如 `android.appDetails` 读出来的应用图标）；有它就不画 `symbol`。SDK 2.4 起。
+   *
+   * 只认宿主颁发的句柄，与 `image` 节点同一条：扩展手里没有像素，也就画不出一枚冒充别的应用的图标。
+   * 宿主把它裁进同一口 32pt 图标井里，因此一列里有图的行与没图（回落 `symbol`）的行对得齐。
+   */
+  image?: FileHandle;
   title: string;
   subtitle?: string;
   tint?: Tint;

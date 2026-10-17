@@ -146,7 +146,7 @@
     },
     "capabilityID": {
       "type": "string",
-      "description": "能力目录见 docs/06-capabilities.md。只列宿主真的做得到的；隐式能力（panel.* / storage.* / preferences.* / text.* / time.* / color.* / window.open / service.* / host.* / log）不在这里声明。git.* 三项是 Git 操作域：声明任一项都要入驻 Git 域（contributes.git），git.hosting.write 还要逐字写出 git.mutations。",
+      "description": "能力目录见 docs/06-capabilities.md。只列宿主真的做得到的；隐式能力（panel.* / storage.* / preferences.* / text.* / time.* / color.* / window.open / service.* / host.* / log）不在这里声明。git.* 三项是 Git 操作域：声明任一项都要入驻 Git 域（contributes.git），git.hosting.write 还要逐字写出 git.mutations。android.* 两项是 Android 操作域：宿主经自己的 adb 跑它写死的那几条命令（列设备、列应用、读应用名与图标），扩展只给设备序列号与包名、不给参数；android.tools.open 把一个包名交给内置的「APK 扫描」「数据导出」。",
       "enum": [
         "clipboard.read",
         "clipboard.write",
@@ -166,7 +166,9 @@
         "terminal.run",
         "git.repository.read",
         "git.hosting.read",
-        "git.hosting.write"
+        "git.hosting.write",
+        "android.apps.read",
+        "android.tools.open"
       ]
     },
     "capabilityRequest": {

@@ -14,9 +14,13 @@
  * const host = createTestHost({ async: { "clipboard.read": async () => "hello" } });
  * const { defineExtension, jarvis } = await import("@fusionseek/jarvis-extension-sdk");
  * ```
+ *
+ * Android 操作域（SDK 2.4）另有一台假手机 `fakeAndroid()`：它按宿主的规则答 `android.*`（1…8 个包、设备要 ready），
+ * 记下每一次调用与同时在途的 `appDetails` 个数，并能挂住、能让下一次失败——「一次一批」「换设备丢掉旧结果」靠它断言。
  */
 import type { CommitRequest, HostEvent, InvokeRequest, InvokeResult, SerializedNode, ServiceCall } from "./bridge.js";
-import type { JarvisErrorShape } from "./capabilities.js";
+import type { AndroidApp, AndroidAppDetail, AndroidAppScope, AndroidDevice, AndroidTool, JarvisErrorShape } from "./capabilities.js";
+import { maximumAndroidAppDetailsPerCall } from "./capabilities.js";
 import type { ServicePoint } from "./manifest.js";
 import type { ProjectEngineRequest } from "./services.js";
 
@@ -245,4 +249,172 @@ export function createTestHost(options: TestHostOptions = {}): TestHost {
   };
 
   return host;
+}
+
+// ---------------------------------------------------------------------------
+// Android 操作域的假手机（SDK 2.4）
+// ---------------------------------------------------------------------------
+
+/** 替身那一侧的一台设备。 */
+export interface FakeAndroidDevice {
+  serial: string;
+  /** 省略 = 序列号（与宿主读不出型号时一样）。 */
+  name?: string;
+  /** 省略 = `device`（连着且允许了调试）。 */
+  state?: AndroidDevice["state"];
+  /** 装着的应用（含系统应用；`scope: "user"` 时替身按 `system` 滤掉）。 */
+  apps?: AndroidApp[];
+  /** 包名 → 读安装包得到的东西；省略的字段为 `null`。装着却不在表里的包，应用名、版本、图标都是 `null`。 */
+  details?: Record<string, Partial<Omit<AndroidAppDetail, "package">>>;
+}
+
+/** `fakeAndroid()` 收到的一次调用。 */
+export interface FakeAndroidCall {
+  method: "devices" | "apps" | "appDetails" | "openTool";
+  params: unknown;
+}
+
+/** 一台假手机（其实是一排）。字段都可以在测试之间改，下一次调用读到的就是改过的。 */
+export interface FakeAndroid {
+  devices: FakeAndroidDevice[];
+  /** 交给 `createTestHost({ async })` 的桩：`android.devices` / `android.apps` / `android.appDetails` / `android.openTool`。 */
+  readonly stubs: Record<string, AsyncStub>;
+  /** 每一次调用（含被拒的），按先后。 */
+  readonly calls: FakeAndroidCall[];
+  /** `openTool` 成功交出去的。 */
+  readonly opened: { tool: AndroidTool; package: string }[];
+  /** 下一次（只一次）调用这个方法时以 `error` 拒绝：模拟「未找到 adb」「没有 aapt2」。 */
+  failNext(method: FakeAndroidCall["method"], error: JarvisErrorShape): void;
+  /**
+   * 挂住 `appDetails`：从现在起的调用都等到返回的 `release()` 被调才答。
+   * 挂着的时候**别调 `host.settle()`**——它会一直等那几次调用落定。
+   */
+  holdDetails(): () => void;
+  /** 此刻在途的 `appDetails` 个数。 */
+  readonly detailsInFlight: number;
+  /** 到目前为止同时在途的 `appDetails` 最多有几个。 */
+  readonly maxDetailsInFlight: number;
+}
+
+const androidTools: readonly AndroidTool[] = ["apkScan", "dataExport"];
+const androidScopes: readonly AndroidAppScope[] = ["user", "all"];
+
+/**
+ * 装一排假手机。规则照宿主（`docs/06-capabilities.md`「Android 操作域」）：
+ *
+ * - `apps` / `appDetails`：`serial` 为空 → `invalid.argument`；设备不在或不是 `ready` → `host.failure`；
+ * - `apps`：`scope` 省略为 `user`，不认识 → `invalid.argument`；
+ * - `appDetails`：`packages` 不是 1…8 个非空字符串 → `invalid.argument`；设备上没装的包 `problem` 写一句，其余照常；
+ * - `openTool`：`tool` 只认 `apkScan` / `dataExport`，`package` 不能为空，否则 `invalid.argument`。
+ *
+ * 它不画任何东西、不拉任何安装包；图标句柄由测试自己在 `details` 里给。
+ *
+ * @param options.devices 一开始连着的设备；省略为一台都没有。
+ * @returns 假手机：把 `stubs` 摊进 `createTestHost({ async })`。
+ */
+export function fakeAndroid(options: { devices?: FakeAndroidDevice[] } = {}): FakeAndroid {
+  const calls: FakeAndroidCall[] = [];
+  const opened: { tool: AndroidTool; package: string }[] = [];
+  const failures = new Map<FakeAndroidCall["method"], JarvisErrorShape>();
+  let gate: Promise<void> | null = null;
+  let inFlight = 0;
+  let maxInFlight = 0;
+
+  const invalid = (message: string): JarvisErrorShape => ({ code: "invalid.argument", message });
+  const record = (method: FakeAndroidCall["method"], params: unknown) => {
+    calls.push({ method, params });
+    const failure = failures.get(method);
+    if (failure) {
+      failures.delete(method);
+      throw failure;
+    }
+  };
+  const readyDevice = (serial: unknown): FakeAndroidDevice => {
+    if (typeof serial !== "string" || serial === "") throw invalid("serial 不能为空");
+    const device = fake.devices.find((candidate) => candidate.serial === serial);
+    if (!device) throw { code: "host.failure", message: `设备 ${serial} 没有连着` } satisfies JarvisErrorShape;
+    const state = device.state ?? "device";
+    if (state === "unauthorized") throw { code: "host.failure", message: "手机上还没有允许 USB 调试" } satisfies JarvisErrorShape;
+    if (state !== "device") throw { code: "host.failure", message: `设备 ${serial} 此刻读不了（${state}）` } satisfies JarvisErrorShape;
+    return device;
+  };
+
+  const stubs: Record<string, AsyncStub> = {
+    "android.devices": async (params) => {
+      record("devices", params);
+      return fake.devices.map((device) => {
+        const state = device.state ?? "device";
+        return { serial: device.serial, name: device.name ?? device.serial, state, ready: state === "device" };
+      });
+    },
+    "android.apps": async (params) => {
+      record("apps", params);
+      const { serial, scope } = (params ?? {}) as { serial?: unknown; scope?: unknown };
+      if (scope !== undefined && !androidScopes.includes(scope as AndroidAppScope)) throw invalid(`不认识的 scope：${String(scope)}`);
+      const device = readyDevice(serial);
+      const apps = device.apps ?? [];
+      return { apps: (scope ?? "user") === "user" ? apps.filter((app) => !app.system) : [...apps] };
+    },
+    "android.appDetails": async (params) => {
+      record("appDetails", params);
+      const { serial, packages } = (params ?? {}) as { serial?: unknown; packages?: unknown };
+      if (
+        !Array.isArray(packages) ||
+        packages.length < 1 ||
+        packages.length > maximumAndroidAppDetailsPerCall ||
+        packages.some((name) => typeof name !== "string" || name === "")
+      ) {
+        throw invalid(`packages 要 1…${maximumAndroidAppDetailsPerCall} 个包名`);
+      }
+      const device = readyDevice(serial);
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      try {
+        if (gate) await gate;
+        const installed = new Set((device.apps ?? []).map((app) => app.package));
+        return (packages as string[]).map((name): AndroidAppDetail => {
+          if (!installed.has(name)) return { package: name, label: null, versionName: null, icon: null, problem: "设备上没有这个应用" };
+          return { label: null, versionName: null, icon: null, problem: null, ...(device.details?.[name] ?? {}), package: name };
+        });
+      } finally {
+        inFlight -= 1;
+      }
+    },
+    "android.openTool": async (params) => {
+      record("openTool", params);
+      const { tool, package: name } = (params ?? {}) as { tool?: unknown; package?: unknown };
+      if (!androidTools.includes(tool as AndroidTool)) throw invalid(`不认识的工具：${String(tool)}`);
+      if (typeof name !== "string" || name === "") throw invalid("package 不能为空");
+      opened.push({ tool: tool as AndroidTool, package: name });
+      return null;
+    },
+  };
+
+  const fake: FakeAndroid = {
+    devices: options.devices ?? [],
+    stubs,
+    calls,
+    opened,
+    failNext(method, error) {
+      failures.set(method, error);
+    },
+    holdDetails() {
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      gate = held;
+      return () => {
+        if (gate === held) gate = null;
+        release();
+      };
+    },
+    get detailsInFlight() {
+      return inFlight;
+    },
+    get maxDetailsInFlight() {
+      return maxInFlight;
+    },
+  };
+  return fake;
 }

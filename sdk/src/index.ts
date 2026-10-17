@@ -15,6 +15,8 @@
  * | 服务 | `contributes.services` | `services` |
  * | Git | `contributes.git` | —（宿主在 Git 里画入口；扩展经 `jarvis.git` 读写托管服务） |
  *
+ * 能力按命名空间挂在 `jarvis` 上；Android 操作域（`jarvis.android`，SDK 2.4）不是域、不入驻任何东西，只是两项能力。
+ *
  * 悬浮球不是可入驻的域。
  */
 import type { EnvironmentInfo, HostInfo, Jarvis, ProcessHandle, ProcessResult, Unsubscribe } from "./capabilities.js";
@@ -44,7 +46,7 @@ export type {
 export { bridgeProtocolVersion } from "./bridge.js";
 
 /** SDK 版本。主版本必须与宿主运行时一致。 */
-export const sdkVersion = "2.3.0";
+export const sdkVersion = "2.4.0";
 
 /** 一面的实现：工具箱页面、原地弹窗或窗口标签。 */
 export interface PageDefinition {
@@ -459,6 +461,7 @@ const call = {
   files: namespaced("files"),
   terminal: namespaced("terminal"),
   git: namespaced("git"),
+  android: namespaced("android"),
   system: namespaced("system"),
 };
 
@@ -611,6 +614,13 @@ export const jarvis: Jarvis = {
       query: (request) => call.git("hosting.query", request),
       mutate: (request) => call.git("hosting.mutate", request),
     },
+  },
+  // Android 操作域（SDK 2.4）：参数原样上线缆，校验（1…8 个包、设备是否 ready）在宿主那一侧。
+  android: {
+    devices: () => call.android("devices"),
+    apps: (options) => call.android("apps", options),
+    appDetails: (options) => call.android("appDetails", options),
+    openTool: (options) => call.android("openTool", options),
   },
   system: {
     openURL: (url) => call.system("openURL", { url }),

@@ -519,6 +519,108 @@ export interface GitAPI {
   hosting: GitHostingAPI;
 }
 
+// ---------------------------------------------------------------------------
+// Android 操作域（SDK 2.4）
+// ---------------------------------------------------------------------------
+
+/**
+ * 一台经 adb 看得见的设备。
+ *
+ * `state` 是 `adb devices` 那一列的归类：`device` = 连着且允许了调试；`unauthorized` = 手机上还没点「允许 USB 调试」；
+ * `offline` = adb 认得它但此刻说不上话（多半是线松了或刚重启）；其余一律 `other`（`recovery`、`sideload` 之类，读不了应用）。
+ * 只有 `ready` 为真的设备能拿去 `apps` / `appDetails`——它就是 `state === "device"`，单列出来是为了让扩展不必自己记这条规则。
+ */
+export interface AndroidDevice {
+  /** adb 的序列号；`apps` / `appDetails` 按它点名设备。 */
+  serial: string;
+  /** 给人看的名字：读得出型号就是型号，读不出就是序列号。 */
+  name: string;
+  state: "device" | "unauthorized" | "offline" | "other";
+  ready: boolean;
+}
+
+/** 列哪些应用：`user` = 只列用户自己装的（第三方）应用；`all` = 连同系统应用一起列。 */
+export type AndroidAppScope = "user" | "all";
+
+/**
+ * 设备上装着的一个应用：列表那一步就拿得到的事实（不拉安装包）。
+ *
+ * 三个大小是**彼此不重叠**的三块，加起来是这个应用在手机上占的地方；设备不报（老系统、没有权限读 `diskstats`）时为 `null`——
+ * `null` 是「不知道」，不是 0，汇总时跳过它，不要当 0 加。
+ */
+export interface AndroidApp {
+  /** 包名，例如 `com.tencent.mm`。 */
+  package: string;
+  /** 系统应用（预装、在 system 分区）。`scope: "user"` 时恒为 `false`。 */
+  system: boolean;
+  /** 安装包（APK 与拆分包）的字节数。 */
+  apkBytes: number | null;
+  /** 应用数据的字节数（不含缓存）。 */
+  dataBytes: number | null;
+  /** 缓存的字节数。 */
+  cacheBytes: number | null;
+}
+
+/** `android.apps` 的结果。 */
+export interface AndroidAppList {
+  apps: AndroidApp[];
+}
+
+/**
+ * 一个应用读安装包才拿得到的东西：应用名、版本、图标。
+ *
+ * 宿主为它把 APK 拉到本机临时目录、用 aapt2 读、读完即删——**每个包要几百毫秒到几秒**，因此单列成一个调用，
+ * 由扩展按屏、按批去要。某一个包读不出来时不让整批失败：那一项 `problem` 写一句人话，其余照常。
+ */
+export interface AndroidAppDetail {
+  package: string;
+  /** 应用名（按系统语言挑的那一个）；读不出为 `null`。 */
+  label: string | null;
+  /** `versionName`，例如 `8.0.50`；读不出为 `null`。 */
+  versionName: string | null;
+  /** 应用图标：宿主颁发的图片句柄（与截图、剪贴板里的图同一种），只在本次会话内有效；读不出为 `null`。 */
+  icon: FileHandle | null;
+  /** 这一个包为什么读不出来（例如「安装包拉不下来」）；读出来了为 `null`。 */
+  problem: string | null;
+}
+
+/** 内置的哪一个工具：`apkScan` = 工具箱「APK 扫描」；`dataExport` = 工具箱「数据导出」。 */
+export type AndroidTool = "apkScan" | "dataExport";
+
+/**
+ * 一次 `appDetails` 至多问几个包。
+ *
+ * 每个包都要拉一次安装包、跑一次 aapt2，8 个是「一屏露出来的那几行」的量级：再多，一次调用就要十几秒，
+ * 这期间页面上什么都不变，用户会以为它卡住了。宿主对超出的调用以 `invalid.argument` 拒绝。
+ */
+export const maximumAndroidAppDetailsPerCall = 8;
+
+/**
+ * Android 操作域。宿主经**它自己的** adb 执行写死的那几条命令（列设备、列应用、读安装包），扩展只给设备序列号与包名——
+ * 因此不需要 `process.run`，也没有声明对象。找不到 adb、没有 aapt2、设备中途拔掉、adb 超时，一律以 `host.failure` 拒绝，
+ * `message` 是一句可以原样显示的人话（「未找到 adb」「没有 aapt2，读不出应用名和图标」）。
+ */
+export interface AndroidAPI {
+  /** `android.apps.read`。此刻 adb 看得见的设备（含没授权调试、离线的）。每分钟与另两个读方法共 ≤ 120 次。 */
+  devices(): Promise<AndroidDevice[]>;
+  /**
+   * `android.apps.read`。一台设备上装了哪些应用与它们的大小。`scope` 省略为 `user`。
+   * 设备不在、不是 `ready` → `host.failure`；`serial` 为空、`scope` 不认识 → `invalid.argument`。
+   */
+  apps(options: { serial: string; scope?: AndroidAppScope }): Promise<AndroidAppList>;
+  /**
+   * `android.apps.read`。读几个包的应用名、版本与图标：每个包交回一项，按 `package` 对上（不要靠顺序）。
+   * `packages` 必须是 1…{@link maximumAndroidAppDetailsPerCall} 个，否则 `invalid.argument`。
+   * **慢**（每个包几百毫秒到几秒）：按屏分批、一次只让一批在途，不要一进页面就把整张表都要一遍。
+   */
+  appDetails(options: { serial: string; packages: string[] }): Promise<AndroidAppDetail[]>;
+  /**
+   * `android.tools.open`。在面板里打开内置的「APK 扫描」或「数据导出」，包名预填好；开始仍由用户在那里按。
+   * 打开之后这一页随之离开（前台会话 deactivate）。只该在用户按下的回调里调。每分钟 ≤ 30 次。
+   */
+  openTool(options: { tool: AndroidTool; package: string }): Promise<void>;
+}
+
 /** 系统。 */
 export interface SystemAPI {
   /** `system.openURL`。只放行 https。 */
@@ -564,5 +666,6 @@ export interface Jarvis {
   readonly files: FilesAPI;
   readonly terminal: TerminalAPI;
   readonly git: GitAPI;
+  readonly android: AndroidAPI;
   readonly system: SystemAPI;
 }

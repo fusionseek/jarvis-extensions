@@ -20,7 +20,7 @@ v2 的目录**只列宿主真的做得到的**：声明得到、调不到的能�
 
 | 属性 | 值 |
 | --- | --- |
-| `sdk.version` | SDK 版本，`2.3.0` |
+| `sdk.version` | SDK 版本，`2.4.0` |
 | `host.version` / `host.channel` | 宿主版本（`CFBundleShortVersionString`）、`release` / `development` |
 | `environment` | `reduceMotion` / `reduceTransparency` / `increaseContrast` / `locale`。界面上的适配由宿主做；这里给出来是让扩展自己的逻辑也能让步 |
 
@@ -252,6 +252,50 @@ if (!data) throw new Error(errors?.[0]?.message ?? "GitHub 没有回应");
 
 用户给的值（标签名、登录名、搜索串）**一律放 `variables`**，不要拼进文档：拼进去的引号会把文档变成另一份文档。
 
+### Android 操作域（SDK 2.4）
+
+两项能力，**不是域、不入驻任何东西**：声明了就能用。宿主经**它自己的** adb 跑它写死的那几条命令（列设备、列应用与大小、
+拉安装包用 aapt2 读名字与图标），扩展只给设备序列号与包名——因此它不是 `process.run`，manifest 里没有声明对象；
+跑什么、带什么参数，扩展改不了一个字。adb 与 aapt2 用的是内置「APK 扫描」「数据导出」同一套工具链（设置里手填的路径优先）。
+
+#### `android.apps.read` — 读取手机上的应用
+
+| 方法 | 说明 |
+| --- | --- |
+| `android.devices()` | `[{ serial, name, state, ready }]`：adb 此刻看得见的设备，含没允许调试的。`name` 读得出型号就是型号，否则是序列号；`state` 是 `device` / `unauthorized` / `offline` / `other`；`ready` = `state === "device"` |
+| `android.apps({ serial, scope? })` | `{ apps: [{ package, system, apkBytes, dataBytes, cacheBytes }] }`。`scope` 省略为 `user`（只列用户自己装的），`all` 连同系统应用。三个大小互不重叠、加起来是这个应用占的地方；设备不报时为 `null`（不是 0） |
+| `android.appDetails({ serial, packages })` | `[{ package, label, versionName, icon, problem }]`：每个包一项，按 `package` 对上。`icon` 是宿主颁发的图片句柄（与截图、剪贴板里的图同一种 `FileHandle`）；某个包读不出时那一项 `problem` 写一句，其余照常 |
+
+`appDetails` **慢**：每个包都要把安装包拉到本机临时目录、跑一次 aapt2、读完即删，几百毫秒到几秒。规则：
+
+| 规则 | 值 | 为什么 |
+| --- | --- | --- |
+| 一次几个包 | 1…8（`maximumAndroidAppDetailsPerCall`），超出 `invalid.argument` | 8 个是「一屏露出来的那几行」：再多一次调用就要十几秒，这期间页面一动不动 |
+| 什么时候问 | 先画列表（包名与大小），再按屏幕从上往下一批一批补；同一时刻只让一批在途 | 一台手机一条 adb，并发只会让每一批都更慢；列表不等名字 |
+| 缓存 | 扩展自己按「序列号 + 包名」记在内存里；安装包大小变了再重读 | 宿主不替扩展缓存：图标句柄只在本次会话内有效 |
+| 失败 | 找不到 adb、没有 aapt2、设备中途拔掉、adb 超时 → `host.failure`，`message` 是一句人话（「未找到 adb」「没有 aapt2，读不出应用名和图标」） | 原样显示；读名字整批失败时列表照常，别连着重试 |
+| 设备 | `serial` 为空 → `invalid.argument`；不在、不是 `ready` → `host.failure` | 没允许调试的设备读不了任何东西，先画「在手机上点『允许 USB 调试』」 |
+| 限频 | 三个方法合计每分钟 ≤ 120 次 | 一次扫描是设备 1 次 + 列表 1 次 + 每屏几批；上限只挡死循环 |
+
+#### `android.tools.open` — 交给 APK 扫描 / 数据导出
+
+`android.openTool({ tool, package })`：`tool` 是 `apkScan`（工具箱「APK 扫描」）或 `dataExport`（「数据导出」）。
+宿主在面板里打开那个工具、把包名填好；**开始仍由用户在那里按**——它不替用户跑扫描、不替用户导出。打开之后扩展的页面随之离开（前台会话 deactivate）。
+只该在用户按下的回调里调；`tool` 不认识、`package` 为空 → `invalid.argument`；每分钟 ≤ 30 次。
+
+```ts
+const devices = await jarvis.android.devices();
+const phone = devices.find((device) => device.ready);
+if (!phone) return; // 画「没有连着的安卓设备」或「在手机上点『允许 USB 调试』」
+const { apps } = await jarvis.android.apps({ serial: phone.serial });
+const firstScreen = apps.slice(0, 8).map((app) => app.package);
+const details = await jarvis.android.appDetails({ serial: phone.serial, packages: firstScreen });
+// 用户按下行尾按钮：
+await jarvis.android.openTool({ tool: "apkScan", package: apps[0]!.package });
+```
+
+参考实现：[`extensions/android-apps`](../extensions/android-apps)（分批、在途一批、换设备丢旧结果、缓存按安装包大小判新旧）。
+
 ### 错误码
 
 | `code` | 含义 | 扩展该做什么 |
@@ -285,6 +329,8 @@ const { exitCode } = await handle.result;
 - 后台会话里没有界面：静默命令要交结果只能靠剪贴板、横幅与 Inbox。
 - `git.hosting.query` / `mutate` 的部分成功不会被拒：先看 `data` 再看 `errors`，别只看有没有抛错。
 - `git.mutations` 按**顶层字段名**放行：一份文档里放几个变更（别名区分）可以，每一个都要声明。
+- `android.appDetails` 别一进页面就把整张表问一遍：几百个包 × 每个几秒 = 用户盯着一张空表等几分钟。只读画出来的行。
+- `android.openTool` 只交包名：内置工具用它自己选着的那台设备，连着多台手机时让用户到那边确认。
 
 ## Related Links
 

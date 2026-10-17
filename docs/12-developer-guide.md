@@ -129,6 +129,16 @@ const { result, progress } = await host.callService({ service: "mole", method: "
 替身不画界面、不管授权：它证明的只是"逻辑对不对"。授权、拒绝态与受限执行的放行，要靠你在桩里抛
 `{ code: "permission.denied", message: "…" }` 自己演一遍。节点目录见 [07](07-ui-components.md)。
 
+用了 Android 操作域的扩展，设备那一侧用 `fakeAndroid()`：它按宿主的规则答 `android.*`（1…8 个包、设备要 ready、工具只认两种），
+`failNext()` 演「未找到 adb」「没有 aapt2」，`holdDetails()` 挂住读名字、`maxDetailsInFlight` 断言「一次一批」：
+
+```ts
+import { createTestHost, fakeAndroid } from "@fusionseek/jarvis-extension-sdk/testing";
+const phone = fakeAndroid({ devices: [{ serial: "R5CX", name: "Pixel 8", apps: [/* … */], details: { /* 包名 → { label, icon } */ } }] });
+const host = createTestHost({ async: { ...phone.stubs } });
+phone.failNext("appDetails", { code: "host.failure", message: "没有 aapt2，读不出应用名和图标" });
+```
+
 ### 第五步：构建与校验
 
 ```bash

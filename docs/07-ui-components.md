@@ -92,7 +92,7 @@ v2 的扩展最多有三面（[02](02-architecture.md#运行时前台会话与�
 
 | 节点 | 宿主实现 | tokens | 规则 |
 | --- | --- | --- | --- |
-| `row` | 工具箱行 / 粘贴板行的骨架：图标井 + 标题 + 说明 + 记号 / 动作 | `Toolbox.Row`（圆角 12、12×10 内距、行距 6）、`IconWell`（32 / 圆角 8 / 白 4% 底 8% 边） | 常态**完全透明**（一列清单不是一叠卡片）；`selected` 换青 6% 底 + 青 25% 边 + `0 4 12` 青 10% 外发光、井点亮、记号换青点；`onPress` 存在才可点、才挂悬停光；`hoverCard` 指针停 320ms 才出、前半屏向下挂后半屏向上挂、Reduce Motion 直接出现 |
+| `row` | 工具箱行 / 粘贴板行的骨架：图标井 + 标题 + 说明 + 记号 / 动作 | `Toolbox.Row`（圆角 12、12×10 内距、行距 6）、`IconWell`（32 / 圆角 8 / 白 4% 底 8% 边） | `image`（SDK 2.4）= 行首图标换成宿主颁发的一张图（例如应用图标），画在同一口 32pt 井里，**有它就不画 `symbol`**；常态**完全透明**（一列清单不是一叠卡片）；`selected` 换青 6% 底 + 青 25% 边 + `0 4 12` 青 10% 外发光、井点亮、记号换青点；`onPress` 存在才可点、才挂悬停光；`hoverCard` 指针停 320ms 才出、前半屏向下挂后半屏向上挂、Reduce Motion 直接出现 |
 | `list` | `ScrollView` + `LazyVStack` | 行距 `tight` | 子节点必须带 `key`；`onLoadMore` 存在时底部画 22pt 定高哨兵（转圈 + 10pt 文字；Reduce Motion 只留文字），滚到它就调用；`emptyState` 在没有子节点时画 |
 | `card` | `FloatingPanelCardBackground(tint:)` | 圆角 12、面板底 55% / 白 8% 边；带 `tint` 时 tint 10% 底 / 16% 边 | 带 `onPress` 时整卡可点 + 悬停光；不可点时不亮 |
 | `note` | 语义说明卡（数据导出「访问受限」、Base64 报错那一类） | 同 `card` 带 tint；符号 15pt、标题 13pt semibold、正文 12pt、动作 22pt 行内 | 一屏解释，不是一句红字：拿不到什么、为什么、还剩哪几条路 |
@@ -162,6 +162,9 @@ ui.scroll({
 
 - `image` 只画宿主颁发的句柄（截图、剪贴板里的图、拖进来的图），给用户核对"截到的是哪一块"，不是相册；
   图标一律 SF Symbols。
+- `row.image`（SDK 2.4）同样**只认宿主颁发的句柄**（例如 `android.appDetails` 交回的应用图标）：扩展手里没有像素，
+  也就画不出一枚冒充别的应用的图标。它只替换行首那口井，不改行的尺寸；一列里有图的行与没图（回落 `symbol`）的行照样对齐。
+  句柄只在本次会话内有效：别把它存进 `storage` 留到下一次。
 - 没有 `markdown` / `chart` / `dataTable`（SDK 2 删掉了）：要排一段说明用 `section` + `text`，要列数据用 `list` + `row`。
 - 没有 `modal` / `sheet`：面板 15 秒会自动收回、弹窗点外面就撤，modal 会被截断；确认走 `button.confirm`。
 - 没有 `spacing: number`：四档是全部。想要"再密一点"多半是想少画一段。

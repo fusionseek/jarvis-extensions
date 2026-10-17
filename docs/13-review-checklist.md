@@ -56,6 +56,15 @@
 - [ ] 部分成功（`data` 与 `errors` 同时在）有明确的处理：要么接受并记日志，要么报一句人话；不静默吞掉
 - [ ] 测试里每一份发出去的文档都过一遍「一个操作、顶层字段都在声明里」（[`github-project`](../extensions/github-project/test/support.mjs) 的 `fakeGitHub()` 是现成的移植）
 
+### Android 操作域（声明了 `android.*` 的扩展）
+
+- [ ] `android.appDetails` 按屏分批：每批 ≤ 8 个包、同一时刻只有一批在途、只读画出来的行；没有「一进页面把整张表问一遍」
+- [ ] 列表不等名字：`apps` 一回来就画包名与大小，名字与图标随后补上，并有进度
+- [ ] 换设备、换范围、页面离开之后，晚到的结果不画到新的上下文里（代号或等价机制，测试里演一遍）
+- [ ] 没有一台 ready 的设备、只有没允许调试的设备、找不到 adb、没有 aapt2 各是一屏人话，不是一句红字
+- [ ] `android.openTool` 只在用户按下的回调里调；按钮文案说清交给哪一个工具
+- [ ] `row.image` / `image` 只用宿主颁发的句柄，没有把句柄存进 `storage`
+
 ### 服务（`contributes.services`）
 
 - [ ] `point` 是宿主开放的扩展点（`junkClean.engine` 或 `project.engine`）

@@ -304,6 +304,8 @@ node scripts/validate.mjs extensions/foo  # 校验一个
 - v1 的 `toolbox.symbol/name`、`commands`、`settings`、`background`、`workspace`、`bigquery`、`inbox.cards` 都不存在了——schema 会直接拒。
 - 顶层 `git`（声明对象）与 `contributes.git`（域）是两样东西：前者说「我会改什么」，后者说「我在 Git 里出现在哪」。
 - 用了 `jarvis.git` 或 `project.engine` 的扩展写 `"sdk": "^2.1.0"`：SDK 是内联进产物的，2.0 的 SDK 里没有这两样。
+- 用了 `jarvis.android`（`android.apps.read` / `android.tools.open`）或 `row.image` 的扩展写 `"sdk": "^2.4.0"`。
+  这两项能力**没有声明对象、不要入驻哪个域**：宿主跑的是它自己写死的 adb 命令，扩展只给序列号与包名（[06](06-capabilities.md)「Android 操作域」）。
 
 ## Related Links
 

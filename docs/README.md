@@ -18,10 +18,10 @@ v2 按**域**组织扩展（悬浮球不开放；工具箱、窗口、指令、�
 | 11 | [Inbox 通路](11-inbox.md) | `inbox.post` 消息与 `notifications.post` 横幅：声明、形状、限频、该投什么 |
 | 12 | [开发手册](12-developer-guide.md) | 六步：脚手架 → manifest → 代码 → node 测试 → 构建校验 → PR |
 | 13 | [审核清单](13-review-checklist.md) | PR 模板的真源；服务与受限执行的逐字审核 |
-| 14 | [jarvis-mac 侧落地记录](14-host-integration-plan.md) | spec `20261011-193606` 的决策、宿主类型与文件、契约、存储；spec `20261015-123126` 的 Git 域与项目引擎 |
+| 14 | [jarvis-mac 侧落地记录](14-host-integration-plan.md) | spec `20261011-193606` 的决策、宿主类型与文件、契约、存储；spec `20261015-123126` 的 Git 域与项目引擎；spec `20261017-170440` 的 Android 操作域 |
 
 契约：[`schemas/`](../schemas)（`extension.v2.schema.json`、`registry.v2.schema.json`）是 manifest 与索引的真源；
 [`sdk/src`](../sdk/src) 是节点、能力、服务扩展点与线缆的类型真源。
 示例：[`templates/hello-extension`](../templates/hello-extension)（工具箱 + 指令）、[`extensions/http-status`](../extensions/http-status)（工具箱 + 窗口 + 弹窗 + 设置）、
 [`extensions/translation`](../extensions/translation)（截图 OCR + 网络 + 快捷键 + 静默命令）、[`extensions/send-to-phone`](../extensions/send-to-phone)（快传 + Inbox）、
-[`extensions/mole-clean`](../extensions/mole-clean)（服务扩展 + 受限执行）、[`extensions/github-project`](../extensions/github-project)（项目引擎 + Git 域 + Git 操作域）。
+[`extensions/mole-clean`](../extensions/mole-clean)（服务扩展 + 受限执行）、[`extensions/github-project`](../extensions/github-project)（项目引擎 + Git 域 + Git 操作域）、[`extensions/android-apps`](../extensions/android-apps)（工具箱 + Android 操作域：分批读详情、行首图标）。

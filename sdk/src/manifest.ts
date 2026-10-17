@@ -33,7 +33,14 @@ export type CapabilityID =
   /** Git 操作域：经宿主的 Git 服务执行**只读** GraphQL、读 token 的身份与权限范围；token 不交给扩展。要入驻 Git 域。 */
   | "git.hosting.read"
   /** Git 操作域：经宿主的 Git 服务执行 manifest `git.mutations` 里逐字声明过的变更。要入驻 Git 域。 */
-  | "git.hosting.write";
+  | "git.hosting.write"
+  /**
+   * Android 操作域：经宿主的 adb 读连着的设备、设备上装了哪些应用（包名、大小）与应用名 / 版本 / 图标。
+   * 宿主跑的是它自己写死的那几条命令，扩展只给设备序列号与包名——不是 `process.run` 那种「替扩展跑命令」，因此没有声明对象。
+   */
+  | "android.apps.read"
+  /** Android 操作域：把一个包名交给内置的「APK 扫描」「数据导出」，工具里预填好，开始仍由用户按。 */
+  | "android.tools.open";
 
 /** 授权屏按风险分组；一档一个标签，颜色由宿主决定。 */
 export type CapabilityTier = "low" | "medium" | "high";
@@ -41,11 +48,15 @@ export type CapabilityTier = "low" | "medium" | "high";
 /**
  * 每个能力的风险档位。写成常量而不是让扩展自己标：档位是宿主对用户的承诺，
  * 不是扩展对自己的评价。
+ *
+ * Android 操作域：读是中（用户自己手机上的东西，不出本机；安装包只临时拉到本机、读完即删），
+ * 交给内置工具是低（只是把工具打开、包名填好，开始与否仍由用户按）。
  */
 export const capabilityTiers: Readonly<Record<CapabilityID, CapabilityTier>> = {
   "system.openURL": "low",
   "ocr.recognize": "low",
   "speech.speak": "low",
+  "android.tools.open": "low",
   "clipboard.read": "medium",
   "clipboard.write": "medium",
   "notifications.post": "medium",
@@ -54,6 +65,7 @@ export const capabilityTiers: Readonly<Record<CapabilityID, CapabilityTier>> = {
   "hotkeys.register": "medium",
   "git.repository.read": "medium",
   "git.hosting.read": "medium",
+  "android.apps.read": "medium",
   "screenshot.capture": "high",
   "network.https": "high",
   "quickTransfer.control": "high",

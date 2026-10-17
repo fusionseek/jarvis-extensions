@@ -43,7 +43,8 @@ npm run verify && npm run registry
 
 代码按域交实现：`defineExtension({ toolbox, window, popover, commands, services })`。参考实现：
 [`extensions/http-status`](extensions/http-status)（工具箱 + 窗口 + 弹窗 + 设置）、
-[`extensions/mole-clean`](extensions/mole-clean)（服务扩展 + 受限执行）。
+[`extensions/mole-clean`](extensions/mole-clean)（服务扩展 + 受限执行）、
+[`extensions/android-apps`](extensions/android-apps)（工具箱 + Android 操作域：经宿主的 adb 列手机应用，交给内置工具）。
 
 v2 没有本地加载：开发循环是 node 里的宿主替身（`@fusionseek/jarvis-extension-sdk/testing`），合并进主干后用户的 Jarvis 同步到它。
 完整手册：[docs/12-developer-guide.md](docs/12-developer-guide.md)。审核清单：[docs/13-review-checklist.md](docs/13-review-checklist.md)。
@@ -52,7 +53,7 @@ v2 没有本地加载：开发循环是 node 里的宿主替身（`@fusionseek/j
 
 扩展的代码跑在 Jarvis 进程里的 JavaScriptCore（系统框架，零第三方依赖）；界面是一棵声明式节点树，由 Jarvis 用 SwiftUI 画出来。
 有界面的入口跑在**前台会话**（全局一个），服务与静默命令跑在**后台会话**（每扩展一个、没有界面）。
-扩展不画像素、不能任意联网或读写文件，能碰到的每一项宿主能力（剪贴板、快传、截图、通知、Inbox、白名单网络、受限执行……）都要用户逐条点头。
+扩展不画像素、不能任意联网或读写文件，能碰到的每一项宿主能力（剪贴板、快传、截图、通知、Inbox、白名单网络、受限执行、Git 服务、经宿主的 adb 读手机应用……）都要用户逐条点头。
 
 **受限执行**（`process.run` / `files.read` / `terminal.run`）只放行 manifest 里逐字声明的可执行文件与参数、文件路径、脚本；
 跑起来的命令**继承 Jarvis 的全部系统权限，含完全磁盘访问**——授权屏与商店详情都会逐字列出它们。
