@@ -11,7 +11,7 @@
   },
   "main": "dist/extension.js",
   "sdk": "^2.4.0",
-  "minimumJarvisVersion": "3.2.1",
+  "minimumJarvisVersion": "3.2.2",
   "capabilities": [
     {
       "id": "android.apps.read",

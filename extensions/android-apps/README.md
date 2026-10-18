@@ -60,9 +60,8 @@ adb 与 aapt2 只在 Jarvis 里跑，跑什么由 Jarvis 决定，扩展改不�
 
 ## 已知边界
 
-- **要 Jarvis 带「Android 操作域」的版本**（`android.apps.read` / `android.tools.open` 与 `row` 的图标图）。manifest 的
-  `minimumJarvisVersion` 暂写 `3.2.1`：宿主发布带这两项能力的第一个正式版时，要把它提到那一版（并升这个扩展的版本）——
-  更早的宿主上调用会得到 `capability.unknown`。
+- **要 Jarvis 3.2.2 及以上**（`android.apps.read` / `android.tools.open` 与 `row` 的图标图随 3.2.2 首次发布）：manifest 的
+  `minimumJarvisVersion` 是 `3.2.2`，更早的宿主在商店里看到「需要 Jarvis ≥ 3.2.2」；绕过去调用会得到 `capability.unknown`。
 - **交给内置工具时只交包名**：「APK 扫描」「数据导出」用它们自己选着的那台设备。连着多台手机时，到那边确认是同一台。
 - 清单至多展开到 400 行（一次画面的节点上限是 500）；「全部」里系统应用很多的手机会碰到，页面说一句，用搜索缩小范围。
 - 按名称排时，还没读到名字的行（标题是包名）排在有中文名的那些后面；名字一批一批读到，顺序会跟着变。

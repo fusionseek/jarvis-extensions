@@ -112,7 +112,7 @@ v2 按**域**组织（[01](01-overview.md)）：身份与能力在顶层，入�
   "author": { "name": "fusionseek", "github": "fusionseek" },
   "main": "dist/extension.js",
   "sdk": "^2.1.0",
-  "minimumJarvisVersion": "3.2.1",
+  "minimumJarvisVersion": "3.2.2",
   "capabilities": [
     { "id": "git.hosting.read", "reason": "读 Project 的字段、条目与 Issue 关系" },
     { "id": "git.hosting.write", "reason": "把你在项目页上的修改写回 GitHub" }
