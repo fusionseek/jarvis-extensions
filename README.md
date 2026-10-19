@@ -44,7 +44,8 @@ npm run verify && npm run registry
 代码按域交实现：`defineExtension({ toolbox, window, popover, commands, services })`。参考实现：
 [`extensions/http-status`](extensions/http-status)（工具箱 + 窗口 + 弹窗 + 设置）、
 [`extensions/mole-clean`](extensions/mole-clean)（服务扩展 + 受限执行）、
-[`extensions/android-apps`](extensions/android-apps)（工具箱 + Android 操作域：经宿主的 adb 列手机应用，交给内置工具）。
+[`extensions/android-apps`](extensions/android-apps)（工具箱 + Android 操作域：经宿主的 adb 列手机应用，交给内置工具）、
+[`extensions/mac-apps`](extensions/mac-apps)（全局搜索的应用目录 `launcher.apps` + 工具箱设置页 + `apps.read`）。
 
 v2 没有本地加载：开发循环是 node 里的宿主替身（`@fusionseek/jarvis-extension-sdk/testing`），合并进主干后用户的 Jarvis 同步到它。
 完整手册：[docs/12-developer-guide.md](docs/12-developer-guide.md)。审核清单：[docs/13-review-checklist.md](docs/13-review-checklist.md)。

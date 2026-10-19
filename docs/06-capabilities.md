@@ -296,6 +296,30 @@ await jarvis.android.openTool({ tool: "apkScan", package: apps[0]!.package });
 
 参考实现：[`extensions/android-apps`](../extensions/android-apps)（分批、在途一批、换设备丢旧结果、缓存按安装包大小判新旧）。
 
+### 本机应用（SDK 2.5）
+
+一项能力，**不是域**：声明了就能用。宿主自己扫三处应用目录（`/Applications` 两层、`/System/Applications` 两层、`~/Applications` 两层），
+读 `Info.plist` 与 Spotlight 元数据，结果在宿主里缓存 5 分钟；扩展给不了路径参数。打开应用、在访达中显示、移到废纸篓**只在 Jarvis 的全局搜索里由用户点**，没有对应的能力。
+
+#### `apps.read` — 读取本机应用列表
+
+| 方法 | 说明 |
+| --- | --- |
+| `apps.list()` | `[{ id, name, bundleId, path, category, categoryTitle, version, location, locationTitle, lastUsedAt, addedAt, system, deletable }]`，按名字排。`id` 就是标准化之后的路径（同一个 Bundle ID 装两份是两个应用）；`category` 是 App Store 分类键（游戏子类归到 `public.app-category.games`），没有为 `null`、`categoryTitle` 为「其他」；`location` 是 `applications` / `system` / `user` / `other`；时刻是 Unix 毫秒，Spotlight 没记为 `null`；`deletable` = 不是系统应用且所在目录可写 |
+
+| 规则 | 值 | 为什么 |
+| --- | --- | --- |
+| 限频 | 每分钟 ≤ 60 次 | 全局搜索每唤出一次问一次目录；宿主已经缓存，不必自己再缓存 |
+| 后台代理 | `LSBackgroundOnly` 的包不列 | 没有界面、不该被「打开」 |
+| 没授权 | `permission.denied` | 在 `launcher.apps · catalog` 里原样抛出，宿主会请用户打开扩展那一页授权 |
+
+```ts
+const apps = await jarvis.apps.list();
+const developer = apps.filter((app) => app.category === "public.app-category.developer-tools");
+```
+
+参考实现：[`extensions/mac-apps`](../extensions/mac-apps)（实现 `launcher.apps`：按设置分组排序交给全局搜索）。
+
 ### 错误码
 
 | `code` | 含义 | 扩展该做什么 |

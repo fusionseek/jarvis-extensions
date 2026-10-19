@@ -198,6 +198,32 @@ GitHub Projects v2 的全部专属知识做成扩展 [`github-project`](../exten
 | SDK 2.4 | 本仓 `sdk/src/`：`jarvis.android` 与 `AndroidDevice` / `AndroidApp` / `AndroidAppDetail` / `maximumAndroidAppDetailsPerCall`（`capabilities.ts`）、档位（`manifest.ts`）、`RowNode.image`（`ui.ts`）、运行时绑定（`index.ts`）、替身 `fakeAndroid()`（`testing.ts`）；只追加，2.3 的扩展照常工作 |
 | 扩展 | [`extensions/android-apps`](../extensions/android-apps)「手机应用」：工具箱一页，只声明这两项能力 |
 
+### 第四轮：全局搜索的应用目录（spec `20261019-145942-derive-local-open-sub-issue-app-search` C 节）
+
+仓库主人要全局搜索里有一块「类似于现在系统的 APP 展示」——按组排开的应用网格、分组、排序、长按删除、在访达中显示，**按扩展的形式来支持**；
+工具箱里打开的是全局搜索这块的显示设置。扩展的界面画不进全局搜索那只框，SDK 也没有网格、长按、右键——于是照「项目」「清理」的做法：
+扩展供数据（分组与先后），宿主画界面并做用户亲手点出来的那几件事。
+
+| # | 决策 | 一句话 |
+| --- | --- | --- |
+| C-1 | 新扩展点 `launcher.apps` | 方法只有 `catalog`（不带入参、15 秒）：`{ showInSearch, searchLimit, groups[] }`；设置段「全局搜索」、宿主侧叫「应用目录」 |
+| C-1 | 新能力 `apps.read` | 中，`square.grid.3x3`，「读取本机应用列表」；方法 `apps.list`（60 次 / 分钟）；目录 21 → 22 |
+| C-2 | 宿主扫 | 三处应用目录、两层，`Info.plist` + Spotlight 元数据；只在内存缓存 5 分钟，不进库 |
+| C-4 / C-5 | 宿主画 | `app ` 视图网格、编辑态（按住 0.5 秒）、✕ + 确认条 → `FileManager.trashItem`；系统 / 正开着 / 没写权限 / Jarvis 自己不能删 |
+
+| 类型 | 文件（相对 `jarvis-mac/Sources/Jarvis/`） | 管什么 |
+| --- | --- | --- |
+| `MacAppRecord`、`MacAppCategory`、`MacAppSearchPolicy`、`ExtensionLauncherAppsContract`、`MacAppGridNavigation`、`MacAppDeletePolicy`、`LauncherAppsQuery` | `Domain/MacApps.swift` | 应用是什么、分类中文名、搜索打分（含拼音首字母）、目录解析、网格移动、能不能删、`app ` 指令 |
+| `MacAppScanner` | `Infrastructure/MacAppScanner.swift` | 扫描、缓存、移到废纸篓 |
+| `LauncherAppsCenter` | `App/LauncherAppsCenter.swift` | 认出提供方、问目录、打开 / 在访达中显示 / 删除 |
+| `LauncherAppsGrid` 等 | `UI/LauncherAppsGridView.swift` | 网格、编辑态、确认条、←→ 键、设置 · 全局搜索那一行 |
+
+| 产物 | 位置 |
+| --- | --- |
+| manifest | 本仓 `schemas/extension.v2.schema.json`：能力 +1、扩展点 +1 |
+| SDK 2.5 | 本仓 `sdk/src/`：`jarvis.apps` 与 `MacApp`（`capabilities.ts`）、`LauncherAppsEngine` / `LauncherAppsCatalog`（`services.ts`）、档位与扩展点（`manifest.ts`）、服务分派（`index.ts`）；只追加 |
+| 扩展 | [`extensions/mac-apps`](../extensions/mac-apps)「应用」：服务 `launcher.apps` + 工具箱设置页，只声明 `apps.read` |
+
 ## Usage
 
 - 扩展作者：遇到一条规则想知道"是谁在拦"，按上表找到类型名，在 `jarvis-mac` 里读它的文档注释——每条规则都写了为什么。

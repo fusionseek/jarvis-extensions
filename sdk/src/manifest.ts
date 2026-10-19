@@ -40,7 +40,12 @@ export type CapabilityID =
    */
   | "android.apps.read"
   /** Android 操作域：把一个包名交给内置的「APK 扫描」「数据导出」，工具里预填好，开始仍由用户按。 */
-  | "android.tools.open";
+  | "android.tools.open"
+  /**
+   * 本机应用（SDK 2.5）：这台 Mac 装了哪些应用——名字、Bundle ID、位置、分类、最近打开 / 添加时刻。
+   * 宿主自己扫三处应用目录，扩展不给路径；打开、删除应用由用户在全局搜索里点，扩展做不了。
+   */
+  | "apps.read";
 
 /** 授权屏按风险分组；一档一个标签，颜色由宿主决定。 */
 export type CapabilityTier = "low" | "medium" | "high";
@@ -66,6 +71,7 @@ export const capabilityTiers: Readonly<Record<CapabilityID, CapabilityTier>> = {
   "git.repository.read": "medium",
   "git.hosting.read": "medium",
   "android.apps.read": "medium",
+  "apps.read": "medium",
   "screenshot.capture": "high",
   "network.https": "high",
   "quickTransfer.control": "high",
@@ -175,9 +181,10 @@ export interface SettingsContribution {
  * 宿主开放的扩展点（服务域）。
  *
  * - `junkClean.engine`：清理引擎，设置画在「清理」；
- * - `project.engine`：项目引擎，Jarvis「项目」（需求 / 迭代 / 缺陷）的数据来源，设置画在「Git」。
+ * - `project.engine`：项目引擎，Jarvis「项目」（需求 / 迭代 / 缺陷）的数据来源，设置画在「Git」；
+ * - `launcher.apps`（SDK 2.5）：全局搜索的应用目录——分组、组里先后、搜索结果里出不出与出几条；网格由 Jarvis 画，设置画在「全局搜索」。
  */
-export type ServicePoint = "junkClean.engine" | "project.engine";
+export type ServicePoint = "junkClean.engine" | "project.engine" | "launcher.apps";
 
 /**
  * 服务域：实现宿主开放的一个扩展点。**没有独立界面**——它体现在它扩展的那个内置能力里，

@@ -15,7 +15,8 @@
  * | 服务 | `contributes.services` | `services` |
  * | Git | `contributes.git` | —（宿主在 Git 里画入口；扩展经 `jarvis.git` 读写托管服务） |
  *
- * 能力按命名空间挂在 `jarvis` 上；Android 操作域（`jarvis.android`，SDK 2.4）不是域、不入驻任何东西，只是两项能力。
+ * 能力按命名空间挂在 `jarvis` 上；Android 操作域（`jarvis.android`，SDK 2.4）不是域、不入驻任何东西，只是两项能力；
+ * 本机应用（`jarvis.apps`，SDK 2.5）同样只是一项能力 `apps.read`。
  *
  * 悬浮球不是可入驻的域。
  */
@@ -23,7 +24,7 @@ import type { EnvironmentInfo, HostInfo, Jarvis, ProcessHandle, ProcessResult, U
 import { JarvisError } from "./capabilities.js";
 import type { ActivationContext, CommandContext, HostEvent, InvokeResult, HostBridge, CommandSummary, ServiceCall, Surface } from "./bridge.js";
 import { bridgeProtocolVersion, countNodes, serialize } from "./bridge.js";
-import type { CancelSignal, ServiceContext, ServiceImplementation, JunkCleanEngine, ProjectEngine } from "./services.js";
+import type { CancelSignal, ServiceContext, ServiceImplementation, JunkCleanEngine, LauncherAppsEngine, ProjectEngine } from "./services.js";
 import type { UINode } from "./ui.js";
 import { maximumNodesPerRender, ui } from "./ui.js";
 import { ocr } from "./ocr.js";
@@ -46,7 +47,7 @@ export type {
 export { bridgeProtocolVersion } from "./bridge.js";
 
 /** SDK 版本。主版本必须与宿主运行时一致。 */
-export const sdkVersion = "2.4.0";
+export const sdkVersion = "2.5.0";
 
 /** 一面的实现：工具箱页面、原地弹窗或窗口标签。 */
 export interface PageDefinition {
@@ -338,6 +339,12 @@ class Runtime {
           }
           break;
         }
+        case "launcher.apps": {
+          // 全局搜索的应用目录（SDK 2.5）：只有 catalog，不带入参。
+          const engine = implementation as LauncherAppsEngine;
+          if (call.method === "catalog") return Promise.resolve(engine.catalog(context));
+          break;
+        }
       }
       return Promise.reject(new JarvisError({ code: "capability.unknown", message: `不认识的服务方法 ${call.point}.${call.method}` }));
     };
@@ -462,6 +469,7 @@ const call = {
   terminal: namespaced("terminal"),
   git: namespaced("git"),
   android: namespaced("android"),
+  apps: namespaced("apps"),
   system: namespaced("system"),
 };
 
@@ -621,6 +629,10 @@ export const jarvis: Jarvis = {
     apps: (options) => call.android("apps", options),
     appDetails: (options) => call.android("appDetails", options),
     openTool: (options) => call.android("openTool", options),
+  },
+  // 本机应用（SDK 2.5）：不收参数，扫哪几处由宿主定。
+  apps: {
+    list: () => call.apps("list"),
   },
   system: {
     openURL: (url) => call.system("openURL", { url }),

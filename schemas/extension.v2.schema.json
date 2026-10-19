@@ -146,7 +146,7 @@
     },
     "capabilityID": {
       "type": "string",
-      "description": "能力目录见 docs/06-capabilities.md。只列宿主真的做得到的；隐式能力（panel.* / storage.* / preferences.* / text.* / time.* / color.* / window.open / service.* / host.* / log）不在这里声明。git.* 三项是 Git 操作域：声明任一项都要入驻 Git 域（contributes.git），git.hosting.write 还要逐字写出 git.mutations。android.* 两项是 Android 操作域：宿主经自己的 adb 跑它写死的那几条命令（列设备、列应用、读应用名与图标），扩展只给设备序列号与包名、不给参数；android.tools.open 把一个包名交给内置的「APK 扫描」「数据导出」。",
+      "description": "能力目录见 docs/06-capabilities.md。只列宿主真的做得到的；隐式能力（panel.* / storage.* / preferences.* / text.* / time.* / color.* / window.open / service.* / host.* / log）不在这里声明。git.* 三项是 Git 操作域：声明任一项都要入驻 Git 域（contributes.git），git.hosting.write 还要逐字写出 git.mutations。android.* 两项是 Android 操作域：宿主经自己的 adb 跑它写死的那几条命令（列设备、列应用、读应用名与图标），扩展只给设备序列号与包名、不给参数；android.tools.open 把一个包名交给内置的「APK 扫描」「数据导出」。apps.read 读这台 Mac 装了哪些应用（名字、Bundle ID、位置、分类、最近打开 / 添加时刻）：宿主自己扫三处应用目录，扩展不给路径；打开、删除应用由用户在 Jarvis 全局搜索里点，扩展做不了。",
       "enum": [
         "clipboard.read",
         "clipboard.write",
@@ -168,7 +168,8 @@
         "git.hosting.read",
         "git.hosting.write",
         "android.apps.read",
-        "android.tools.open"
+        "android.tools.open",
+        "apps.read"
       ]
     },
     "capabilityRequest": {
@@ -560,9 +561,10 @@
         "point": {
           "enum": [
             "junkClean.engine",
-            "project.engine"
+            "project.engine",
+            "launcher.apps"
           ],
-          "description": "扩展点。junkClean.engine = 清理引擎：设置「清理」里出现它的开关与设置，开着时晃球、/clean 与工具箱清理都走它。project.engine = 项目引擎：Jarvis「项目」（需求 / 迭代 / 缺陷）的数据来源，设置画在「Git」里；它的托管服务读写要配 Git 域与 Git 操作域的能力。"
+          "description": "扩展点。junkClean.engine = 清理引擎：设置「清理」里出现它的开关与设置，开着时晃球、/clean 与工具箱清理都走它。project.engine = 项目引擎：Jarvis「项目」（需求 / 迭代 / 缺陷）的数据来源，设置画在「Git」里；它的托管服务读写要配 Git 域与 Git 操作域的能力。launcher.apps = 全局搜索的应用目录：装了它，全局搜索的结果里才有本机应用、输入 app 空格才进应用网格；它交出怎么分组、组里先后、搜索结果里出不出与出几条（方法 catalog），网格由 Jarvis 画；设置画在「全局搜索」里，读应用要声明 apps.read。"
         },
         "id": {
           "$ref": "#/$defs/identifier"

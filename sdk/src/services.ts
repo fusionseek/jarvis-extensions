@@ -8,7 +8,7 @@
  * 宿主经 `service` 事件调用，扩展经 `service.resolve` / `service.progress` 回话——这些都由 SDK 代劳，
  * 扩展只需要在 `defineExtension({ services: { <id>: 实现 } })` 里交出一个对象。
  *
- * 现有两个扩展点：`junkClean.engine`（清理引擎）与 `project.engine`（项目引擎）。
+ * 现有三个扩展点：`junkClean.engine`（清理引擎）、`project.engine`（项目引擎）与 `launcher.apps`（全局搜索的应用目录，SDK 2.5）。
  */
 
 /** 宿主每次调服务时带来的东西。 */
@@ -473,10 +473,48 @@ export type ProjectEngineMethod = "describe" | "listProjects" | "readSchema" | "
 /** 清理引擎的方法名（线缆上 `service` 事件的 `method`）。 */
 export type JunkCleanMethod = "status" | "run" | "action";
 
+// ---------------------------------------------------------------------------
+// launcher.apps：全局搜索的应用目录（SDK 2.5）
+// ---------------------------------------------------------------------------
+
+/** 应用视图里的一组。 */
+export interface LauncherAppsGroup {
+  /** 组 id（1–80 字），同一份目录里不重。 */
+  id: string;
+  /** 组标题（1–40 字），例如「开发工具」「A」「应用程序」。 */
+  title: string;
+  /** 组里的应用 id（`MacApp.id`），按显示的先后；宿主不认得的 id 丢掉，筛空的组不画。 */
+  apps: string[];
+}
+
+/** `catalog` 的返回：全局搜索里应用怎么显示。 */
+export interface LauncherAppsCatalog {
+  /** 普通搜索时结果里出不出应用。 */
+  showInSearch: boolean;
+  /** 搜索结果里至多几条（1–8）。 */
+  searchLimit: number;
+  /** 输入 `app ` 之后那张网格的分组（至多 64 组）。 */
+  groups: LauncherAppsGroup[];
+}
+
+/** 全局搜索的应用目录的方法名（线缆上 `service` 事件的 `method`）。 */
+export type LauncherAppsMethod = "catalog";
+
+/**
+ * 全局搜索的应用目录（`launcher.apps`）。宿主每次唤出全局搜索问一次 `catalog`（15 秒时限）：
+ * 应用从 `jarvis.apps.list()` 读（要声明 `apps.read`），怎么分组、怎么排、搜索里出几条由你按自己的设置定。
+ * 网格、搜索结果、打开 / 在访达中显示 / 移到废纸篓都由 Jarvis 画、由用户点——你交出的只有这份目录。
+ * 没有授权时 `jarvis.apps.list()` 以 `permission.denied` 拒绝：原样抛出去，宿主会请用户打开你的页面授权。
+ */
+export interface LauncherAppsEngine {
+  catalog(context: ServiceContext): LauncherAppsCatalog | Promise<LauncherAppsCatalog>;
+}
+
 /** 某个扩展点的实现。按 manifest `contributes.services[].point` 对上。 */
 export interface ServiceImplementations {
   "junkClean.engine": JunkCleanEngine;
   "project.engine": ProjectEngine;
+  "launcher.apps": LauncherAppsEngine;
 }
 
 /** 任一扩展点的实现。 */

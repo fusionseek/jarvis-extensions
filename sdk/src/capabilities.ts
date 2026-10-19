@@ -621,6 +621,45 @@ export interface AndroidAPI {
   openTool(options: { tool: AndroidTool; package: string }): Promise<void>;
 }
 
+/** 应用在哪一处应用目录：`applications` = `/Applications`（含子目录）；`system` = `/System/Applications`；`user` = `~/Applications`；`other` = 别处。 */
+export type MacAppLocation = "applications" | "system" | "user" | "other";
+
+/**
+ * 这台 Mac 上装着的一个应用（`apps.read`，SDK 2.5）。宿主扫三处应用目录得到，结果在宿主里缓存 5 分钟。
+ *
+ * `id` 就是路径：同一个 Bundle ID 装了两份是两个应用。时刻是 Unix 毫秒，Spotlight 没记为 `null`。
+ */
+export interface MacApp {
+  /** 应用 id（标准化之后的路径）；交回 `launcher.apps · catalog` 的组里用的就是它。 */
+  id: string;
+  /** 访达里显示的名字（本地化、不带 `.app`）。 */
+  name: string;
+  bundleId: string | null;
+  path: string;
+  /** App Store 分类（`public.app-category.developer-tools`；游戏子类归到 `public.app-category.games`）；没有 / 认不出为 `null`。 */
+  category: string | null;
+  /** 分类的中文名（没有为「其他」）。 */
+  categoryTitle: string;
+  version: string | null;
+  location: MacAppLocation;
+  /** 位置的中文名（「应用程序」「系统」「我的应用」「其他位置」）。 */
+  locationTitle: string;
+  /** 最近一次打开。 */
+  lastUsedAt: number | null;
+  /** 放进应用目录的时刻。 */
+  addedAt: number | null;
+  /** 系统自带（`/System` 下）。 */
+  system: boolean;
+  /** 所在目录可写、不是系统应用：全局搜索的编辑态里出不出 ✕（真删之前宿主还会查它是不是正开着）。 */
+  deletable: boolean;
+}
+
+/** 本机应用（SDK 2.5）。读不出时以 `host.failure` 拒绝。 */
+export interface AppsAPI {
+  /** `apps.read`。这台 Mac 装了哪些应用，按名字排。每分钟 ≤ 60 次（宿主缓存 5 分钟，不必自己再缓存）。 */
+  list(): Promise<MacApp[]>;
+}
+
 /** 系统。 */
 export interface SystemAPI {
   /** `system.openURL`。只放行 https。 */
@@ -667,5 +706,6 @@ export interface Jarvis {
   readonly terminal: TerminalAPI;
   readonly git: GitAPI;
   readonly android: AndroidAPI;
+  readonly apps: AppsAPI;
   readonly system: SystemAPI;
 }

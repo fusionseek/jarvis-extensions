@@ -54,6 +54,7 @@
 | `git.hosting.read` | 会用你在 Git 服务里填的 token 读取数据；token 本身不交给扩展 |
 | `git.hosting.write` | 会以你的身份修改：updateProjectV2ItemFieldValue、closeIssue、…（manifest `git.mutations` 逐字列出） |
 | `android.apps.read` | 会经 adb 读连着的手机上装了哪些应用；读应用名与图标时把安装包临时拉到本机，读完即删 |
+| `apps.read` | 会读这台 Mac 装了哪些应用（名字、位置、分类、最近打开时刻）；打开、删除应用由你在全局搜索里点，扩展做不了 |
 
 - 默认全开、每条可单独关：用户要做的是"关掉不想给的"，不是"逐条勾上"。
 - 主按钮写「允许 N 项」；全部关掉时变成「不授权，仍然打开」——用户关掉全部仍然可以进去看看，扩展要自己画出受限态。
@@ -94,7 +95,7 @@ try {
 | 档 | 能力 | 判据 |
 | --- | --- | --- |
 | 低 | `system.openURL`、`ocr.recognize`、`speech.speak`、`android.tools.open` | 用户看得见后果，或只处理扩展已经拿到的东西 |
-| 中 | `clipboard.read`、`clipboard.write`、`notifications.post`、`inbox.post`、`quickTransfer.status`、`hotkeys.register`、`git.repository.read`、`git.hosting.read`、`android.apps.read` | 读或写用户自己的数据但不出本机；或占一组全局按键；或经宿主**只读**用户已经接上的 Git 服务；或经宿主的 adb **只读**用户连着的手机 |
+| 中 | `clipboard.read`、`clipboard.write`、`notifications.post`、`inbox.post`、`quickTransfer.status`、`hotkeys.register`、`git.repository.read`、`git.hosting.read`、`android.apps.read`、`apps.read` | 读或写用户自己的数据但不出本机；或占一组全局按键；或经宿主**只读**用户已经接上的 Git 服务；或经宿主的 adb **只读**用户连着的手机；或**只读**这台 Mac 装了哪些应用 |
 | 高 | `screenshot.capture`、`network.https`、`quickTransfer.control`、`quickTransfer.send`、`process.run`、`files.read`、`terminal.run`、`git.hosting.write` | 看得见屏幕、出得了本机、开得了端口、跑得了命令、读得了文件、以用户的身份改远端数据 |
 
 **受限执行为什么是高风险**：被允许 `process.run` 的扩展，跑出来的进程继承 Jarvis 的全部系统权限——
