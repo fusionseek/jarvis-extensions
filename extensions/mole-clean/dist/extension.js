@@ -1,4 +1,4 @@
-// jarvis-extension bundle · mole-clean@1.0.4 · sdk 2.4.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · mole-clean@1.0.5 · sdk 2.5.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -107,7 +107,7 @@
   };
 
   // sdk/src/index.ts
-  var sdkVersion = "2.4.0";
+  var sdkVersion = "2.5.0";
   var Cancellation = class {
     constructor() {
       this.listeners = [];
@@ -333,6 +333,11 @@
             }
             break;
           }
+          case "launcher.apps": {
+            const engine = implementation;
+            if (call2.method === "catalog") return Promise.resolve(engine.catalog(context));
+            break;
+          }
         }
         return Promise.reject(new JarvisError({ code: "capability.unknown", message: `\u4E0D\u8BA4\u8BC6\u7684\u670D\u52A1\u65B9\u6CD5 ${call2.point}.${call2.method}` }));
       };
@@ -446,6 +451,7 @@
     terminal: namespaced("terminal"),
     git: namespaced("git"),
     android: namespaced("android"),
+    apps: namespaced("apps"),
     system: namespaced("system")
   };
   var sync = {
@@ -594,6 +600,10 @@
       apps: (options) => call.android("apps", options),
       appDetails: (options) => call.android("appDetails", options),
       openTool: (options) => call.android("openTool", options)
+    },
+    // 本机应用（SDK 2.5）：不收参数，扫哪几处由宿主定。
+    apps: {
+      list: () => call.apps("list")
     },
     system: {
       openURL: (url) => call.system("openURL", { url }),

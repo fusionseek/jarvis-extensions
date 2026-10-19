@@ -1,7 +1,7 @@
 {
   "manifestVersion": 2,
   "id": "translation",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "name": "截屏翻译",
   "symbol": "translate",
   "description": "按一下快捷键框选屏幕上任意一块，Vision 识别文字、合并段落、检测语言，再经 Google 翻译；译文就贴着选区原地弹出。框到的是一个词时，译文下面还有读音与按词性分行的全部词义。也能翻译剪贴板里的文字或图片，或 /translate 后面跟的一段字。免费端点无需 key，填了 API key 走官方接口。",

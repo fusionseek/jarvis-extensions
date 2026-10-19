@@ -1,0 +1,36 @@
+{
+  "manifestVersion": 2,
+  "id": "mac-apps",
+  "version": "1.0.0",
+  "name": "应用",
+  "symbol": "square.grid.3x3",
+  "description": "让 Jarvis 的全局搜索认得这台 Mac 上的应用：打字时结果里出现应用，输入 app 空格看按组排开的图标网格，按住图标进编辑态移到废纸篓、右键在访达中显示。工具箱里这一页是它的显示设置：分组、排序、搜索结果里出几条、要不要系统应用。",
+  "author": {
+    "name": "fusionseek",
+    "github": "fusionseek"
+  },
+  "main": "dist/extension.js",
+  "sdk": "^2.5.0",
+  "minimumJarvisVersion": "3.2.2",
+  "capabilities": [
+    {
+      "id": "apps.read",
+      "reason": "列出这台 Mac 装的应用，按你的设置分组排好交给全局搜索"
+    }
+  ],
+  "contributes": {
+    "toolbox": {
+      "subtitle": "全局搜索里应用的分组、排序与显示",
+      "keywords": ["app", "apps", "application", "launchpad", "启动台", "程序", "spotlight", "图标"]
+    },
+    "services": [
+      {
+        "point": "launcher.apps",
+        "id": "apps",
+        "title": "应用",
+        "subtitle": "全局搜索里的本机应用：按分类、首字母或位置分组排好"
+      }
+    ]
+  },
+  "inbox": false
+}
