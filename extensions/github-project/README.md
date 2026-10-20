@@ -51,6 +51,7 @@
 | `ReadSchema` | 打开一个 Project、每次同步、每次写入之前（Jarvis 的漂移守卫要比对字段） |
 | `OrganizationIssueTypes` | Project 属于组织、且有 Issue Type 字段时，读组织启用着的 Issue Type 当作它的选项 |
 | `ReadItems` / `ReadItemsSince` | 同步条目，一页 100 条；增量同步带过滤串 `updated:>=YYYY-MM-DD` |
+| `ReadItemsByIds` | 「项目」工具栏的「刷新本视图」：按 id 读回眼前这一页列出的条目（`nodes(ids:)`，一次至多 100 条，1.3.0 起） |
 | `ResolveEdit` | 每次编辑之前一次：要改的 Issue / PR 的 id 与当前状态、父 Issue、指派人，以及这次要用到的标签、里程碑、Issue Type、用户、其它 Issue 的 id |
 | `ReadItem` / `ReadField` | 改完、新建完读回那一条；加选项之前读字段的当前选项 |
 | `RepositoryId` | 新建条目之前认出你选的仓库（`createIssue` 只认仓库的节点 id） |
@@ -93,6 +94,8 @@
   已经是那个状态的步骤（关一个已关的 Issue、设成它现在的父 Issue）不发。
 - **增量同步往前多读一天。** 过滤串按天、GitHub 没说按哪个时区，多读的那一天 Jarvis 按 `updatedAt` 去重。
   GitHub 若不认这个过滤串，这一次回落到全量从头读，之后的游标带 `all:` 前缀，翻页时不会拿全量的游标去配增量的查询。
+- **按 id 读只交回还在这个 Project 里的。** Jarvis 把「请求了却没交回」的那几条当作已移出 Project、从列表里去掉，
+  所以只有 GitHub 说 `NOT_FOUND` 的那几条会被略过；权限、限流这类错误整次失败，不会被读成「移出了」。别的 Project 的条目也不交回。
 - **加选项保住已有 id。** GitHub 的 `updateProjectV2Field` 是整组替换选项，但输入里带 `id`：已有选项连 id 原样写回，
   映射不会失效。同名选项已经在就什么都不改。
 - **新建 = 认出仓库 + 建 Issue + 加进 Project + 读回。** 交回给 Jarvis 的那一条已经在 Project 里，Jarvis 再经 `applyEdit`

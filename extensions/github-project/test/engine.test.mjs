@@ -52,13 +52,13 @@ beforeEach(() => {
 // describe
 // ---------------------------------------------------------------------------
 
-test("describe：token 有 project 时可用，七项可选能力，契约版本 1", async () => {
+test("describe：token 有 project 时可用，八项可选能力，契约版本 1", async () => {
   assert.deepEqual(await value("describe", undefined, "projectEngineDescribe"), {
     contractVersion: 1,
     ready: true,
     summary: "已接上 GitHub · fusionseek",
     hosting: "github",
-    features: ["nativeHierarchy", "nativeDependencies", "issueTypes", "createFields", "draftIssues", "createIterations", "createItems"],
+    features: ["nativeHierarchy", "nativeDependencies", "issueTypes", "createFields", "draftIssues", "createIterations", "createItems", "readItemsById"],
   });
 });
 
@@ -222,6 +222,36 @@ test("readItems：GitHub 不认过滤串时回落到全量从头读，之后的�
   assert.equal(github.callsOf("ReadItems")[1].variables.cursor, "c1");
   assert.equal(second.nextCursor, "all:c3");
   assert.ok(host.logs.some((log) => log.level === "warn" && log.message.includes("回落到全量")));
+});
+
+test("readItems：带 itemIds 只按 id 读回这几条（nodes(ids:)），不翻页、不看 cursor / since", async () => {
+  const inProject = { ...issueNode, __typename: "ProjectV2Item", project: { id: "PVT_kwHOAA" } };
+  const elsewhere = { ...issueNode, __typename: "ProjectV2Item", id: "PVTI_other", project: { id: "PVT_other" } };
+  github.handlers.ReadItemsByIds = () => ({
+    data: { nodes: [inProject, null, elsewhere, { __typename: "Issue", id: "I_1" }] },
+    errors: [{ type: "NOT_FOUND", path: ["nodes", 1], message: "Could not resolve to a node with the global id of 'PVTI_gone'" }],
+  });
+  const result = await value("readItems", { projectId: "PVT_kwHOAA", itemIds: ["PVTI_128", "PVTI_gone", "PVTI_128", "PVTI_other", "I_1"], cursor: "ignored", since: "2026-10-15T09:00:00Z" }, "projectEngineItems");
+  assert.deepEqual(github.callsOf("ReadItemsByIds")[0].variables, { ids: ["PVTI_128", "PVTI_gone", "PVTI_other", "I_1"] }, "去重、保序");
+  assert.deepEqual(result.items.map((item) => item.id), ["PVTI_128"], "移出的（NOT_FOUND）、别的 Project 的、不是条目的都不交回");
+  assert.equal(result.nextCursor, undefined, "按 id 读不翻页");
+  assert.equal(github.callsOf("ReadItems").length + github.callsOf("ReadItemsSince").length, 0, "不走全量 / 增量");
+});
+
+test("readItems：按 id 读遇到 NOT_FOUND 之外的错误整次失败（不能把读失败当成移出）", async () => {
+  github.handlers.ReadItemsByIds = () => ({ data: { nodes: [null] }, errors: [{ type: "FORBIDDEN", message: "Resource not accessible" }] });
+  const result = await call("readItems", { projectId: "PVT_kwHOAA", itemIds: ["PVTI_128"] });
+  assert.equal(result.ok, false);
+  assert.match(result.error.message, /^读条目失败/);
+});
+
+test("readItems：itemIds 超过 100 个直接报，空的不发请求", async () => {
+  const many = Array.from({ length: 101 }, (_, index) => `PVTI_${index}`);
+  const tooMany = await call("readItems", { projectId: "PVT_kwHOAA", itemIds: many });
+  assert.equal(tooMany.ok, false);
+  const empty = await value("readItems", { projectId: "PVT_kwHOAA", itemIds: [] }, "projectEngineItems");
+  assert.deepEqual(empty.items, []);
+  assert.equal(github.callsOf("ReadItemsByIds").length, 0);
 });
 
 test("readItems：找不到 Project 不回落，直接报", async () => {

@@ -1,9 +1,9 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-19T07:52:42.386Z",
+  "generatedAt": "2026-10-20T00:45:15.654Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "d84df61b66754cc5c984031b01ba92c2e2599d0d"
+    "commit": "c49fe07a8877bfed7b6ebe4db851aa38022afb86"
   },
   "extensions": [
     {
@@ -60,7 +60,7 @@
       "manifest": {
         "manifestVersion": 2,
         "id": "github-project",
-        "version": "1.2.2",
+        "version": "1.3.0",
         "name": "GitHub 项目",
         "symbol": "tablecells",
         "description": "给 Jarvis「项目」接上 GitHub Projects v2：读 Project 的字段、条目、迭代与 Issue 的父子 / 依赖关系，把你在需求、迭代、缺陷页上的修改写回 GitHub。页面与规则由 Jarvis 画，它只负责读写数据。",
@@ -114,7 +114,7 @@
                 "token 要有 read:project 才能读、project 才能写回；在 设置 · Git · GitHub 里更新",
                 "只执行 Jarvis 校验过的修改；不删字段、不删条目、不删选项",
                 "Issue Type 只在组织仓库里有；用户仓库里改类型会被 GitHub 拒绝",
-                "增量同步按天过滤、往前多读一天；每页 100 条",
+                "增量同步按天过滤、往前多读一天；每页 100 条；「刷新本视图」按 id 读回眼前这一页（一次 100 条）",
                 "加选项、加迭代都原样保留已有的 id（含已结束的迭代），映射与条目上的值不受影响",
                 "新建：在你选的仓库里建一条 Issue，加进这个 Project；字段由 Jarvis 随后写上"
               ]
@@ -132,10 +132,10 @@
       "path": "extensions/github-project",
       "bundle": {
         "path": "extensions/github-project/dist/extension.js",
-        "sha256": "259012d994003172eec8afc17b90da4217245271474eda8a96f12acf82c32e7d",
-        "byteCount": 81880
+        "sha256": "7f525eb787ceca2eb12733e650deff616d56e36971f74a057794e984e39ccf85",
+        "byteCount": 83458
       },
-      "updatedAt": "2026-10-18T09:16:53+08:00"
+      "updatedAt": "2026-10-19T16:12:07+08:00"
     },
     {
       "manifest": {

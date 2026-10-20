@@ -176,6 +176,18 @@ export const readItemsSince = `query ReadItemsSince($id: ID!, $cursor: String, $
 }
 ${itemFragment}`;
 
+/**
+ * 按 id 读回几条（`readItems` 带 `itemIds`，能力 `readItemsById`；≤ 100 条，与一页同上限）。
+ * 每条带上它所在的 Project：宿主据「没交回」判这一条已移出 Project，因此不是这个 Project 的条目一律不交回。
+ */
+export const readItemsByIds = `query ReadItemsByIds($ids: [ID!]!) {
+  nodes(ids: $ids) {
+    __typename
+    ... on ProjectV2Item { project { id } ...ItemFields }
+  }
+}
+${itemFragment}`;
+
 /** 读回一个条目（`applyEdit` 之后）。 */
 export const readItem = `query ReadItem($id: ID!) {
   node(id: $id) {

@@ -1,4 +1,4 @@
-// jarvis-extension bundle · github-project@1.2.2 · sdk 2.5.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · github-project@1.3.0 · sdk 2.6.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -805,6 +805,13 @@ ${itemFragment}`;
   }
 }
 ${itemFragment}`;
+  var readItemsByIds = `query ReadItemsByIds($ids: [ID!]!) {
+  nodes(ids: $ids) {
+    __typename
+    ... on ProjectV2Item { project { id } ...ItemFields }
+  }
+}
+${itemFragment}`;
   var readItem = `query ReadItem($id: ID!) {
   node(id: $id) {
     __typename
@@ -1287,7 +1294,8 @@ ${spec.fragments}` : ""}`;
     "createFields",
     "draftIssues",
     "createIterations",
-    "createItems"
+    "createItems",
+    "readItemsById"
   ];
   var missingScopeProblem = "token \u7F3A\u5C11 project \u6743\u9650\uFF08\u53EA\u8BFB\u9700 read:project\uFF09";
   async function describe(context) {
@@ -1805,9 +1813,32 @@ ${atRoot.map((line) => `  ${line}`).join("\n")}
     if (plan.filter) variables["q"] = plan.filter;
     return rawQuery(plan.filter ? readItemsSince : readItems, variables);
   }
+  function requestedIds(ids) {
+    const seen = /* @__PURE__ */ new Set();
+    for (const id of ids) {
+      if (typeof id === "string" && id.length > 0 && id.length <= maxLength.id) seen.add(id);
+    }
+    if (seen.size > itemsPerPage) throw new Error(`\u4E00\u6B21\u81F3\u591A\u6309 id \u8BFB ${itemsPerPage} \u6761`);
+    return [...seen];
+  }
+  async function readItemsById(projectId, ids, signal) {
+    const wanted = requestedIds(ids);
+    if (wanted.length === 0) return { items: [] };
+    throwIfCancelled(signal);
+    const response = await rawQuery(readItemsByIds, { ids: wanted });
+    const errors = response.errors ?? [];
+    const unexpected = errors.filter((error) => error.type !== "NOT_FOUND");
+    if (response.data === null || response.data === void 0 || unexpected.length > 0) {
+      throw new GitHubError(`\u8BFB\u6761\u76EE\u5931\u8D25\uFF1A${describeErrors(unexpected.length > 0 ? unexpected : errors)}`, errors);
+    }
+    const wantedSet = new Set(wanted);
+    const items = (response.data.nodes ?? []).filter((node) => node !== null && node !== void 0 && node["__typename"] === "ProjectV2Item").filter((node) => node["project"]?.id === projectId).map(mapItem).filter((item) => item !== null && wantedSet.has(item.id));
+    return { items };
+  }
   async function readItems2(request, signal) {
     if (!request.projectId) throw new Error("\u7F3A\u5C11 projectId");
     throwIfCancelled(signal);
+    if (Array.isArray(request.itemIds)) return readItemsById(request.projectId, request.itemIds, signal);
     let plan = planPage(request);
     let response = await fetchPage(request.projectId, plan);
     const rejectedFilter = plan.filter !== void 0 && !response.data?.node?.items && (response.errors ?? []).length > 0 && !(response.errors ?? []).some((error) => error.type !== void 0 && terminalErrorTypes.has(error.type));
