@@ -10,7 +10,7 @@
       "manifest": {
         "manifestVersion": 2,
         "id": "android-apps",
-        "version": "1.0.1",
+        "version": "1.0.2",
         "name": "手机应用",
         "symbol": "apps.iphone",
         "description": "经 adb 扫描连着的安卓手机上装的全部应用：包名、安装包与数据大小，再一屏一屏读出应用名与图标；点一下把包名交给 APK 扫描或数据导出接着处理。",
@@ -51,10 +51,10 @@
       "path": "extensions/android-apps",
       "bundle": {
         "path": "extensions/android-apps/dist/extension.js",
-        "sha256": "044f5090e45db1f0eee344fdaf8eedb3ed7c6698048daf6ccc731cac2d328402",
+        "sha256": "f9949a31f66fedc23d277f94f9ca487ef63ea2f2863606163e359fe0c42f1cf0",
         "byteCount": 58302
       },
-      "updatedAt": "2026-10-18T09:16:53+08:00"
+      "updatedAt": "2026-10-19T16:12:07+08:00"
     },
     {
       "manifest": {
@@ -141,7 +141,7 @@
       "manifest": {
         "manifestVersion": 2,
         "id": "http-status",
-        "version": "1.0.5",
+        "version": "1.0.6",
         "name": "HTTP 状态码",
         "symbol": "number.circle",
         "description": "输入状态码或关键词，给出这个码的读法、语义、常见成因、怎么处理、相关的码与 RFC 出处。/http 404 或 ⌥⌘/（从剪贴板里抓码）的结果贴着指针原地弹出；也能在工作区窗口里开一枚标签。62 个标准码与 12 个常见非标准码都编在扩展里，不联网。",
@@ -273,16 +273,16 @@
       "path": "extensions/http-status",
       "bundle": {
         "path": "extensions/http-status/dist/extension.js",
-        "sha256": "1a5bb828a6b8322c2f449a918527d6fd8227220dd17ad0d1f7f3350995af67b1",
+        "sha256": "2a8002a401f03e60e8d5fa501d8589d249e75623c2fad5f48c510b4371c9febb",
         "byteCount": 118643
       },
-      "updatedAt": "2026-10-17T18:28:01+08:00"
+      "updatedAt": "2026-10-19T16:12:07+08:00"
     },
     {
       "manifest": {
         "manifestVersion": 2,
         "id": "mac-apps",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "name": "应用",
         "symbol": "square.grid.3x3",
         "description": "让 Jarvis 的全局搜索认得这台 Mac 上的应用：打字时结果里出现应用，输入 app 空格看按组排开的图标网格，按住图标进编辑态移到废纸篓、右键在访达中显示。工具箱里这一页是它的显示设置：分组、排序、搜索结果里出几条、要不要系统应用。",
@@ -327,16 +327,16 @@
       "path": "extensions/mac-apps",
       "bundle": {
         "path": "extensions/mac-apps/dist/extension.js",
-        "sha256": "f5672608b53471fa1bf982785ed1c515e043212ebfcd58399daa3f8b014c3d30",
+        "sha256": "32edf41a01a3a345d9a1a56ebd71899144872c21a127ac260e194a2fcfed083d",
         "byteCount": 35874
       },
-      "updatedAt": "2026-10-19T07:52:41.969Z"
+      "updatedAt": "2026-10-19T16:12:07+08:00"
     },
     {
       "manifest": {
         "manifestVersion": 2,
         "id": "mole-clean",
-        "version": "1.0.5",
+        "version": "1.0.6",
         "name": "Mole 深度清理",
         "symbol": "bubbles.and.sparkles",
         "description": "给 Jarvis 清理换一台更深的引擎：开着时，晃球、/clean 与工具箱清理改走你装好的 Mole（mo clean），覆盖浏览器、开发工具、云盘、已卸载应用残留等更多类别，并读 Mole 的操作日志逐项显示正在删什么。没装 mo 时可以一键在终端里安装。",
@@ -451,16 +451,16 @@
       "path": "extensions/mole-clean",
       "bundle": {
         "path": "extensions/mole-clean/dist/extension.js",
-        "sha256": "fe01de43e0a5fa372fed5bca2fa5ce1ec2009c477c1ac6dc083e16dedda73185",
+        "sha256": "22b468cd2dd25181ba740ef6ed0a9dc12e1a0537d42529b199813a7f290d8502",
         "byteCount": 52692
       },
-      "updatedAt": "2026-10-17T18:28:01+08:00"
+      "updatedAt": "2026-10-19T16:12:07+08:00"
     },
     {
       "manifest": {
         "manifestVersion": 2,
         "id": "send-to-phone",
-        "version": "2.0.5",
+        "version": "2.0.6",
         "name": "发到手机",
         "symbol": "iphone.and.arrow.forward",
         "description": "读一次剪贴板，经 Jarvis 快传把文字或链接推到已配对的手机上；快传没开时给一颗按钮替你打开，发完在 Inbox 留一条消息。/phone 后面跟一段字，不开面板直接发。",
@@ -543,16 +543,16 @@
       "path": "extensions/send-to-phone",
       "bundle": {
         "path": "extensions/send-to-phone/dist/extension.js",
-        "sha256": "477879d66b858def943b4837cb3c52256474b08dc847bae93ce2c4da0cb9ef7d",
+        "sha256": "ad078a0fb5a0801f3410cd76476db58ef42b84778c17787705d3c8cf73b2c633",
         "byteCount": 37680
       },
-      "updatedAt": "2026-10-17T18:28:01+08:00"
+      "updatedAt": "2026-10-19T16:12:07+08:00"
     },
     {
       "manifest": {
         "manifestVersion": 2,
         "id": "translation",
-        "version": "1.0.5",
+        "version": "1.0.6",
         "name": "截屏翻译",
         "symbol": "translate",
         "description": "按一下快捷键框选屏幕上任意一块，Vision 识别文字、合并段落、检测语言，再经 Google 翻译；译文就贴着选区原地弹出。框到的是一个词时，译文下面还有读音与按词性分行的全部词义。也能翻译剪贴板里的文字或图片，或 /translate 后面跟的一段字。免费端点无需 key，填了 API key 走官方接口。",
@@ -782,10 +782,10 @@
       "path": "extensions/translation",
       "bundle": {
         "path": "extensions/translation/dist/extension.js",
-        "sha256": "2042018abcea90157d9fdbd689406e737b605a7c0c30d36984525aceb1bd6435",
+        "sha256": "d3d6c686f1688ccc690d6feaabe5308bf56b00116cfd17f0d47c685bcbfbf074",
         "byteCount": 82902
       },
-      "updatedAt": "2026-10-17T18:28:01+08:00"
+      "updatedAt": "2026-10-19T16:12:07+08:00"
     }
   ]
 }

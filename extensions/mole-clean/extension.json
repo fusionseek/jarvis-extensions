@@ -1,7 +1,7 @@
 {
   "manifestVersion": 2,
   "id": "mole-clean",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "name": "Mole 深度清理",
   "symbol": "bubbles.and.sparkles",
   "description": "给 Jarvis 清理换一台更深的引擎：开着时，晃球、/clean 与工具箱清理改走你装好的 Mole（mo clean），覆盖浏览器、开发工具、云盘、已卸载应用残留等更多类别，并读 Mole 的操作日志逐项显示正在删什么。没装 mo 时可以一键在终端里安装。",

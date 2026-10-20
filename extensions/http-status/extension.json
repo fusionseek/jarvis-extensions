@@ -1,7 +1,7 @@
 {
   "manifestVersion": 2,
   "id": "http-status",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "name": "HTTP 状态码",
   "symbol": "number.circle",
   "description": "输入状态码或关键词，给出这个码的读法、语义、常见成因、怎么处理、相关的码与 RFC 出处。/http 404 或 ⌥⌘/（从剪贴板里抓码）的结果贴着指针原地弹出；也能在工作区窗口里开一枚标签。62 个标准码与 12 个常见非标准码都编在扩展里，不联网。",

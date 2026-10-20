@@ -1,4 +1,4 @@
-// jarvis-extension bundle · send-to-phone@2.0.5 · sdk 2.5.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · send-to-phone@2.0.6 · sdk 2.6.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts

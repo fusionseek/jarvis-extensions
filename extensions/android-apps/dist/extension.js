@@ -1,4 +1,4 @@
-// jarvis-extension bundle · android-apps@1.0.1 · sdk 2.5.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · android-apps@1.0.2 · sdk 2.6.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
