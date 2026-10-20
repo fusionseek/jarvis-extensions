@@ -95,6 +95,33 @@ v1 的「开发者模式 · 从本地目录加载」已删除：v2 只从商店�
 
 宿主不认得的应用 id 丢掉、组里重复的去掉、空组不画、多出的字段整份拒收（写原因）。
 
+### 设置 › Git · 代码格式化（`code.format`，SDK 2.7）
+
+Git 文件 diff 页里**工作区那一份**文件（未暂存 / 已暂存改动的工作区一侧、搜索打开的仓库文件）的「格式化」（⌥⇧F）：宿主按文件名认出语言，
+交给实现了 `code.format` 的扩展，拿回格式化之后的全文，先给用户看对比（现成的对比正文，左「当前」右「格式化后」），用户点「写入文件」才改；
+写入之后一颗「撤销格式化」。**宿主里没有任何一种语言的格式化规则**——哪种语言用哪个工具、什么参数，全在扩展。
+（jarvis-mac `specs/20261020-181305-branch-folders-blame-fullscreen-code-format-log-duration` C。）
+
+| 规则 | 值 | 为什么 |
+| --- | --- | --- |
+| 有没有它 | 没有启用着的 `code.format` 时文件 diff 页没有「格式化」；设置 · Git 那一块只写去哪儿装 | 宿主没有格式化规则 |
+| 语言 | 宿主按扩展名认：`java` `kotlin` `swift` `c` `cpp` `objc` `csharp` `python` `shell` `markdown` `javascript` `typescript` `json` `yaml` `css` `html` `go` `rust` `xml` `sql` | 「git 会识别打开的文件格式」：认语言是宿主的事，扩展只说自己认得哪几种 |
+| 几个 | 每种语言取安装在先、说能用的那一个；都说不能用时取第一个认得它的（点了把原因告诉用户） | 一份文件一次只交给一个工具 |
+| 什么时候问 | 设置 · Git 出现、切回应用、改了偏好时问 `describe`；点「格式化」时调 `format` | 工具是在终端里装的，切回来就该重查 |
+| 授权 | 后台会话不弹授权屏：第一次点「格式化」（或设置 · Git 里点「授权」）时宿主弹 | 后台会话没有界面可以问 |
+| 写回 | 宿主做：原子替换、保留文件权限；文件在格式化之后被改过就不写 | 用户在两次之间敲的字不能被一份旧文本的结果盖掉 |
+| 设置画在哪 | 设置 › Git ·「代码格式化」：每个引擎一块——语言胶囊（能用的亮、不能用的灰，悬停写工具 / 原因）+ 它的服务偏好（工具路径） | 与清理引擎同一种做法 |
+
+**方法**（形状真源是 jarvis-mac `contracts/schemas/extensions/bridge.v2.schema.json` 的 `$defs.codeFormat*`）：
+
+| 方法 | 入参 | 返回 | 超时 |
+| --- | --- | --- | --- |
+| `describe` | — | `{ languages: [{ id, available, tool?, message? }] }`（≤ 64 项；宿主不认得的 id 丢掉） | 15 秒 |
+| `format` | `{ language, fileName（不含目录）, text（≤ 1 MiB）, directory（宿主颁发的目录句柄） }` | `{ text（≤ 4 MiB）, tool? }`；格式化不了就抛错，`message` 写给用户看 | 60 秒，可取消 |
+
+`directory` 只在这一次调用里有效：交给 `jarvis.process.run({ directory })`，格式化工具就在文件所在目录里跑；调用结束宿主收回。
+参考实现：[`extensions/code-format`](../extensions/code-format)「代码格式化」。
+
 ### 设置 › Git · 项目引擎（`project.engine`）
 
 项目引擎是 Jarvis「项目」（需求 / 迭代 / 缺陷的原生表格与甘特）的**数据来源**。宿主有一整套提供方无关的框架——

@@ -182,9 +182,10 @@ export interface SettingsContribution {
  *
  * - `junkClean.engine`：清理引擎，设置画在「清理」；
  * - `project.engine`：项目引擎，Jarvis「项目」（需求 / 迭代 / 缺陷）的数据来源，设置画在「Git」；
- * - `launcher.apps`（SDK 2.5）：全局搜索的应用目录——分组、组里先后、搜索结果里出不出与出几条；网格由 Jarvis 画，设置画在「全局搜索」。
+ * - `launcher.apps`（SDK 2.5）：全局搜索的应用目录——分组、组里先后、搜索结果里出不出与出几条；网格由 Jarvis 画，设置画在「全局搜索」；
+ * - `code.format`（SDK 2.7）：Git 的代码格式化——认得哪几种语言、把一份文本格式化好交回；预览与写回由 Jarvis 做、由用户点，设置画在「Git」。
  */
-export type ServicePoint = "junkClean.engine" | "project.engine" | "launcher.apps";
+export type ServicePoint = "junkClean.engine" | "project.engine" | "launcher.apps" | "code.format";
 
 /**
  * 服务域：实现宿主开放的一个扩展点。**没有独立界面**——它体现在它扩展的那个内置能力里，
@@ -233,6 +234,11 @@ export interface ExecutableDeclaration {
   name: string;
   /** 允许的参数组合；一次调用的参数必须与其中某一组逐项相等。 */
   arguments: string[][];
+  /**
+   * SDK 2.7：允许 `process.run` 经标准输入交给它一段文字（≤ 1 MiB）。省略 = 不允许。
+   * 只给本职就是从 stdin 读数据的工具（格式化工具）；解释器（`sh`、`python3`、`node`）不得声明——那等于把参数当脚本。
+   */
+  stdin?: boolean;
 }
 
 /** 在终端里执行的一段脚本。 */

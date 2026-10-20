@@ -185,14 +185,22 @@ v1 的卡片动作与 `dismiss` 已删除（[11](11-inbox.md)）。
 
 | 方法 | 说明 |
 | --- | --- |
-| `locate(executable)` | 按名字在固定位置里找：`/opt/homebrew/bin`、`/usr/local/bin`、`~/.local/bin`、`~/bin`、`~/.nix-profile/bin`、`/run/current-system/sw/bin`（不 fork shell 去 `which`：从 Finder 起的应用只有一份最小 PATH）。带 `/` 或 `~` 的当作用户填的路径——**坏了就报坏，不悄悄回落到自动探测**。返回 `{ path, source: custom/discovered }` 或 `{ path: null, problem: notFound/missing/notExecutable }` |
-| `run({ executable, arguments, onLine })` → `{ result, cancel() }` | 跑一个声明过的可执行文件；参数必须与声明的某一组**逐项相等**。标准输出逐行交给 `onLine`（宿主按 100ms 合批推过来，**全部输出先于结果到达**）；`result` 兑现为 `{ exitCode, stderr }`（stderr 末尾 4 KB）；`cancel()` 发 SIGINT，`result` 以 `cancelled` 拒绝 |
+| `locate(executable)` | 按名字在固定位置里找：`/opt/homebrew/bin`、`/usr/local/bin`、`~/.local/bin`、`~/bin`、`~/.nix-profile/bin`、`/run/current-system/sw/bin`，以及语言工具链自带的 `~/.cargo/bin`、`~/.dotnet/tools`、`/usr/local/go/bin`（SDK 2.7 的宿主起；不 fork shell 去 `which`：从 Finder 起的应用只有一份最小 PATH）。带 `/` 或 `~` 的当作用户填的路径——**坏了就报坏，不悄悄回落到自动探测**。返回 `{ path, source: custom/discovered }` 或 `{ path: null, problem: notFound/missing/notExecutable }` |
+| `run({ executable, arguments, onLine, stdin?, directory?, output? })` → `{ result, cancel() }` | 跑一个声明过的可执行文件；参数必须与声明的某一组**逐项相等**。标准输出逐行交给 `onLine`（宿主按 100ms 合批推过来，**全部输出先于结果到达**）；`result` 兑现为 `{ exitCode, stderr, stdout? }`（stderr 末尾 4 KB）；`cancel()` 发 SIGINT，`result` 以 `cancelled` 拒绝。SDK 2.7 的三个选项见下 |
+
+SDK 2.7 的三个选项（给格式化工具这一类「读一份文本、吐一份文本」的工具用）：
+
+| 选项 | 规则 | 为什么 |
+| --- | --- | --- |
+| `stdin` | 写进标准输入的文字，≤ 1 MiB。**只对 manifest 里声明了 `"stdin": true` 的可执行文件放行**，否则 `capability.undeclared` | 格式化工具从 stdin 读源码是本职；同一个开关放到解释器身上就等于把参数当脚本——所以写在声明上、授权屏逐个念出来，审核逐个看 |
+| `directory` | 工作目录的**句柄**，只认宿主在这一次服务调用里给的那一个（`code.format · format` 的 `request.directory`），别的一律 `capability.undeclared` | 工具按文件所在目录找 `.clang-format` / `.editorconfig` / `pyproject.toml`；扩展看不到本机路径，也造不出一个目录来跑 |
+| `output: "text"` | 不逐行推；进程结束后结果里多一个 `stdout`（整份，按 UTF-8 解码，≤ 4 MiB，超过以 `host.failure` 拒绝） | 逐行推会吞掉空行，交回一份源码必须是整份 |
 
 放行规则（`ExtensionProcessPolicy`）：名字或路径的**文件名**必须等于 manifest `process.executables[].name`——
 用户在偏好里填 `/opt/tools/mo` 可以，填 `/bin/rm` 不行（`capability.undeclared`）。
 
-运行环境：**不经 shell**（`;`、`|`、`$()` 都只是字符）；stdin 接空设备（非交互的命令不会提示、不会卡住、不会要密码）；
-工作目录是主目录；PATH 补上 Homebrew 与常见工具链目录；`HOME` 显式给出；`NO_COLOR=1`。
+运行环境：**不经 shell**（`;`、`|`、`$()` 都只是字符）；stdin 接空设备（非交互的命令不会提示、不会卡住、不会要密码；声明了 `stdin` 且这一次给了 `stdin` 的除外）；
+工作目录是主目录（或这一次给的目录句柄）；PATH 补上 Homebrew 与常见工具链目录；`HOME` 显式给出；`NO_COLOR=1`。
 **进程继承 Jarvis 的全部系统权限，含完全磁盘访问**——这正是它高风险的原因。测试进程里一律拒绝。每分钟 ≤ 120 次。
 
 #### `files.read` — 读取文件

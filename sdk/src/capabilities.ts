@@ -368,6 +368,31 @@ export interface ProcessResult {
   exitCode: number;
   /** stderr 的最后 4 KB。 */
   stderr: string;
+  /** SDK 2.7：`output: "text"` 时的整份标准输出（按 UTF-8 解码，≤ 4 MiB）；逐行推送时没有。 */
+  stdout?: string;
+}
+
+/** `process.run` 的选项。 */
+export interface ProcessRunOptions {
+  executable: string;
+  arguments: string[];
+  /** 逐行推送的标准输出（不收整份时）。 */
+  onLine?: (line: string) => void;
+  /**
+   * SDK 2.7：写进标准输入的文字（≤ 1 MiB）。只对 manifest 里声明了 `stdin: true` 的可执行文件放行，
+   * 否则以 `capability.undeclared` 拒绝。省略时 stdin 接空设备（原来的样子）。
+   */
+  stdin?: string;
+  /**
+   * SDK 2.7：工作目录的句柄——只认宿主在这一次服务调用里给的那一个（`code.format · format` 的 `request.directory`），
+   * 别的一律 `capability.undeclared`。格式化工具据此按文件所在目录找 `.clang-format` / `.editorconfig` / `pyproject.toml`。
+   * 省略时工作目录是主目录。
+   */
+  directory?: string;
+  /**
+   * SDK 2.7：`"text"` = 不逐行推，进程结束后在结果的 `stdout` 里交回整份输出（逐行推会吞掉空行，交回一份源码必须是整份）。
+   */
+  output?: "text";
 }
 
 /** 一次 `process.run` 的句柄。 */
@@ -400,10 +425,11 @@ export interface ProcessAPI {
   locate(executable: string): Promise<ExecutableLocation>;
   /**
    * `process.run`。跑一个声明过的可执行文件，参数必须与声明的某一组逐项相等。
-   * 不经 shell；stdin 接空设备（非交互）；工作目录是主目录；PATH 补上 Homebrew 与常见工具链目录；`NO_COLOR=1`。
-   * 标准输出逐行交给 `onLine`（宿主按 100ms 合批推过来）。**进程继承 Jarvis 的全部系统权限**（含完全磁盘访问）。
+   * 不经 shell；stdin 接空设备（非交互，SDK 2.7 起声明了 `stdin` 的可以写入一段文字）；工作目录是主目录（或宿主给的目录句柄）；
+   * PATH 补上 Homebrew 与常见工具链目录；`NO_COLOR=1`。
+   * 标准输出逐行交给 `onLine`（宿主按 100ms 合批推过来），或 `output: "text"` 时整份放在结果里。**进程继承 Jarvis 的全部系统权限**（含完全磁盘访问）。
    */
-  run(options: { executable: string; arguments: string[]; onLine?: (line: string) => void }): ProcessHandle;
+  run(options: ProcessRunOptions): ProcessHandle;
 }
 
 /** `files.stat` 的结果。 */

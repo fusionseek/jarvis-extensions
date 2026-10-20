@@ -20,11 +20,11 @@
  *
  * 悬浮球不是可入驻的域。
  */
-import type { EnvironmentInfo, HostInfo, Jarvis, ProcessHandle, ProcessResult, Unsubscribe } from "./capabilities.js";
+import type { EnvironmentInfo, HostInfo, Jarvis, ProcessHandle, ProcessResult, ProcessRunOptions, Unsubscribe } from "./capabilities.js";
 import { JarvisError } from "./capabilities.js";
 import type { ActivationContext, CommandContext, HostEvent, InvokeResult, HostBridge, CommandSummary, ServiceCall, Surface } from "./bridge.js";
 import { bridgeProtocolVersion, countNodes, serialize } from "./bridge.js";
-import type { CancelSignal, ServiceContext, ServiceImplementation, JunkCleanEngine, LauncherAppsEngine, ProjectEngine } from "./services.js";
+import type { CancelSignal, CodeFormatEngine, CodeFormatRequest, ServiceContext, ServiceImplementation, JunkCleanEngine, LauncherAppsEngine, ProjectEngine, ProjectEngineRequest } from "./services.js";
 import type { UINode } from "./ui.js";
 import { maximumNodesPerRender, ui } from "./ui.js";
 import { ocr } from "./ocr.js";
@@ -47,7 +47,7 @@ export type {
 export { bridgeProtocolVersion } from "./bridge.js";
 
 /** SDK 版本。主版本必须与宿主运行时一致。 */
-export const sdkVersion = "2.5.0";
+export const sdkVersion = "2.7.0";
 
 /** 一面的实现：工具箱页面、原地弹窗或窗口标签。 */
 export interface PageDefinition {
@@ -312,7 +312,7 @@ class Runtime {
         case "project.engine": {
           const engine = implementation as ProjectEngine;
           // 入参的形状由宿主按 bridge schema 保证；SDK 只转交，不替引擎判断哪几项该在。
-          const request = call.params.request ?? {};
+          const request = (call.params.request ?? {}) as ProjectEngineRequest;
           switch (call.method) {
             case "describe":
               return Promise.resolve(engine.describe(context));
@@ -343,6 +343,13 @@ class Runtime {
           // 全局搜索的应用目录（SDK 2.5）：只有 catalog，不带入参。
           const engine = implementation as LauncherAppsEngine;
           if (call.method === "catalog") return Promise.resolve(engine.catalog(context));
+          break;
+        }
+        case "code.format": {
+          // Git 的代码格式化（SDK 2.7）：describe 不带入参，format 的入参在 params.request（形状由宿主按 bridge schema 保证）。
+          const engine = implementation as CodeFormatEngine;
+          if (call.method === "describe") return Promise.resolve(engine.describe(context));
+          if (call.method === "format") return engine.format(call.params.request as CodeFormatRequest, context, signal);
           break;
         }
       }
@@ -482,14 +489,19 @@ const sync = {
  * `process.run`：标准输出经订阅逐批推过来（`{ lines: string[] }`），进程结束时那次调用兑现。
  * 宿主保证**所有输出先于结果**到达——这条线上的事件按顺序进同一条队列。
  */
-function runProcess(options: { executable: string; arguments: string[]; onLine?: (line: string) => void }): ProcessHandle {
+function runProcess(options: ProcessRunOptions): ProcessHandle {
   const token = runtime.token("process", "run");
   runtime.listen(token, (payload) => {
     const lines = (payload as { lines?: string[] }).lines ?? [];
     for (const line of lines) options.onLine?.(line);
   });
+  // SDK 2.7 的三个选项只在给了的时候上线缆：没给就与 2.6 的请求一字不差。
+  const params: Record<string, unknown> = { executable: options.executable, arguments: options.arguments, token };
+  if (options.stdin !== undefined) params.stdin = options.stdin;
+  if (options.directory !== undefined) params.directory = options.directory;
+  if (options.output !== undefined) params.output = options.output;
   const result = runtime
-    .invoke<ProcessResult>("process", "run", { executable: options.executable, arguments: options.arguments, token })
+    .invoke<ProcessResult>("process", "run", params)
     .finally(() => runtime.forget(token));
   let cancelled = false;
   return {

@@ -155,7 +155,7 @@ v2 按**域**组织（[01](01-overview.md)）：身份与能力在顶层，入�
 | --- | --- | --- |
 | `capabilities[]` | ≤ 16 项，`{ id, reason }`，`reason` 4–60 字，id 不重复 | `reason` 是授权屏那一行的第二句，写给用户看 |
 | `network.hosts` | 声明了 `network.https` 时必填，1–8 个主机名 | 宿主只放行这几个主机（完全相等，不认后缀）；授权屏逐条列给用户看 |
-| `process.executables[]` | 声明了 `process.run` 时必填：`{ name, arguments: [[…], …] }`，`name` 不带路径；1–8 组参数，每组 ≤ 8 个，每个参数 1–64 字、**不带空白与 `; & \| \` $ < >`** | 一次调用的参数必须与其中某一组**逐项相等**——不支持通配，读 manifest 就知道它会跑什么 |
+| `process.executables[]` | 声明了 `process.run` 时必填：1–16 项 `{ name, arguments: [[…], …], stdin? }`，`name` 不带路径；1–16 组参数（SDK 2.7 起，原来 1–8），每组 ≤ 8 个，每个参数 1–64 字、**不带空白与 `; & \| \` $ < >`**；`stdin: true`（SDK 2.7）允许经标准输入交给它一段文字 | 一次调用的参数必须与其中某一组**逐项相等**——不支持通配，读 manifest 就知道它会跑什么。16 项是给格式化扩展这种「一整套工具链」留的；`stdin` 只给本职就是读 stdin 的工具，解释器不得声明 |
 | `process.terminal[]` | 声明了 `terminal.run` 时必填：`{ id, title ≤ 16, script: [行…] }`，1–80 行、每行 ≤ 240 字 | 扩展只能按 id 点名，不能传脚本内容；宿主在前面补 `#!/bin/sh` 与「执行完删掉自己」那一行 |
 | `files.read[]` | 声明了 `files.read` 时必填：1–8 个绝对路径或 `~` 开头的**文件**，不能有通配与 `..` | 宿主展开 `~`、规整之后逐字比；目录读不了 |
 | `git.mutations[]` | 声明了 `git.hosting.write` 时必填：1–32 个不重复的 GraphQL 变更名（`^[_A-Za-z][_0-9A-Za-z]*$`，≤ 80 字） | 宿主只执行顶层字段名**都在这里**的变更（别名不算数、顶层不许片段展开）；授权屏写「会以你的身份修改：…」、商店详情一行「Git 变更」逐字列出 |
@@ -251,12 +251,12 @@ todo 待办 memo note 速记 记 find 查找 diff compare 对比 比较 gitdiff 
 
 | 字段 | 规则 | 为什么 |
 | --- | --- | --- |
-| `point` | 宿主开放的扩展点：`junkClean.engine`（清理引擎）、`project.engine`（项目引擎）、`launcher.apps`（全局搜索的应用目录，SDK 2.5） | **扩展点是宿主定的**：方法、载荷、设置画在哪都写死在宿主与 SDK 里 |
+| `point` | 宿主开放的扩展点：`junkClean.engine`（清理引擎）、`project.engine`（项目引擎）、`launcher.apps`（全局搜索的应用目录，SDK 2.5）、`code.format`（Git 的代码格式化，SDK 2.7） | **扩展点是宿主定的**：方法、载荷、设置画在哪都写死在宿主与 SDK 里 |
 | `id` | 与扩展 id 同一套规则，扩展内唯一 | 引擎 id = `<扩展 id>/<服务 id>`；`defineExtension({ services })` 按它对上实现 |
 | `title` | 1–16 字 | 在那个内置能力里的名字，例如「深度清理（Mole）」——设置 · 清理 里那一行开关的标题；项目引擎的是 Git 设置与「项目」里引擎的名字 |
 | `subtitle` | 1–80 字 | 一句话说它比内置的多做了什么 |
 | `notes` | ≤ 6 条，每条 1–80 字 | 须知：画在设置区段与清理工具的范围说明里 |
-| `preferences` | ≤ 8 项，形状同设置域 | **画在扩展点指定的那个内置区段里**（`junkClean.engine` → 设置 · 清理，`project.engine` → 设置 · Git，`launcher.apps` → 设置 · 全局搜索），不在「扩展」区段 |
+| `preferences` | ≤ 8 项，形状同设置域 | **画在扩展点指定的那个内置区段里**（`junkClean.engine` → 设置 · 清理，`project.engine` / `code.format` → 设置 · Git，`launcher.apps` → 设置 · 全局搜索），不在「扩展」区段 |
 
 偏好的 key 在设置域与全部服务之间**共用一个命名空间**，不能重。
 
@@ -306,6 +306,7 @@ node scripts/validate.mjs extensions/foo  # 校验一个
 - 用了 `jarvis.git` 或 `project.engine` 的扩展写 `"sdk": "^2.1.0"`：SDK 是内联进产物的，2.0 的 SDK 里没有这两样。
 - 用了 `jarvis.android`（`android.apps.read` / `android.tools.open`）或 `row.image` 的扩展写 `"sdk": "^2.4.0"`。
 - 用了 `jarvis.apps`（`apps.read`）或实现 `launcher.apps` 的扩展写 `"sdk": "^2.5.0"`。
+- 实现 `code.format`、或用了 `process.run` 的 `stdin` / `directory` / `output` 的扩展写 `"sdk": "^2.7.0"`。
   这两项能力**没有声明对象、不要入驻哪个域**：宿主跑的是它自己写死的 adb 命令，扩展只给序列号与包名（[06](06-capabilities.md)「Android 操作域」）。
 
 ## Related Links

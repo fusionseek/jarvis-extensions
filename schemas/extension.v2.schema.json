@@ -219,8 +219,9 @@
       "properties": {
         "executables": {
           "type": "array",
+          "description": "至多 16 个：一个格式化扩展要包一整套工具链（clang-format、swift-format、ktfmt、ruff、shfmt、prettier……），每个工具一项；每一项仍逐字声明参数。",
           "minItems": 1,
-          "maxItems": 4,
+          "maxItems": 16,
           "items": {
             "$ref": "#/$defs/executable"
           }
@@ -248,11 +249,16 @@
           "description": "可执行文件的名字（不带路径）。宿主在 Homebrew、~/.local/bin、~/bin 与 Nix 的固定位置里找；用户填的绝对路径，文件名必须等于它。",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
         },
+        "stdin": {
+          "type": "boolean",
+          "description": "SDK 2.7：允许 process.run 经标准输入交给它一段文字（≤ 1 MiB）。省略 = 不允许，stdin 接空设备。只给本职就是从 stdin 读数据的工具（格式化工具）；解释器（sh、python、node）不得声明——那等于把参数当脚本。授权屏与商店详情把声明了它的可执行文件逐个念出来。",
+          "default": false
+        },
         "arguments": {
           "type": "array",
-          "description": "允许的参数组合。一次调用的参数必须与其中某一组逐项相等——不支持通配，读 manifest 就知道它会跑什么。",
+          "description": "允许的参数组合（1–16 组）。一次调用的参数必须与其中某一组逐项相等——不支持通配，读 manifest 就知道它会跑什么。一个工具认好几种语法时（prettier 的 Markdown / JS / TS / CSS…）每种一组。",
           "minItems": 1,
-          "maxItems": 8,
+          "maxItems": 16,
           "items": {
             "type": "array",
             "maxItems": 8,
@@ -562,9 +568,10 @@
           "enum": [
             "junkClean.engine",
             "project.engine",
-            "launcher.apps"
+            "launcher.apps",
+            "code.format"
           ],
-          "description": "扩展点。junkClean.engine = 清理引擎：设置「清理」里出现它的开关与设置，开着时晃球、/clean 与工具箱清理都走它。project.engine = 项目引擎：Jarvis「项目」（需求 / 迭代 / 缺陷）的数据来源，设置画在「Git」里；它的托管服务读写要配 Git 域与 Git 操作域的能力。launcher.apps = 全局搜索的应用目录：装了它，全局搜索的结果里才有本机应用、输入 app 空格才进应用网格；它交出怎么分组、组里先后、搜索结果里出不出与出几条（方法 catalog），网格由 Jarvis 画；设置画在「全局搜索」里，读应用要声明 apps.read。"
+          "description": "扩展点。junkClean.engine = 清理引擎：设置「清理」里出现它的开关与设置，开着时晃球、/clean 与工具箱清理都走它。project.engine = 项目引擎：Jarvis「项目」（需求 / 迭代 / 缺陷）的数据来源，设置画在「Git」里；它的托管服务读写要配 Git 域与 Git 操作域的能力。launcher.apps = 全局搜索的应用目录：装了它，全局搜索的结果里才有本机应用、输入 app 空格才进应用网格；它交出怎么分组、组里先后、搜索结果里出不出与出几条（方法 catalog），网格由 Jarvis 画；设置画在「全局搜索」里，读应用要声明 apps.read。code.format（SDK 2.7）= Git 的代码格式化：Jarvis 按文件名认出语言，文件 diff 页里工作区那一份文件出「格式化」；方法 describe 报认得哪几种语言、此刻能不能用，format 交回格式化之后的全文，预览与写回由 Jarvis 做、由用户点；设置画在「Git」里。"
         },
         "id": {
           "$ref": "#/$defs/identifier"

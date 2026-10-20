@@ -225,6 +225,25 @@ GitHub Projects v2 的全部专属知识做成扩展 [`github-project`](../exten
 | SDK 2.5 | 本仓 `sdk/src/`：`jarvis.apps` 与 `MacApp`（`capabilities.ts`）、`LauncherAppsEngine` / `LauncherAppsCatalog`（`services.ts`）、档位与扩展点（`manifest.ts`）、服务分派（`index.ts`）；只追加 |
 | 扩展 | [`extensions/mac-apps`](../extensions/mac-apps)「应用」：服务 `launcher.apps` + 工具箱设置页，只声明 `apps.read` |
 
+### 第五轮：Git 的代码格式化（spec `20261020-181305-branch-folders-blame-fullscreen-code-format-log-duration` C 节）
+
+仓库主人：「针对 git 的源文件，添加 code format 功能扩展，对应的 code format 功能是一个纯扩展，git 会识别打开的文件格式，进行文件格式的适配」。
+宿主认语言、给对比、写回；扩展决定哪种语言用哪个工具。工具是用户自己装的（clang-format、swift-format、ktfmt……），扩展经 `process.run` 跑它们——
+为此 `process.run` 多了三个选项：`stdin`（只对声明了 `stdin: true` 的可执行文件）、`directory`（只认宿主颁的句柄）、`output: "text"`（整份 stdout）。
+
+| # | 决策 | 一句话 |
+| --- | --- | --- |
+| C-1 | 新扩展点 `code.format` | `describe`（15 秒）报认得哪几种语言、能不能用；`format`（60 秒）交回全文；设置段「Git」、宿主侧叫「代码格式化」 |
+| C-2 | `process.run` 三个选项 | `stdin` ≤ 1 MiB、`directory` 句柄、`output: "text"` ≤ 4 MiB；manifest `process.executables[].stdin`；`executables` 上限 4 → 16 |
+| C-3 | 宿主画 | 文件 diff 页第一行「格式化」、预览（现成的对比正文）、写入 / 撤销、授权屏 |
+| C-4 | 设置 · Git | 每个引擎一块：语言胶囊 + 服务偏好 |
+
+| 产物 | 位置 |
+| --- | --- |
+| manifest | 本仓 `schemas/extension.v2.schema.json`：扩展点 +1、`executables[].stdin`、`executables` 至多 16 |
+| SDK 2.7 | 本仓 `sdk/src/`：`CodeFormatEngine` 等（`services.ts`）、`ProcessRunOptions` / `ProcessResult.stdout`（`capabilities.ts`）、`stdin`（`manifest.ts`）、服务分派与 `process.run` 选项（`index.ts`）；只追加 |
+| 扩展 | [`extensions/code-format`](../extensions/code-format)「代码格式化」：服务 `code.format`，声明 `process.run` 与一段 `terminal.run`（用 Homebrew 装常用工具） |
+
 ## Usage
 
 - 扩展作者：遇到一条规则想知道"是谁在拦"，按上表找到类型名，在 `jarvis-mac` 里读它的文档注释——每条规则都写了为什么。

@@ -8,7 +8,8 @@
  * 宿主经 `service` 事件调用，扩展经 `service.resolve` / `service.progress` 回话——这些都由 SDK 代劳，
  * 扩展只需要在 `defineExtension({ services: { <id>: 实现 } })` 里交出一个对象。
  *
- * 现有三个扩展点：`junkClean.engine`（清理引擎）、`project.engine`（项目引擎）与 `launcher.apps`（全局搜索的应用目录，SDK 2.5）。
+ * 现有四个扩展点：`junkClean.engine`（清理引擎）、`project.engine`（项目引擎）、`launcher.apps`（全局搜索的应用目录，SDK 2.5）
+ * 与 `code.format`（Git 的代码格式化，SDK 2.7）。
  */
 
 /** 宿主每次调服务时带来的东西。 */
@@ -525,11 +526,74 @@ export interface LauncherAppsEngine {
   catalog(context: ServiceContext): LauncherAppsCatalog | Promise<LauncherAppsCatalog>;
 }
 
+// ---------------------------------------------------------------------------
+// code.format：Git 的代码格式化（SDK 2.7）
+// ---------------------------------------------------------------------------
+//
+// 形状真源是 jarvis-mac `contracts/schemas/extensions/bridge.v2.schema.json` 的 `$defs.codeFormat*`，这里是它的投影。
+// 宿主按文件名认语言（下面这张表）、把整份文本交过来；格式化之后的全文交回去，宿主给用户看对比、用户点了才写回文件。
+
+/** 宿主认得的语言（`$defs.codeFormatLanguage`）。宿主只发这些；`describe` 里报别的 id 会被丢掉。 */
+export type CodeFormatLanguageID =
+  | "java" | "kotlin" | "swift" | "c" | "cpp" | "objc" | "csharp" | "python" | "shell" | "markdown"
+  | "javascript" | "typescript" | "json" | "yaml" | "css" | "html" | "go" | "rust" | "xml" | "sql";
+
+/** `describe` 里的一种语言。 */
+export interface CodeFormatLanguageStatus {
+  id: CodeFormatLanguageID;
+  /** 此刻能用（工具装了、找得到）。为 false 时宿主照样出「格式化」，点了把 `message` 告诉用户。 */
+  available: boolean;
+  /** 用的是哪个工具（1–60 字），例如 `clang-format`、`xcrun swift-format`。 */
+  tool?: string;
+  /** 不能用时的一句话（≤ 300 字）：「没找到 ktfmt 或 ktlint：brew install ktfmt」。 */
+  message?: string;
+}
+
+/** `describe` 的返回（≤ 64 种语言）。要快（15 秒）：只判断工具在不在，不跑格式化。 */
+export interface CodeFormatDescription {
+  languages: CodeFormatLanguageStatus[];
+}
+
+/** `format` 的入参。 */
+export interface CodeFormatRequest {
+  language: CodeFormatLanguageID;
+  /** 文件名（不含目录），挑工具、给工具认语言用。 */
+  fileName: string;
+  /** 整份原文（UTF-8，≤ 1 MiB）。 */
+  text: string;
+  /**
+   * 宿主颁发的目录句柄（`dir-` + 32 位十六进制），只在这一次调用里有效：交给 `jarvis.process.run({ directory })`，
+   * 格式化工具就在文件所在的目录里跑、找得到那里的配置。看不到本机路径。
+   */
+  directory: string;
+}
+
+/** `format` 的返回：格式化之后的全文（≤ 4 MiB）。格式化不了（工具没装、源码有语法错误）就抛错，`message` 写给用户看。 */
+export interface CodeFormatResult {
+  text: string;
+  /** 用的是哪个工具。 */
+  tool?: string;
+}
+
+/** 代码格式化的方法名（线缆上 `service` 事件的 `method`）。 */
+export type CodeFormatMethod = "describe" | "format";
+
+/**
+ * Git 的代码格式化（`code.format`）。宿主在设置 · Git 出现、切回应用时问 `describe`（15 秒），
+ * 用户在文件 diff 页点「格式化」时调 `format`（60 秒，可取消）。通常经 `jarvis.process.run` 跑用户装好的格式化工具：
+ * `stdin` 交原文、`directory` 用入参里的句柄、`output: "text"` 收整份结果。
+ */
+export interface CodeFormatEngine {
+  describe(context: ServiceContext): CodeFormatDescription | Promise<CodeFormatDescription>;
+  format(request: CodeFormatRequest, context: ServiceContext, signal: CancelSignal): Promise<CodeFormatResult>;
+}
+
 /** 某个扩展点的实现。按 manifest `contributes.services[].point` 对上。 */
 export interface ServiceImplementations {
   "junkClean.engine": JunkCleanEngine;
   "project.engine": ProjectEngine;
   "launcher.apps": LauncherAppsEngine;
+  "code.format": CodeFormatEngine;
 }
 
 /** 任一扩展点的实现。 */
