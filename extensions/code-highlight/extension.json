@@ -1,0 +1,31 @@
+{
+  "manifestVersion": 2,
+  "id": "code-highlight",
+  "version": "1.0.0",
+  "name": "代码高亮",
+  "symbol": "paintbrush.pointed",
+  "description": "给 Jarvis 的 Git 加上语法高亮：文件 diff 页与 Blame 里的源码按语言切成关键字、类型、字符串、注释、函数这些记号，Jarvis 按记号上色。认得 Java、Kotlin、Swift、C / C++ / Objective-C、C#、Python、Shell、Markdown、JS / TS、JSON、YAML、CSS、HTML / XML、Go、Rust、SQL。",
+  "author": {
+    "name": "fusionseek",
+    "github": "fusionseek"
+  },
+  "main": "dist/extension.js",
+  "sdk": "^2.8.0",
+  "minimumJarvisVersion": "3.2.3",
+  "capabilities": [],
+  "contributes": {
+    "services": [
+      {
+        "point": "code.highlight",
+        "id": "syntax",
+        "title": "代码高亮",
+        "subtitle": "Git 里的源码按语言上色：关键字、类型、字符串、注释、函数……",
+        "notes": [
+          "纯计算：不运行任何外部命令、不联网、不读文件，只切 Jarvis 交过来的那段文本",
+          "颜色由 Jarvis 定，这个扩展只说哪一段是什么"
+        ]
+      }
+    ]
+  },
+  "inbox": false
+}
