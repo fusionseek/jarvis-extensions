@@ -1,9 +1,9 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-20T12:47:02.887Z",
+  "generatedAt": "2026-10-20T23:58:18.796Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "62160712b12d93e2aaf24bca6558576a73edbf5f"
+    "commit": "f1b37c89c7ff9fe92292e51d71919e413b745087"
   },
   "extensions": [
     {
@@ -54,13 +54,13 @@
         "sha256": "2f0b0eea5092ed808fb2b7fcc6e3cf0dc530d873152d92d64fd676510c5b59a1",
         "byteCount": 59172
       },
-      "updatedAt": "2026-10-20T19:38:13+08:00"
+      "updatedAt": "2026-10-20T21:02:14+08:00"
     },
     {
       "manifest": {
         "manifestVersion": 2,
         "id": "code-format",
-        "version": "1.0.1",
+        "version": "1.0.2",
         "name": "代码格式化",
         "symbol": "wand.and.stars",
         "description": "给 Jarvis 的 Git 加上「格式化」：文件 diff 页里工作区那一份源码，按语言交给你装好的格式化工具——clang-format、swift-format、ktfmt、google-java-format、ruff、shfmt、prettier 等，先看对比，点「写入文件」才改。",
@@ -70,7 +70,7 @@
         },
         "main": "dist/extension.js",
         "sdk": "^2.7.0",
-        "minimumJarvisVersion": "3.2.3",
+        "minimumJarvisVersion": "3.2.4",
         "capabilities": [
           {
             "id": "process.run",
@@ -390,16 +390,16 @@
       "path": "extensions/code-format",
       "bundle": {
         "path": "extensions/code-format/dist/extension.js",
-        "sha256": "af13851798d751cc0d70142ee05e6373ab979aedfd8016694330f580feb50b01",
+        "sha256": "60e542f59c8db736cf21cdc386ae1e72c76bc6b741e98ca1a91f61a3ed1a2a8d",
         "byteCount": 33488
       },
-      "updatedAt": "2026-10-20T19:37:49+08:00"
+      "updatedAt": "2026-10-20T21:02:14+08:00"
     },
     {
       "manifest": {
         "manifestVersion": 2,
         "id": "code-highlight",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "name": "代码高亮",
         "symbol": "paintbrush.pointed",
         "description": "给 Jarvis 的 Git 加上语法高亮：文件 diff 页与 Blame 里的源码按语言切成关键字、类型、字符串、注释、函数这些记号，Jarvis 按记号上色。认得 Java、Kotlin、Swift、C / C++ / Objective-C、C#、Python、Shell、Markdown、JS / TS、JSON、YAML、CSS、HTML / XML、Go、Rust、SQL。",
@@ -409,7 +409,7 @@
         },
         "main": "dist/extension.js",
         "sdk": "^2.8.0",
-        "minimumJarvisVersion": "3.2.3",
+        "minimumJarvisVersion": "3.2.4",
         "capabilities": [],
         "contributes": {
           "services": [
@@ -430,10 +430,10 @@
       "path": "extensions/code-highlight",
       "bundle": {
         "path": "extensions/code-highlight/dist/extension.js",
-        "sha256": "76eac96835f20e3afbe9a2fc3fa2eb92260b7f1390e530cee4e8a4d1b6f1c0f1",
+        "sha256": "b8d66aea80833d38083b621425dc4c4636def218d74d870f9948e8db362b4600",
         "byteCount": 55711
       },
-      "updatedAt": "2026-10-20T12:47:01.865Z"
+      "updatedAt": "2026-10-20T21:02:07+08:00"
     },
     {
       "manifest": {
@@ -514,7 +514,7 @@
         "sha256": "c3a68cb36a21c4d28a831a40e931d7f48ae9c2ebea91adcaf20311083023757e",
         "byteCount": 84328
       },
-      "updatedAt": "2026-10-20T19:38:13+08:00"
+      "updatedAt": "2026-10-20T21:02:14+08:00"
     },
     {
       "manifest": {
@@ -655,7 +655,7 @@
         "sha256": "677f3c5311c91307d180ca1c6bbec002df33d9ed6653ccf48b9f2171e95975c4",
         "byteCount": 119513
       },
-      "updatedAt": "2026-10-20T19:38:13+08:00"
+      "updatedAt": "2026-10-20T21:02:14+08:00"
     },
     {
       "manifest": {
@@ -709,7 +709,7 @@
         "sha256": "924fef02b24f51224e9eec0ad6090410168b1c123f2f42d76ff038e626b52b90",
         "byteCount": 36744
       },
-      "updatedAt": "2026-10-20T19:38:13+08:00"
+      "updatedAt": "2026-10-20T21:02:14+08:00"
     },
     {
       "manifest": {
@@ -833,7 +833,7 @@
         "sha256": "3d176a42555a432cf0b90cf5d2e72ebe87bf953421f71c3018dd5443fdf4859e",
         "byteCount": 53562
       },
-      "updatedAt": "2026-10-20T19:38:13+08:00"
+      "updatedAt": "2026-10-20T21:02:14+08:00"
     },
     {
       "manifest": {
@@ -925,7 +925,7 @@
         "sha256": "ddf669deeb9019817b0122f9ffdca68726ed9c662d974378cadf29a34f6df953",
         "byteCount": 38550
       },
-      "updatedAt": "2026-10-20T19:38:13+08:00"
+      "updatedAt": "2026-10-20T21:02:14+08:00"
     },
     {
       "manifest": {
@@ -1164,7 +1164,7 @@
         "sha256": "2e58070800775278f5a0bae7378401f4ed2bcd7a4d6f3618bb0765c5771d6482",
         "byteCount": 83772
       },
-      "updatedAt": "2026-10-20T19:38:13+08:00"
+      "updatedAt": "2026-10-20T21:02:14+08:00"
     }
   ]
 }

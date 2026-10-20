@@ -1,7 +1,7 @@
 {
   "manifestVersion": 2,
   "id": "code-highlight",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "name": "代码高亮",
   "symbol": "paintbrush.pointed",
   "description": "给 Jarvis 的 Git 加上语法高亮：文件 diff 页与 Blame 里的源码按语言切成关键字、类型、字符串、注释、函数这些记号，Jarvis 按记号上色。认得 Java、Kotlin、Swift、C / C++ / Objective-C、C#、Python、Shell、Markdown、JS / TS、JSON、YAML、CSS、HTML / XML、Go、Rust、SQL。",
@@ -11,7 +11,7 @@
   },
   "main": "dist/extension.js",
   "sdk": "^2.8.0",
-  "minimumJarvisVersion": "3.2.3",
+  "minimumJarvisVersion": "3.2.4",
   "capabilities": [],
   "contributes": {
     "services": [

@@ -1,4 +1,4 @@
-// jarvis-extension bundle · code-highlight@1.0.0 · sdk 2.8.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · code-highlight@1.0.1 · sdk 2.8.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
