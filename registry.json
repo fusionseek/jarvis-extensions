@@ -1,9 +1,9 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-20T05:35:31.024Z",
+  "generatedAt": "2026-10-20T11:37:37.881Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "04e97ae8044fcffc883c9da92f7b49a2adc2a1ca"
+    "commit": "0b856b53e4d91256c0362e6004498a54d16d1185"
   },
   "extensions": [
     {
@@ -55,6 +55,345 @@
         "byteCount": 58302
       },
       "updatedAt": "2026-10-20T09:14:34+08:00"
+    },
+    {
+      "manifest": {
+        "manifestVersion": 2,
+        "id": "code-format",
+        "version": "1.0.0",
+        "name": "代码格式化",
+        "symbol": "wand.and.stars",
+        "description": "给 Jarvis 的 Git 加上「格式化」：文件 diff 页里工作区那一份源码，按语言交给你装好的格式化工具——clang-format、swift-format、ktfmt、google-java-format、ruff、shfmt、prettier 等，先看对比，点「写入文件」才改。",
+        "author": {
+          "name": "fusionseek",
+          "github": "fusionseek"
+        },
+        "main": "dist/extension.js",
+        "sdk": "^2.7.0",
+        "minimumJarvisVersion": "3.2.3",
+        "capabilities": [
+          {
+            "id": "process.run",
+            "reason": "调用你装好的格式化工具，把要格式化的源码经标准输入交给它"
+          }
+        ],
+        "process": {
+          "executables": [
+            {
+              "name": "clang-format",
+              "arguments": [
+                [
+                  "--style=file",
+                  "--assume-filename=jarvis-format.c"
+                ],
+                [
+                  "--style=file",
+                  "--assume-filename=jarvis-format.cpp"
+                ],
+                [
+                  "--style=file",
+                  "--assume-filename=jarvis-format.m"
+                ],
+                [
+                  "--style=file",
+                  "--assume-filename=jarvis-format.java"
+                ],
+                [
+                  "--style=file",
+                  "--assume-filename=jarvis-format.cs"
+                ]
+              ],
+              "stdin": true
+            },
+            {
+              "name": "swift-format",
+              "arguments": [
+                [
+                  "format",
+                  "--assume-filename",
+                  "jarvis-format.swift",
+                  "-"
+                ]
+              ],
+              "stdin": true
+            },
+            {
+              "name": "xcrun",
+              "arguments": [
+                [
+                  "swift-format",
+                  "format",
+                  "--assume-filename",
+                  "jarvis-format.swift",
+                  "-"
+                ],
+                [
+                  "--find",
+                  "swift-format"
+                ]
+              ],
+              "stdin": true
+            },
+            {
+              "name": "ktfmt",
+              "arguments": [
+                [
+                  "--kotlinlang-style",
+                  "-"
+                ]
+              ],
+              "stdin": true
+            },
+            {
+              "name": "google-java-format",
+              "arguments": [
+                [
+                  "-"
+                ],
+                [
+                  "--aosp",
+                  "-"
+                ]
+              ],
+              "stdin": true
+            },
+            {
+              "name": "csharpier",
+              "arguments": [
+                [
+                  "format",
+                  "--write-stdout"
+                ]
+              ],
+              "stdin": true
+            },
+            {
+              "name": "ruff",
+              "arguments": [
+                [
+                  "format",
+                  "--stdin-filename",
+                  "jarvis-format.py",
+                  "-"
+                ]
+              ],
+              "stdin": true
+            },
+            {
+              "name": "black",
+              "arguments": [
+                [
+                  "-q",
+                  "--stdin-filename",
+                  "jarvis-format.py",
+                  "-"
+                ]
+              ],
+              "stdin": true
+            },
+            {
+              "name": "shfmt",
+              "arguments": [
+                [
+                  "--filename=jarvis-format.sh"
+                ]
+              ],
+              "stdin": true
+            },
+            {
+              "name": "prettier",
+              "arguments": [
+                [
+                  "--stdin-filepath",
+                  "jarvis-format.md"
+                ],
+                [
+                  "--stdin-filepath",
+                  "jarvis-format.mdx"
+                ],
+                [
+                  "--stdin-filepath",
+                  "jarvis-format.js"
+                ],
+                [
+                  "--stdin-filepath",
+                  "jarvis-format.jsx"
+                ],
+                [
+                  "--stdin-filepath",
+                  "jarvis-format.ts"
+                ],
+                [
+                  "--stdin-filepath",
+                  "jarvis-format.tsx"
+                ],
+                [
+                  "--stdin-filepath",
+                  "jarvis-format.json"
+                ],
+                [
+                  "--stdin-filepath",
+                  "jarvis-format.yaml"
+                ],
+                [
+                  "--stdin-filepath",
+                  "jarvis-format.css"
+                ],
+                [
+                  "--stdin-filepath",
+                  "jarvis-format.scss"
+                ],
+                [
+                  "--stdin-filepath",
+                  "jarvis-format.less"
+                ],
+                [
+                  "--stdin-filepath",
+                  "jarvis-format.html"
+                ],
+                [
+                  "--stdin-filepath",
+                  "jarvis-format.vue"
+                ]
+              ],
+              "stdin": true
+            },
+            {
+              "name": "gofmt",
+              "arguments": [
+                []
+              ],
+              "stdin": true
+            },
+            {
+              "name": "rustfmt",
+              "arguments": [
+                [
+                  "--edition",
+                  "2021"
+                ]
+              ],
+              "stdin": true
+            },
+            {
+              "name": "xmllint",
+              "arguments": [
+                [
+                  "--format",
+                  "-"
+                ]
+              ],
+              "stdin": true
+            }
+          ]
+        },
+        "contributes": {
+          "services": [
+            {
+              "point": "code.format",
+              "id": "formatters",
+              "title": "代码格式化",
+              "subtitle": "用你装好的格式化工具整理工作区的源码：C 系、Java、Kotlin、Swift、C#、Python、Shell、Markdown 与前端",
+              "notes": [
+                "只跑你自己装好的工具，扩展不带任何一种语言的格式化规则；找不到时告诉你怎么装",
+                "工具在文件所在的目录里跑，认得那里的 .clang-format、.editorconfig、pyproject.toml、.prettierrc",
+                "结果先在 Jarvis 里给你看对比，点「写入文件」才改；写入之后可以撤销",
+                "工具在 Jarvis 里运行，继承 Jarvis 的完全磁盘访问权限"
+              ],
+              "preferences": [
+                {
+                  "key": "clangFormat",
+                  "type": "text",
+                  "title": "clang-format 命令",
+                  "description": "C / C++ / Objective-C；填名字自动找，也可以填完整路径",
+                  "default": "clang-format",
+                  "placeholder": "clang-format",
+                  "monospaced": true
+                },
+                {
+                  "key": "swiftFormat",
+                  "type": "text",
+                  "title": "swift-format 命令",
+                  "description": "Swift；没找到时用 Xcode 自带的 xcrun swift-format",
+                  "default": "swift-format",
+                  "placeholder": "swift-format",
+                  "monospaced": true
+                },
+                {
+                  "key": "ktfmt",
+                  "type": "text",
+                  "title": "ktfmt 命令",
+                  "description": "Kotlin（kotlinlang 风格，4 格缩进）",
+                  "default": "ktfmt",
+                  "placeholder": "ktfmt",
+                  "monospaced": true
+                },
+                {
+                  "key": "googleJavaFormat",
+                  "type": "text",
+                  "title": "google-java-format 命令",
+                  "description": "Java；没找到时用 clang-format",
+                  "default": "google-java-format",
+                  "placeholder": "google-java-format",
+                  "monospaced": true
+                },
+                {
+                  "key": "javaStyle",
+                  "type": "select",
+                  "title": "Java 风格",
+                  "description": "google-java-format 的风格：Google（2 格）或 AOSP（4 格，Android 常用）",
+                  "default": "google",
+                  "options": [
+                    {
+                      "value": "google",
+                      "title": "Google"
+                    },
+                    {
+                      "value": "aosp",
+                      "title": "AOSP"
+                    }
+                  ]
+                },
+                {
+                  "key": "ruff",
+                  "type": "text",
+                  "title": "ruff 命令",
+                  "description": "Python；没找到时用 black",
+                  "default": "ruff",
+                  "placeholder": "ruff",
+                  "monospaced": true
+                },
+                {
+                  "key": "shfmt",
+                  "type": "text",
+                  "title": "shfmt 命令",
+                  "description": "Shell 脚本",
+                  "default": "shfmt",
+                  "placeholder": "shfmt",
+                  "monospaced": true
+                },
+                {
+                  "key": "prettier",
+                  "type": "text",
+                  "title": "prettier 命令",
+                  "description": "Markdown、JS / TS、JSON、YAML、CSS、HTML、Vue",
+                  "default": "prettier",
+                  "placeholder": "prettier",
+                  "monospaced": true
+                }
+              ]
+            }
+          ]
+        },
+        "inbox": false
+      },
+      "path": "extensions/code-format",
+      "bundle": {
+        "path": "extensions/code-format/dist/extension.js",
+        "sha256": "63b126f31534ea1701b6d9da698837deace9162600698e88cbf1f365384859cf",
+        "byteCount": 33157
+      },
+      "updatedAt": "2026-10-20T11:37:36.996Z"
     },
     {
       "manifest": {
@@ -330,7 +669,7 @@
         "sha256": "32edf41a01a3a345d9a1a56ebd71899144872c21a127ac260e194a2fcfed083d",
         "byteCount": 35874
       },
-      "updatedAt": "2026-10-20T09:14:34+08:00"
+      "updatedAt": "2026-10-20T13:35:50+08:00"
     },
     {
       "manifest": {
