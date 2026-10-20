@@ -1,7 +1,7 @@
 {
   "manifestVersion": 2,
   "id": "mac-apps",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "name": "应用",
   "symbol": "square.grid.3x3",
   "description": "让 Jarvis 的全局搜索认得这台 Mac 上的应用：打字时结果里出现应用，输入 app 空格看按组排开的图标网格，按住图标进编辑态移到废纸篓、右键在访达中显示。工具箱里这一页是它的显示设置：分组、排序、搜索结果里出几条、要不要系统应用。",

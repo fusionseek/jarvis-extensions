@@ -1,4 +1,4 @@
-// jarvis-extension bundle · translation@1.0.7 · sdk 2.7.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · translation@1.0.8 · sdk 2.8.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -237,7 +237,7 @@
   var ocr = { isCJK, joiner, paragraphs, joinParagraph, mergeLines, chunk };
 
   // sdk/src/index.ts
-  var sdkVersion = "2.7.0";
+  var sdkVersion = "2.8.0";
   var Cancellation = class {
     constructor() {
       this.listeners = [];
@@ -472,6 +472,12 @@
             const engine = implementation;
             if (call2.method === "describe") return Promise.resolve(engine.describe(context));
             if (call2.method === "format") return engine.format(call2.params.request, context, signal);
+            break;
+          }
+          case "code.highlight": {
+            const engine = implementation;
+            if (call2.method === "describe") return Promise.resolve(engine.describe(context));
+            if (call2.method === "highlight") return Promise.resolve(engine.highlight(call2.params.request, context, signal));
             break;
           }
         }
