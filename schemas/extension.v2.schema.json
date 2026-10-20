@@ -569,9 +569,10 @@
             "junkClean.engine",
             "project.engine",
             "launcher.apps",
-            "code.format"
+            "code.format",
+            "code.highlight"
           ],
-          "description": "扩展点。junkClean.engine = 清理引擎：设置「清理」里出现它的开关与设置，开着时晃球、/clean 与工具箱清理都走它。project.engine = 项目引擎：Jarvis「项目」（需求 / 迭代 / 缺陷）的数据来源，设置画在「Git」里；它的托管服务读写要配 Git 域与 Git 操作域的能力。launcher.apps = 全局搜索的应用目录：装了它，全局搜索的结果里才有本机应用、输入 app 空格才进应用网格；它交出怎么分组、组里先后、搜索结果里出不出与出几条（方法 catalog），网格由 Jarvis 画；设置画在「全局搜索」里，读应用要声明 apps.read。code.format（SDK 2.7）= Git 的代码格式化：Jarvis 按文件名认出语言，文件 diff 页里工作区那一份文件出「格式化」；方法 describe 报认得哪几种语言、此刻能不能用，format 交回格式化之后的全文，预览与写回由 Jarvis 做、由用户点；设置画在「Git」里。"
+          "description": "扩展点。junkClean.engine = 清理引擎：设置「清理」里出现它的开关与设置，开着时晃球、/clean 与工具箱清理都走它。project.engine = 项目引擎：Jarvis「项目」（需求 / 迭代 / 缺陷）的数据来源，设置画在「Git」里；它的托管服务读写要配 Git 域与 Git 操作域的能力。launcher.apps = 全局搜索的应用目录：装了它，全局搜索的结果里才有本机应用、输入 app 空格才进应用网格；它交出怎么分组、组里先后、搜索结果里出不出与出几条（方法 catalog），网格由 Jarvis 画；设置画在「全局搜索」里，读应用要声明 apps.read。code.format（SDK 2.7）= Git 的代码格式化：Jarvis 按文件名认出语言，文件 diff 页里工作区那一份文件出「格式化」；方法 describe 报认得哪几种语言、此刻能不能用，format 交回格式化之后的全文，预览与写回由 Jarvis 做、由用户点；设置画在「Git」里。code.highlight（SDK 2.8）= Git 的代码高亮：Jarvis 按文件名认出语言，文件 diff 页与 Blame 的代码交给它切记号（方法 describe 报认得哪几种语言，highlight 交回记号的起点、长度与种类），颜色由 Jarvis 按种类定；设置画在「Git」里。"
         },
         "id": {
           "$ref": "#/$defs/identifier"

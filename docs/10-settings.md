@@ -122,6 +122,32 @@ Git 文件 diff 页里**工作区那一份**文件（未暂存 / 已暂存改动
 `directory` 只在这一次调用里有效：交给 `jarvis.process.run({ directory })`，格式化工具就在文件所在目录里跑；调用结束宿主收回。
 参考实现：[`extensions/code-format`](../extensions/code-format)「代码格式化」。
 
+### 设置 › Git · 代码高亮（`code.highlight`，SDK 2.8）
+
+Git 文件 diff 页（File View / Diff View）与 Blame 的**语法高亮**：宿主按文件名认出语言，把左右两份文本交给实现了 `code.highlight` 的扩展，
+扩展交回记号（哪一段是关键字、字符串、注释……），宿主按记号种类上色。**扩展不定颜色**（本仓库不许自定义颜色值）；**宿主里没有任何一种语言的语法规则**。
+（jarvis-mac `specs/20261020-181305-branch-folders-blame-fullscreen-code-format-log-duration` E。）
+
+| 规则 | 值 | 为什么 |
+| --- | --- | --- |
+| 有没有它 | 没有启用着的 `code.highlight` 时 Git 里的代码照原样白字 | 宿主没有语法规则 |
+| 语言 | 与 `code.format` 同一张表（`CodeLanguageID`） | 认语言是宿主的事 |
+| 几个 | 每种语言取安装在先、说认得它的那一个；还没问到的也交过去试 | 一份文本一次只交给一个扩展 |
+| 授权 | 不弹：着色扩展应当是纯计算（参考实现 `capabilities: []`） | 打开一个文件就弹授权屏不合理 |
+| 出错 | 宿主照原样白字画，不报错、不提示 | 着色是锦上添花，坏了不该挡住看代码 |
+| 缓存 | 宿主按（扩展、语言、文本）缓存 32 份 | 在 File / Diff / Blame 之间切、重开同一个文件不再问 |
+| 设置画在哪 | 设置 › Git ·「代码高亮」：只读——谁提供、认得哪几种语言 | 着色没有要用户调的东西 |
+
+**方法**（形状真源是 jarvis-mac `contracts/schemas/extensions/bridge.v2.schema.json` 的 `$defs.codeHighlight*` / `codeSyntaxKind`）：
+
+| 方法 | 入参 | 返回 | 超时 |
+| --- | --- | --- | --- |
+| `describe` | — | `{ languages: [语言 id] }`（≤ 64；宿主不认得的丢掉） | 15 秒 |
+| `highlight` | `{ language, documents: [文本]（1–2 份，各 ≤ 1 MiB，行以 \n 分隔） }` | `{ kinds: [记号种类], documents: [[起点, 长度, 种类下标, …]] }`：起点是整份文本里的 UTF-16 下标，按起点递增、互不重叠，合起来 ≤ 300,000 个记号 | 30 秒，可取消 |
+
+记号种类：`keyword` `type` `string` `number` `comment` `function` `constant` `attribute` `preprocessor` `variable` `property` `tag` `heading` `emphasis` `link` `code` `quote` `marker`。
+跨行的记号（块注释、多行字符串）照原样给，宿主按行拆。参考实现：[`extensions/code-highlight`](../extensions/code-highlight)「代码高亮」。
+
 ### 设置 › Git · 项目引擎（`project.engine`）
 
 项目引擎是 Jarvis「项目」（需求 / 迭代 / 缺陷的原生表格与甘特）的**数据来源**。宿主有一整套提供方无关的框架——

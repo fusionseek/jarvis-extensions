@@ -24,7 +24,7 @@ import type { EnvironmentInfo, HostInfo, Jarvis, ProcessHandle, ProcessResult, P
 import { JarvisError } from "./capabilities.js";
 import type { ActivationContext, CommandContext, HostEvent, InvokeResult, HostBridge, CommandSummary, ServiceCall, Surface } from "./bridge.js";
 import { bridgeProtocolVersion, countNodes, serialize } from "./bridge.js";
-import type { CancelSignal, CodeFormatEngine, CodeFormatRequest, ServiceContext, ServiceImplementation, JunkCleanEngine, LauncherAppsEngine, ProjectEngine, ProjectEngineRequest } from "./services.js";
+import type { CancelSignal, CodeFormatEngine, CodeFormatRequest, CodeHighlightEngine, CodeHighlightRequest, ServiceContext, ServiceImplementation, JunkCleanEngine, LauncherAppsEngine, ProjectEngine, ProjectEngineRequest } from "./services.js";
 import type { UINode } from "./ui.js";
 import { maximumNodesPerRender, ui } from "./ui.js";
 import { ocr } from "./ocr.js";
@@ -47,7 +47,7 @@ export type {
 export { bridgeProtocolVersion } from "./bridge.js";
 
 /** SDK 版本。主版本必须与宿主运行时一致。 */
-export const sdkVersion = "2.7.0";
+export const sdkVersion = "2.8.0";
 
 /** 一面的实现：工具箱页面、原地弹窗或窗口标签。 */
 export interface PageDefinition {
@@ -350,6 +350,13 @@ class Runtime {
           const engine = implementation as CodeFormatEngine;
           if (call.method === "describe") return Promise.resolve(engine.describe(context));
           if (call.method === "format") return engine.format(call.params.request as CodeFormatRequest, context, signal);
+          break;
+        }
+        case "code.highlight": {
+          // Git 的代码高亮（SDK 2.8）：describe 不带入参，highlight 的入参在 params.request。
+          const engine = implementation as CodeHighlightEngine;
+          if (call.method === "describe") return Promise.resolve(engine.describe(context));
+          if (call.method === "highlight") return Promise.resolve(engine.highlight(call.params.request as CodeHighlightRequest, context, signal));
           break;
         }
       }

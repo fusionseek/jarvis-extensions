@@ -8,8 +8,8 @@
  * 宿主经 `service` 事件调用，扩展经 `service.resolve` / `service.progress` 回话——这些都由 SDK 代劳，
  * 扩展只需要在 `defineExtension({ services: { <id>: 实现 } })` 里交出一个对象。
  *
- * 现有四个扩展点：`junkClean.engine`（清理引擎）、`project.engine`（项目引擎）、`launcher.apps`（全局搜索的应用目录，SDK 2.5）
- * 与 `code.format`（Git 的代码格式化，SDK 2.7）。
+ * 现有五个扩展点：`junkClean.engine`（清理引擎）、`project.engine`（项目引擎）、`launcher.apps`（全局搜索的应用目录，SDK 2.5）、
+ * `code.format`（Git 的代码格式化，SDK 2.7）与 `code.highlight`（Git 的代码高亮，SDK 2.8）。
  */
 
 /** 宿主每次调服务时带来的东西。 */
@@ -533,10 +533,13 @@ export interface LauncherAppsEngine {
 // 形状真源是 jarvis-mac `contracts/schemas/extensions/bridge.v2.schema.json` 的 `$defs.codeFormat*`，这里是它的投影。
 // 宿主按文件名认语言（下面这张表）、把整份文本交过来；格式化之后的全文交回去，宿主给用户看对比、用户点了才写回文件。
 
-/** 宿主认得的语言（`$defs.codeFormatLanguage`）。宿主只发这些；`describe` 里报别的 id 会被丢掉。 */
-export type CodeFormatLanguageID =
+/** 宿主认得的语言（`$defs.codeLanguage`），格式化与高亮共用。宿主只发这些；`describe` 里报别的 id 会被丢掉。 */
+export type CodeLanguageID =
   | "java" | "kotlin" | "swift" | "c" | "cpp" | "objc" | "csharp" | "python" | "shell" | "markdown"
   | "javascript" | "typescript" | "json" | "yaml" | "css" | "html" | "go" | "rust" | "xml" | "sql";
+
+/** 2.7 的名字，留着给已经写好的格式化扩展用；新代码写 `CodeLanguageID`。 */
+export type CodeFormatLanguageID = CodeLanguageID;
 
 /** `describe` 里的一种语言。 */
 export interface CodeFormatLanguageStatus {
@@ -588,12 +591,58 @@ export interface CodeFormatEngine {
   format(request: CodeFormatRequest, context: ServiceContext, signal: CancelSignal): Promise<CodeFormatResult>;
 }
 
+// ---------------------------------------------------------------------------
+// code.highlight：Git 的代码高亮（SDK 2.8）
+// ---------------------------------------------------------------------------
+//
+// 形状真源是 jarvis-mac `contracts/schemas/extensions/bridge.v2.schema.json` 的 `$defs.codeHighlight*` / `codeSyntaxKind`，这里是它的投影。
+// 宿主按文件名认语言、把整份文本交过来；交回的是记号（哪一段是什么），**不是颜色**——颜色由宿主按种类定（扩展不许自定义颜色值）。
+
+/** 记号种类（`$defs.codeSyntaxKind`）。宿主不认识的种类丢掉。 */
+export type CodeSyntaxKind =
+  | "keyword" | "type" | "string" | "number" | "comment" | "function" | "constant" | "attribute" | "preprocessor"
+  | "variable" | "property" | "tag" | "heading" | "emphasis" | "link" | "code" | "quote" | "marker";
+
+/** `describe` 的返回：认得哪几种语言（≤ 64 个）。要快（15 秒）。 */
+export interface CodeHighlightDescription {
+  languages: CodeLanguageID[];
+}
+
+/** `highlight` 的入参：语言与 1–2 份整份文本（文件 diff 页的左右两侧；行以 `\n` 分隔，各 ≤ 1 MiB）。 */
+export interface CodeHighlightRequest {
+  language: CodeLanguageID;
+  documents: string[];
+}
+
+/**
+ * `highlight` 的返回。`kinds` 是这一次用到的记号种类；`documents` 与入参一一对应，每份是扁平的整数三元组
+ * `[起点, 长度, 种类下标, …]`：起点是整份文本里的 UTF-16 下标（就是 JavaScript 字符串的下标），长度 ≥ 1，按起点递增、互不重叠；
+ * 全部合起来至多 300,000 个记号。跨行的记号（块注释、多行字符串）照原样给，宿主按行拆。
+ */
+export interface CodeHighlightResult {
+  kinds: CodeSyntaxKind[];
+  documents: number[][];
+}
+
+/** 代码高亮的方法名（线缆上 `service` 事件的 `method`）。 */
+export type CodeHighlightMethod = "describe" | "highlight";
+
+/**
+ * Git 的代码高亮（`code.highlight`）。宿主在已装清单变化时问 `describe`，Git 打开一个认得出语言的源文件时调 `highlight`（30 秒，可取消）。
+ * 纯计算：不需要任何能力；着色只是锦上添花，出错时宿主照原样白字画，不报错。
+ */
+export interface CodeHighlightEngine {
+  describe(context: ServiceContext): CodeHighlightDescription | Promise<CodeHighlightDescription>;
+  highlight(request: CodeHighlightRequest, context: ServiceContext, signal: CancelSignal): CodeHighlightResult | Promise<CodeHighlightResult>;
+}
+
 /** 某个扩展点的实现。按 manifest `contributes.services[].point` 对上。 */
 export interface ServiceImplementations {
   "junkClean.engine": JunkCleanEngine;
   "project.engine": ProjectEngine;
   "launcher.apps": LauncherAppsEngine;
   "code.format": CodeFormatEngine;
+  "code.highlight": CodeHighlightEngine;
 }
 
 /** 任一扩展点的实现。 */

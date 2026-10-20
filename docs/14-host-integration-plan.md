@@ -244,6 +244,23 @@ GitHub Projects v2 的全部专属知识做成扩展 [`github-project`](../exten
 | SDK 2.7 | 本仓 `sdk/src/`：`CodeFormatEngine` 等（`services.ts`）、`ProcessRunOptions` / `ProcessResult.stdout`（`capabilities.ts`）、`stdin`（`manifest.ts`）、服务分派与 `process.run` 选项（`index.ts`）；只追加 |
 | 扩展 | [`extensions/code-format`](../extensions/code-format)「代码格式化」：服务 `code.format`，声明 `process.run` 与一段 `terminal.run`（用 Homebrew 装常用工具） |
 
+### 第六轮：Git 的代码高亮（同一 spec E 节）
+
+仓库主人：「我说的格式化，可能不是这个，我的意思是高亮识别，但是这个扩展可以先保留」。第五轮的格式化保留；新加的是语法高亮。
+
+| # | 决策 | 一句话 |
+| --- | --- | --- |
+| E-1 | 新扩展点 `code.highlight` | `describe`（15 秒）报认得哪几种语言；`highlight`（30 秒）交回扁平的记号三元组；颜色由宿主定；不要授权 |
+| E-2 | 宿主上色 | 文件 diff 页两侧（对比页的自绘正文）与 Blame；按（扩展、语言、文本）缓存 32 份；出错照原样白字 |
+| E-3 | 设置 · Git | 只读的一块：谁提供、认得哪几种语言 |
+| E-4 | 参考实现 | `extensions/code-highlight`：零依赖的规则表扫描器，20 种语言 |
+
+| 产物 | 位置 |
+| --- | --- |
+| manifest | 本仓 `schemas/extension.v2.schema.json`：扩展点 +1 |
+| SDK 2.8 | 本仓 `sdk/src/`：`CodeHighlightEngine` / `CodeSyntaxKind` / `CodeLanguageID`（`services.ts`，`CodeFormatLanguageID` 留作别名）、分派（`index.ts`）；只追加 |
+| 扩展 | [`extensions/code-highlight`](../extensions/code-highlight)「代码高亮」：服务 `code.highlight`，`capabilities: []` |
+
 ## Usage
 
 - 扩展作者：遇到一条规则想知道"是谁在拦"，按上表找到类型名，在 `jarvis-mac` 里读它的文档注释——每条规则都写了为什么。

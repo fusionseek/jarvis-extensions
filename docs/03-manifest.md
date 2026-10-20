@@ -251,12 +251,12 @@ todo 待办 memo note 速记 记 find 查找 diff compare 对比 比较 gitdiff 
 
 | 字段 | 规则 | 为什么 |
 | --- | --- | --- |
-| `point` | 宿主开放的扩展点：`junkClean.engine`（清理引擎）、`project.engine`（项目引擎）、`launcher.apps`（全局搜索的应用目录，SDK 2.5）、`code.format`（Git 的代码格式化，SDK 2.7） | **扩展点是宿主定的**：方法、载荷、设置画在哪都写死在宿主与 SDK 里 |
+| `point` | 宿主开放的扩展点：`junkClean.engine`（清理引擎）、`project.engine`（项目引擎）、`launcher.apps`（全局搜索的应用目录，SDK 2.5）、`code.format`（Git 的代码格式化，SDK 2.7）、`code.highlight`（Git 的代码高亮，SDK 2.8） | **扩展点是宿主定的**：方法、载荷、设置画在哪都写死在宿主与 SDK 里 |
 | `id` | 与扩展 id 同一套规则，扩展内唯一 | 引擎 id = `<扩展 id>/<服务 id>`；`defineExtension({ services })` 按它对上实现 |
 | `title` | 1–16 字 | 在那个内置能力里的名字，例如「深度清理（Mole）」——设置 · 清理 里那一行开关的标题；项目引擎的是 Git 设置与「项目」里引擎的名字 |
 | `subtitle` | 1–80 字 | 一句话说它比内置的多做了什么 |
 | `notes` | ≤ 6 条，每条 1–80 字 | 须知：画在设置区段与清理工具的范围说明里 |
-| `preferences` | ≤ 8 项，形状同设置域 | **画在扩展点指定的那个内置区段里**（`junkClean.engine` → 设置 · 清理，`project.engine` / `code.format` → 设置 · Git，`launcher.apps` → 设置 · 全局搜索），不在「扩展」区段 |
+| `preferences` | ≤ 8 项，形状同设置域 | **画在扩展点指定的那个内置区段里**（`junkClean.engine` → 设置 · 清理，`project.engine` / `code.format` / `code.highlight` → 设置 · Git，`launcher.apps` → 设置 · 全局搜索），不在「扩展」区段 |
 
 偏好的 key 在设置域与全部服务之间**共用一个命名空间**，不能重。
 
@@ -307,6 +307,7 @@ node scripts/validate.mjs extensions/foo  # 校验一个
 - 用了 `jarvis.android`（`android.apps.read` / `android.tools.open`）或 `row.image` 的扩展写 `"sdk": "^2.4.0"`。
 - 用了 `jarvis.apps`（`apps.read`）或实现 `launcher.apps` 的扩展写 `"sdk": "^2.5.0"`。
 - 实现 `code.format`、或用了 `process.run` 的 `stdin` / `directory` / `output` 的扩展写 `"sdk": "^2.7.0"`。
+- 实现 `code.highlight` 的扩展写 `"sdk": "^2.8.0"`。
   这两项能力**没有声明对象、不要入驻哪个域**：宿主跑的是它自己写死的 adb 命令，扩展只给序列号与包名（[06](06-capabilities.md)「Android 操作域」）。
 
 ## Related Links
