@@ -107,7 +107,7 @@ export interface CommandContext {
  *
  * `junkClean.engine` 的方法是 `status` / `run` / `action`（`action` 带 `actionId`）；
  * `project.engine` 的方法是 `describe` / `listProjects` / `readSchema` / `readItems` / `applyEdit` / `createField` / `createOption` / `createIteration` / `createItem`，
- * 入参放在 `params.request`（`describe` 不带）；`launcher.apps`（SDK 2.5）只有 `catalog`，不带入参。
+ * 入参放在 `params.request`（`describe` 不带；2.6 起 `readItems` 可只带 `itemIds`，见 `ProjectItemsRequest`）；`launcher.apps`（SDK 2.5）只有 `catalog`，不带入参。
  */
 export interface ServiceCall {
   callId: number;

@@ -172,6 +172,7 @@ GitHub Projects v2 的全部专属知识做成扩展 [`github-project`](../exten
 | SDK 2.1 | 本仓 `sdk/src/`：`jarvis.git`（`capabilities.ts`）、`ProjectEngine`（`services.ts`）、`ServiceCall.params.request`（`bridge.ts`）、运行时分派（`index.ts`）、替身 `callService({ request })`（`testing.ts`） |
 | SDK 2.2 | `project.engine` 加 `createIteration` 与能力 `createIterations`（jarvis-mac 同 spec 第八轮 U-5「新增迭代」）：线缆 `serviceCall.method` 与 `projectEngineRequest.startDate`、样例 `project-engine-request.create-iteration*.json`；只追加，2.1 的引擎照常工作（宿主见不到这项能力时把入口置灰） |
 | SDK 2.3 | `project.engine` 加 `createItem` 与能力 `createItems`（jarvis-mac 同 spec 第十八轮 AG-1「新建条目」）：线缆 `serviceCall.method`、`projectEngineRequest.title` / `body` 与 `$defs.projectEngineCreatedItem`、样例 `project-engine-request.create-item*.json` / `project-engine-created-item*.json`；只追加，2.2 的引擎照常工作（宿主见不到这项能力时把「新建」置灰） |
+| SDK 2.6 | `readItems` 认 `itemIds` 与能力 `readItemsById`（jarvis-mac `specs/20261020-083342-project-view-refresh-gantt-polish` A「刷新本视图」）：线缆 `projectEngineRequest.itemIds`、`projectEngineDescribe.features` 加一项，样例 `project-engine-request.read-items-by-id*.json` / `project-engine-describe.read-items-by-id.valid.json` / `bridge.event.service-project-read-items-by-id.valid.json`；只是类型，各扩展内联的 SDK 字节不变；只追加，宿主见不到这项能力时只做增量读 |
 
 ### 第三轮：Android 操作域与行首图标（spec `20261017-170440-issue-derive-app-scan` D 节）
 

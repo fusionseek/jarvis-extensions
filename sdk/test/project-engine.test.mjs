@@ -102,6 +102,7 @@ test("各方法的入参来自 params.request", async () => {
   assert.equal((await call("listProjects")).result.value.projects[0].title, "viewer");
   assert.equal((await call("readSchema", { projectId: "PVT_1" })).result.value.project.id, "PVT_1");
   assert.equal((await call("readItems", { projectId: "PVT_1" })).result.value.nextCursor, "next");
+  assert.equal((await call("readItems", { projectId: "PVT_1", itemIds: ["PVTI_1"] })).result.value.nextCursor, "next", "itemIds（SDK 2.6）随 params.request 原样交给 readItems");
   assert.deepEqual((await call("createField", { projectId: "PVT_1", name: "估点", dataType: "number" })).result.value, {
     field: { id: "F", name: "估点", dataType: "number" },
   });

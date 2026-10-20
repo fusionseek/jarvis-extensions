@@ -128,9 +128,18 @@ export const projectEngineContractVersion = 1 as const;
  * - `createFields`：能在 Project 里建字段与选项（`createField` / `createOption`）；
  * - `draftIssues`：草稿条目；
  * - `createIterations`：能在迭代字段末尾加一个迭代（`createIteration`）。没声明时宿主迭代页的「新增迭代」置灰、提示更新扩展；
- * - `createItems`（SDK 2.3）：能在仓库里建一条 Issue 并加进 Project（`createItem`）。没声明时宿主的「新建」置灰、提示更新扩展。
+ * - `createItems`（SDK 2.3）：能在仓库里建一条 Issue 并加进 Project（`createItem`）。没声明时宿主的「新建」置灰、提示更新扩展；
+ * - `readItemsById`（SDK 2.6）：`readItems` 认 `itemIds`，只读回这几条。没声明时宿主「刷新本视图」不发 `itemIds`，只做一次增量读。
  */
-export type ProjectEngineFeature = "nativeHierarchy" | "nativeDependencies" | "issueTypes" | "createFields" | "draftIssues" | "createIterations" | "createItems";
+export type ProjectEngineFeature =
+  | "nativeHierarchy"
+  | "nativeDependencies"
+  | "issueTypes"
+  | "createFields"
+  | "draftIssues"
+  | "createIterations"
+  | "createItems"
+  | "readItemsById";
 
 /** `describe` 的返回：契约版本、此刻能不能用、托管服务、可选能力。要快（宿主给 15 秒）。 */
 export interface ProjectEngineDescription {
@@ -324,6 +333,12 @@ export interface ProjectItemsRequest {
   cursor?: string;
   /** ISO 8601 时间戳：只要这之后改过的（增量同步）。引擎可以多给，不能少给。 */
   since?: string;
+  /**
+   * SDK 2.6（声明了 `readItemsById` 才会收到）：只读回这几条（1–100 个条目 id，宿主「刷新本视图」时发），与 `cursor` / `since` 不同时出现。
+   * 交回这几条此刻的样子、不带 `nextCursor`；**已移出 Project 的不交回**——宿主据「请求了却没交回」把它从列表与镜像里去掉，
+   * 所以读失败（权限、限流、超时）必须抛错，不能当成「没有」交回一个空页。
+   */
+  itemIds?: string[];
 }
 
 /** `applyEdit` 的入参。 */

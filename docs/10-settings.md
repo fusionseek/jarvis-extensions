@@ -117,7 +117,7 @@ Issue Type / 子 Issue / blocked by 的读写）全在引擎扩展里。先例�
 | `describe` | — | `{ contractVersion, ready, summary, problem?, hosting, features[] }` | 15 秒 |
 | `listProjects` | `owner?`、`repository?`（`owner/name`） | `{ projects[] }`（≤ 200） | 45 秒 |
 | `readSchema` | `projectId` | `{ project, fields[] }`（字段 ≤ 100） | 45 秒 |
-| `readItems` | `projectId`、`cursor?`、`since?`（ISO 8601） | `{ items[], nextCursor?, totalCount? }`（一页 ≤ 100） | 60 秒 |
+| `readItems` | `projectId`、`cursor?`、`since?`（ISO 8601）；或只带 `itemIds`（1–100 个条目 id，SDK 2.6，声明了 `readItemsById` 才会收到） | `{ items[], nextCursor?, totalCount? }`（一页 ≤ 100）；按 id 读时只交回还在这个 Project 里的那几条、不带 `nextCursor` | 60 秒 |
 | `applyEdit` | `projectId`、`itemId`、`contentRef?`、`changes[]`（1–16 步） | `{ item? }`：读回的那一条 | 45 秒 |
 | `createField` | `projectId`、`name`、`dataType`、`options?`、`iterationDurationDays?` | `{ field }` | 45 秒 |
 | `createOption` | `projectId`、`fieldId`、`name` | `{ field }`（已有选项的 id 不变） | 45 秒 |
@@ -134,7 +134,8 @@ Issue Type / 子 Issue / blocked by 的读写）全在引擎扩展里。先例�
 | 迭代按 id 认 | 条目上的迭代值记的是迭代 id | GitHub 的迭代配置是整组替换：`createIteration` 只写进行中的会把已结束的迭代连同条目上的值一起删掉 |
 | 编辑只执行 | `applyEdit` 的每一步宿主都按工作流、必填与漂移守卫校验过 | 引擎再判断一遍只会与宿主分歧 |
 | 失败 | 抛错；`message` 原样显示在发起处 | 用户要知道是哪一步、被谁拒了 |
-| 可选能力 | `describe.features` ⊆ `nativeHierarchy`、`nativeDependencies`、`issueTypes`、`createFields`、`draftIssues`、`createIterations`（SDK 2.2）、`createItems`（SDK 2.3）；`contractVersion` 当前是 1 | 没声明的那一项，宿主把对应入口置灰并说明；契约只追加不改名 |
+| 按 id 读 | `itemIds` 里请求了却没交回的，宿主当作「已移出 Project」从列表与镜像里去掉；所以读失败（权限、限流、超时）必须抛错，不能交回一个空页 | 「刷新本视图」只重读眼前这几条：全量翻页要十几次请求，按 id 一次 100 条 |
+| 可选能力 | `describe.features` ⊆ `nativeHierarchy`、`nativeDependencies`、`issueTypes`、`createFields`、`draftIssues`、`createIterations`（SDK 2.2）、`createItems`（SDK 2.3）、`readItemsById`（SDK 2.6）；`contractVersion` 当前是 1 | 没声明的那一项，宿主把对应入口置灰并说明；契约只追加不改名 |
 
 参考实现：[`extensions/github-project`](../extensions/github-project)（GitHub Projects v2）。
 
