@@ -1,7 +1,7 @@
 {
   "manifestVersion": 2,
   "id": "android-apps",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "name": "手机应用",
   "symbol": "apps.iphone",
   "description": "经 adb 扫描连着的安卓手机上装的全部应用：包名、安装包与数据大小，再一屏一屏读出应用名与图标；点一下把包名交给 APK 扫描或数据导出接着处理。",

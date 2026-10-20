@@ -1,4 +1,4 @@
-// jarvis-extension bundle · translation@1.0.6 · sdk 2.6.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · translation@1.0.7 · sdk 2.7.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -237,7 +237,7 @@
   var ocr = { isCJK, joiner, paragraphs, joinParagraph, mergeLines, chunk };
 
   // sdk/src/index.ts
-  var sdkVersion = "2.5.0";
+  var sdkVersion = "2.7.0";
   var Cancellation = class {
     constructor() {
       this.listeners = [];
@@ -468,6 +468,12 @@
             if (call2.method === "catalog") return Promise.resolve(engine.catalog(context));
             break;
           }
+          case "code.format": {
+            const engine = implementation;
+            if (call2.method === "describe") return Promise.resolve(engine.describe(context));
+            if (call2.method === "format") return engine.format(call2.params.request, context, signal);
+            break;
+          }
         }
         return Promise.reject(new JarvisError({ code: "capability.unknown", message: `\u4E0D\u8BA4\u8BC6\u7684\u670D\u52A1\u65B9\u6CD5 ${call2.point}.${call2.method}` }));
       };
@@ -594,7 +600,11 @@
       const lines = payload.lines ?? [];
       for (const line of lines) options.onLine?.(line);
     });
-    const result = runtime.invoke("process", "run", { executable: options.executable, arguments: options.arguments, token }).finally(() => runtime.forget(token));
+    const params = { executable: options.executable, arguments: options.arguments, token };
+    if (options.stdin !== void 0) params.stdin = options.stdin;
+    if (options.directory !== void 0) params.directory = options.directory;
+    if (options.output !== void 0) params.output = options.output;
+    const result = runtime.invoke("process", "run", params).finally(() => runtime.forget(token));
     let cancelled = false;
     return {
       result,
