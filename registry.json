@@ -1,9 +1,9 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-20T00:45:15.654Z",
+  "generatedAt": "2026-10-20T05:35:31.024Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "c49fe07a8877bfed7b6ebe4db851aa38022afb86"
+    "commit": "04e97ae8044fcffc883c9da92f7b49a2adc2a1ca"
   },
   "extensions": [
     {
@@ -54,7 +54,7 @@
         "sha256": "f9949a31f66fedc23d277f94f9ca487ef63ea2f2863606163e359fe0c42f1cf0",
         "byteCount": 58302
       },
-      "updatedAt": "2026-10-19T16:12:07+08:00"
+      "updatedAt": "2026-10-20T09:14:34+08:00"
     },
     {
       "manifest": {
@@ -135,7 +135,7 @@
         "sha256": "7f525eb787ceca2eb12733e650deff616d56e36971f74a057794e984e39ccf85",
         "byteCount": 83458
       },
-      "updatedAt": "2026-10-19T16:12:07+08:00"
+      "updatedAt": "2026-10-20T09:14:34+08:00"
     },
     {
       "manifest": {
@@ -276,7 +276,7 @@
         "sha256": "2a8002a401f03e60e8d5fa501d8589d249e75623c2fad5f48c510b4371c9febb",
         "byteCount": 118643
       },
-      "updatedAt": "2026-10-19T16:12:07+08:00"
+      "updatedAt": "2026-10-20T09:14:34+08:00"
     },
     {
       "manifest": {
@@ -292,7 +292,7 @@
         },
         "main": "dist/extension.js",
         "sdk": "^2.5.0",
-        "minimumJarvisVersion": "3.2.2",
+        "minimumJarvisVersion": "3.2.3",
         "capabilities": [
           {
             "id": "apps.read",
@@ -330,7 +330,7 @@
         "sha256": "32edf41a01a3a345d9a1a56ebd71899144872c21a127ac260e194a2fcfed083d",
         "byteCount": 35874
       },
-      "updatedAt": "2026-10-19T16:12:07+08:00"
+      "updatedAt": "2026-10-20T09:14:34+08:00"
     },
     {
       "manifest": {
@@ -454,7 +454,7 @@
         "sha256": "22b468cd2dd25181ba740ef6ed0a9dc12e1a0537d42529b199813a7f290d8502",
         "byteCount": 52692
       },
-      "updatedAt": "2026-10-19T16:12:07+08:00"
+      "updatedAt": "2026-10-20T09:14:34+08:00"
     },
     {
       "manifest": {
@@ -546,7 +546,7 @@
         "sha256": "ad078a0fb5a0801f3410cd76476db58ef42b84778c17787705d3c8cf73b2c633",
         "byteCount": 37680
       },
-      "updatedAt": "2026-10-19T16:12:07+08:00"
+      "updatedAt": "2026-10-20T09:14:34+08:00"
     },
     {
       "manifest": {
@@ -785,7 +785,7 @@
         "sha256": "d3d6c686f1688ccc690d6feaabe5308bf56b00116cfd17f0d47c685bcbfbf074",
         "byteCount": 82902
       },
-      "updatedAt": "2026-10-19T16:12:07+08:00"
+      "updatedAt": "2026-10-20T09:14:34+08:00"
     }
   ]
 }
