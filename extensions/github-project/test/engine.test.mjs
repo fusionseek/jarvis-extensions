@@ -58,7 +58,7 @@ test("describe：token 有 project 时可用，八项可选能力，契约版本
     ready: true,
     summary: "已接上 GitHub · fusionseek",
     hosting: "github",
-    features: ["nativeHierarchy", "nativeDependencies", "issueTypes", "createFields", "draftIssues", "createIterations", "createItems", "readItemsById"],
+    features: ["nativeHierarchy", "nativeDependencies", "issueTypes", "createFields", "draftIssues", "createIterations", "createItems", "readItemsById", "addItems"],
   });
 });
 
@@ -754,4 +754,61 @@ test("planCreateItem / minimalItem：标题去空白、空正文省略、正文�
 
 test("测试里真的发出去过的变更 = manifest git.mutations（一个不多、一个不少）", () => {
   assert.deepEqual([...github.usedMutations].sort(), [...declaredMutations].sort());
+});
+
+// ---------------------------------------------------------------------------
+// addItem（jarvis-mac specs/20261028-191224-git-push-error-proxy-dashboard-issue-links I-1：把已有的 Issue 加进 Project）
+// ---------------------------------------------------------------------------
+
+const EXISTING_URL = "https://github.com/fusionseek/jarvis-mac/issues/117";
+
+function addHandlers() {
+  github.handlers.IssueId = (variables) =>
+    variables.number === 404
+      ? { data: { repository: { issue: null } } }
+      : { data: { repository: { issue: { id: `I_${variables.number}`, title: "外部的 Issue", url: EXISTING_URL, state: "OPEN" } } } };
+  github.handlers.AddProjectV2ItemById = () => ({ data: { addProjectV2ItemById: { item: { id: "PVTI_added" } } } });
+  github.handlers.ReadItem = (variables) => ({ data: { node: { ...newIssueNode(variables.id), content: { ...newIssueNode(variables.id).content, number: 117, title: "外部的 Issue", url: EXISTING_URL } } } });
+}
+
+const addRequest = { projectId: "PVT_kwHOAA", repository: "fusionseek/jarvis-mac", number: 117 };
+
+test("addItem：认出 Issue → 加进 Project → 读回，交回已在 Project 里的那一条；不写字段", async () => {
+  github.reset();
+  addHandlers();
+  const result = await value("addItem", addRequest, "projectEngineCreatedItem");
+  assert.deepEqual(github.calls.map((c) => c.name), ["IssueId", "AddProjectV2ItemById", "ReadItem"]);
+  assert.deepEqual(github.callsOf("IssueId")[0].variables, { owner: "fusionseek", name: "jarvis-mac", number: 117 });
+  assert.deepEqual(inputsOf("addProjectV2ItemById")[0], { projectId: "PVT_kwHOAA", contentId: "I_117" });
+  assert.equal(result.item.id, "PVTI_added");
+  assert.equal(result.item.content.number, 117);
+  assert.equal(result.item.content.title, "外部的 Issue");
+});
+
+test("addItem：找不到（或是 PR）时不加；编号不对什么都不发；读回失败交回最小条目", async () => {
+  github.reset();
+  addHandlers();
+  const missing = await call("addItem", { ...addRequest, number: 404 });
+  assert.equal(missing.ok, false);
+  assert.match(missing.error.message, /找不到 fusionseek\/jarvis-mac#404/);
+  assert.equal(github.callsOf("AddProjectV2ItemById").length, 0);
+
+  github.reset();
+  addHandlers();
+  const bad = await call("addItem", { ...addRequest, number: 0 });
+  assert.equal(bad.ok, false);
+  assert.equal(github.calls.length, 0, "入参不对什么都不发");
+
+  github.reset();
+  addHandlers();
+  github.handlers.ReadItem = () => ({ data: { node: null }, errors: [{ type: "NOT_FOUND", message: "gone" }] });
+  const minimal = await value("addItem", addRequest, "projectEngineCreatedItem");
+  const { updatedAt, ...rest } = minimal.item;
+  assert.ok(!Number.isNaN(Date.parse(updatedAt)));
+  assert.deepEqual(rest, {
+    id: "PVTI_added",
+    contentType: "issue",
+    content: { repository: "fusionseek/jarvis-mac", number: 117, title: "外部的 Issue", isOpen: true, url: EXISTING_URL },
+    values: {},
+  });
 });

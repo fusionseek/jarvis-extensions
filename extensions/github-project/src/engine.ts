@@ -2,6 +2,7 @@
  * GitHub Projects v2 的项目引擎（`project.engine`）。每个方法一个模块；这里只把它们接到契约上。
  */
 import type { ProjectEngine } from "@fusionseek/jarvis-extension-sdk";
+import { addItem } from "./add.js";
 import { createItem } from "./create.js";
 import { describe } from "./describe.js";
 import { applyEdit } from "./edit.js";
@@ -20,4 +21,5 @@ export const githubProjectEngine: ProjectEngine = {
   createOption: (request, _context, signal) => createOption(request, signal),
   createIteration: (request, _context, signal) => createIteration(request, signal),
   createItem: (request, _context, signal) => createItem(request, signal),
+  addItem: (request, _context, signal) => addItem(request, signal),
 };

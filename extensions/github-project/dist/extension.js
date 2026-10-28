@@ -1,4 +1,4 @@
-// jarvis-extension bundle · github-project@1.3.3 · sdk 2.10.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · github-project@1.3.4 · sdk 2.10.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -340,6 +340,9 @@
               case "createItem":
                 if (!engine.createItem) break;
                 return engine.createItem(request, context, signal);
+              case "addItem":
+                if (!engine.addItem) break;
+                return engine.addItem(request, context, signal);
             }
             break;
           }
@@ -929,6 +932,9 @@ ${itemFragment}`;
   var repositoryId = `query RepositoryId($owner: String!, $name: String!) {
   repository(owner: $owner, name: $name) { id }
 }`;
+  var issueId = `query IssueId($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) { issue(number: $number) { id title url state } }
+}`;
   var readField = `query ReadField($id: ID!) {
   node(id: $id) {
     __typename
@@ -1316,6 +1322,54 @@ ${spec.fragments}` : ""}`;
     return { project, fields };
   }
 
+  // extensions/github-project/src/add.ts
+  function planAddItem(request) {
+    if (!request.projectId) throw new Error("\u7F3A\u5C11 projectId");
+    if (!request.repository) throw new Error("\u7F3A\u5C11 Issue \u6240\u5728\u7684\u4ED3\u5E93");
+    const { owner, name } = splitRepository(request.repository);
+    const number = request.number;
+    if (typeof number !== "number" || !Number.isInteger(number) || number < 1) throw new Error("Issue \u7F16\u53F7\u8981\u662F\u4E00\u4E2A\u6B63\u6574\u6570");
+    return { projectId: request.projectId, repository: request.repository, owner, name, number };
+  }
+  function minimalAddedItem(itemId, plan, issue) {
+    const content = {
+      repository: plan.repository,
+      number: plan.number,
+      title: clamp(issue.title || `#${plan.number}`, maxLength.itemTitle),
+      isOpen: issue.isOpen
+    };
+    const url = nonEmpty(issue.url, maxLength.url);
+    if (url) content.url = url;
+    return { id: itemId, contentType: "issue", updatedAt: (/* @__PURE__ */ new Date()).toISOString(), content, values: {} };
+  }
+  async function addItem(request, signal) {
+    const plan = planAddItem(request);
+    throwIfCancelled(signal);
+    const { data } = await query(issueId, { owner: plan.owner, name: plan.name, number: plan.number }, "\u8BFB Issue");
+    const issue = data.repository?.["issue"] ?? null;
+    const contentId = issue?.["id"];
+    if (typeof contentId !== "string" || !contentId) {
+      throw new GitHubError(`\u627E\u4E0D\u5230 ${plan.repository}#${plan.number}\uFF08\u4E0D\u5B58\u5728\u3001\u662F Pull Request\uFF0C\u6216 token \u770B\u4E0D\u5230\u5B83\uFF09`, []);
+    }
+    const title = typeof issue?.["title"] === "string" ? issue["title"] : "";
+    const url = typeof issue?.["url"] === "string" ? issue["url"] : void 0;
+    const isOpen = issue?.["state"] !== "CLOSED";
+    throwIfCancelled(signal);
+    const add = mutations.addProjectV2ItemById;
+    const added = await mutate(add.document, { input: { projectId: plan.projectId, contentId } }, add.title);
+    const itemId = added.addProjectV2ItemById?.item?.["id"];
+    if (typeof itemId !== "string" || !itemId) throw new GitHubError(`GitHub \u62D2\u7EDD\u4E86\u300C${add.title}\u300D\uFF1A\u6CA1\u6709\u4EA4\u56DE Project \u6761\u76EE`, []);
+    try {
+      const { data: read } = await query(readItem, { id: itemId }, "\u8BFB\u56DE\u6761\u76EE");
+      const item = mapItem(read.node);
+      if (item) return { item };
+      jarvis.log.warn("Issue \u5DF2\u52A0\u8FDB Project\uFF0C\u8BFB\u56DE\u7684\u90A3\u4E00\u6761\u8BFB\u4E0D\u51FA\uFF1B\u5148\u4EA4\u56DE\u6700\u5C0F\u6761\u76EE\uFF0C\u5BBF\u4E3B\u4E0B\u6B21\u540C\u6B65\u4F1A\u6821\u6B63", itemId);
+    } catch (error) {
+      jarvis.log.warn("Issue \u5DF2\u52A0\u8FDB Project\uFF0C\u8BFB\u56DE\u90A3\u4E00\u6761\u5931\u8D25\uFF1B\u5148\u4EA4\u56DE\u6700\u5C0F\u6761\u76EE\uFF0C\u5BBF\u4E3B\u4E0B\u6B21\u540C\u6B65\u4F1A\u6821\u6B63", messageOf(error));
+    }
+    return { item: minimalAddedItem(itemId, plan, { title, ...url ? { url } : {}, isOpen }) };
+  }
+
   // extensions/github-project/src/create.ts
   var maxIssueTitle = 256;
   var maxIssueBody = 65536;
@@ -1402,7 +1456,8 @@ ${spec.fragments}` : ""}`;
     "draftIssues",
     "createIterations",
     "createItems",
-    "readItemsById"
+    "readItemsById",
+    "addItems"
   ];
   var missingScopeProblem = "token \u7F3A\u5C11 project \u6743\u9650\uFF08\u53EA\u8BFB\u9700 read:project\uFF09";
   async function describe(context) {
@@ -1982,7 +2037,8 @@ ${atRoot.map((line) => `  ${line}`).join("\n")}
     createField: (request, _context, signal) => createField(request, signal),
     createOption: (request, _context, signal) => createOption(request, signal),
     createIteration: (request, _context, signal) => createIteration(request, signal),
-    createItem: (request, _context, signal) => createItem(request, signal)
+    createItem: (request, _context, signal) => createItem(request, signal),
+    addItem: (request, _context, signal) => addItem(request, signal)
   };
 
   // extensions/github-project/src/index.ts

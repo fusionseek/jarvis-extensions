@@ -8,8 +8,8 @@ import { messageOf } from "./graphql.js";
 import { clamp, hosting, maxLength } from "./limits.js";
 
 /**
- * GitHub Projects v2 原生就有的八样：子 Issue、blocked by、组织的 Issue Type、在 Project 里建字段与选项、草稿条目、给迭代字段加迭代、
- * 在仓库里建 Issue 并加进 Project、按 id 读回几条（`nodes(ids:)`，宿主的「刷新本视图」）。
+ * GitHub Projects v2 原生就有的九样：子 Issue、blocked by、组织的 Issue Type、在 Project 里建字段与选项、草稿条目、给迭代字段加迭代、
+ * 在仓库里建 Issue 并加进 Project、按 id 读回几条（`nodes(ids:)`，宿主的「刷新本视图」）、把已有的 Issue 加进 Project（`addProjectV2ItemById`）。
  * 写成常量：这是 GitHub 的能力，不随 token 变——token 不够时是 `ready` 与说明的事，不是能力表的事。
  */
 export const features: ProjectEngineFeature[] = [
@@ -21,6 +21,7 @@ export const features: ProjectEngineFeature[] = [
   "createIterations",
   "createItems",
   "readItemsById",
+  "addItems",
 ];
 
 /** 缺 Projects 权限时那一句（宿主原样显示在「项目」的说明卡上）。 */

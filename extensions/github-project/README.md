@@ -55,6 +55,7 @@
 | `ResolveEdit` | 每次编辑之前一次：要改的 Issue / PR 的 id 与当前状态、父 Issue、指派人，以及这次要用到的标签、里程碑、Issue Type、用户、其它 Issue 的 id |
 | `ReadItem` / `ReadField` | 改完、新建完读回那一条；加选项之前读字段的当前选项 |
 | `RepositoryId` | 新建条目之前认出你选的仓库（`createIssue` 只认仓库的节点 id） |
+| `IssueId` | 「加入 Project」之前认出那条 Issue（`addProjectV2ItemById` 只认节点 id）；读它的标题、链接、开关，读回失败时交回最小条目用 |
 
 ### 改（`git.hosting.write`，manifest `git.mutations` 逐字）
 
@@ -73,7 +74,7 @@
 | `createProjectV2Field` | 映射页上「在 Project 里建这个字段」 | Project、名字、类型、选项（灰色）或迭代配置 |
 | `updateProjectV2Field` | 字段设置上「把新取值写回 Project」：给单选 / 多选加一个选项；迭代页「新增迭代」：给迭代字段加一个迭代 | 字段、**全部已有选项原样**（id、名字、颜色、说明）+ 新选项；或**全部已有迭代原样**（含已结束的：id、名字、开始日、天数）+ 新迭代 |
 | `createIssue` | 「项目」里的「新建」：在你选的仓库里建一条 Issue | 仓库、标题、正文（你写的 Markdown）——**只传这三项**：状态、迭代、标签这些由 Jarvis 随后经上面的变更写上 |
-| `addProjectV2ItemById` | 「新建」的第二步：把刚建的 Issue 加进这个 Project | Project、刚建的 Issue |
+| `addProjectV2ItemById` | 「新建」的第二步：把刚建的 Issue 加进这个 Project；1.3.4 起也用于「加入 Project」：把一条已有的 Issue 加进来（jarvis-mac `specs/20261028-191224-git-push-error-proxy-dashboard-issue-links` I-1） | Project、那条 Issue |
 
 **不删任何东西**：没有删字段、删条目、删选项、删 Issue 的变更。Jarvis 也从不自己发起这些写入——
 每一次都是你在界面上的一个动作，或你在「Project 关联」里写下的 Git 事件规则，并且先过 Jarvis 的工作流与漂移守卫。

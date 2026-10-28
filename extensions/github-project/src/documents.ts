@@ -202,6 +202,11 @@ export const repositoryId = `query RepositoryId($owner: String!, $name: String!)
   repository(owner: $owner, name: $name) { id }
 }`;
 
+/** 一条 Issue 的节点 id、标题、链接、开关（`addItem` 加进 Project 之前，jarvis-mac `specs/20261028-191224-git-push-error-proxy-dashboard-issue-links` I-1）。PR 不在 `issue(number:)` 里，读到 null。 */
+export const issueId = `query IssueId($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) { issue(number: $number) { id title url state } }
+}`;
+
 /** 读一个字段的当前结构（`createOption` / `createIteration` 要原样带回已有选项 / 迭代）。 */
 export const readField = `query ReadField($id: ID!) {
   node(id: $id) {
