@@ -388,6 +388,109 @@ export interface ChartNode extends Keyed {
   label?: string;
 }
 
+// ---------------------------------------------------------------------------
+// 版式与读数（jarvis-mac `specs/20261028-191224-git-push-error-proxy-dashboard-issue-links` P-2 / P-3）：侧栏、自适应网格、表格、堆叠柱、宿主画的偏好控件。
+// 构造器不在 `ui` 上，在 `layout` 上（`layout.ts`）：没用到它们的扩展重建之后产物逐字节不变。
+// ---------------------------------------------------------------------------
+
+/** 侧栏里的一项。 */
+export interface SidebarItem {
+  /** 1–40 字，同一个侧栏里不重。`onChange` 交回的就是它。 */
+  value: string;
+  /** 1–24 字。 */
+  title: string;
+  /** SF Symbol。 */
+  symbol: string;
+}
+
+/**
+ * 侧栏导航：**只许做根**。左侧一列 2–8 项，右侧恰好一个子节点（这一页的内容，可以是 `scroll`）。
+ * 窗口里以它为根时正文不受 720pt 上限、铺满整扇窗。宿主借「项目」左栏那一行画每一项。
+ */
+export interface SidebarNode extends Keyed {
+  kind: "sidebar";
+  items: SidebarItem[];
+  /** 选中的那一项（必须是 `items` 里的一个）。 */
+  value: string;
+  /** ≤ 80 字。VoiceOver 读的那一列的名字。 */
+  label?: string;
+  /** 点了另一项。扩展记下它、重画右侧那一页。 */
+  onChange: Handler<string>;
+  /** 恰好一个。 */
+  children: [UINode];
+}
+
+/** 自适应网格：子节点按宽度排成若干列，每列至少 `minimum` pt（80–480 的整数，省略 160）。统计卡、节点卡一行放几张由宽度决定。 */
+export interface GridNode extends Keyed {
+  kind: "grid";
+  minimum?: number;
+  spacing?: StackSpacing;
+  children: UINode[];
+}
+
+/** 表格的一列。 */
+export interface TableColumn {
+  /** ≤ 24 字。 */
+  title: string;
+  /** narrow 56 / regular 104 / wide 200 / fill 吃掉剩下的；省略 regular。 */
+  width?: "narrow" | "regular" | "wide" | "fill";
+  /** 省略 leading。数字列给 trailing。 */
+  alignment?: "leading" | "trailing";
+  /** 等宽字。 */
+  mono?: boolean;
+}
+
+/** 表格的一行：`cells` 的个数必须等于列数。 */
+export interface TableRow {
+  /** 每格 ≤ 200 字；宿主单行截断、悬停看全文、可选中。 */
+  cells: string[];
+  /** 整行的字着色。 */
+  tint?: Tint;
+}
+
+/** 表格：表头 + 斑马纹行，1–8 列、至多 300 行。不可点。 */
+export interface TableNode extends Keyed {
+  kind: "table";
+  columns: TableColumn[];
+  rows: TableRow[];
+  /** ≤ 80 字。没有行时画在表头下面。 */
+  emptyText?: string;
+  /** ≤ 80 字。VoiceOver。 */
+  label?: string;
+}
+
+/** 柱状图的一条（与 `ChartSeries` 同一对色调）。 */
+export interface BarsSeries {
+  tone: "upload" | "download";
+  /** 个数必须等于 `labels`，≥ 0。 */
+  values: number[];
+}
+
+/** 一排堆叠柱（下行在下、上行叠在上面），高约 96pt。不可点、没有子节点。 */
+export interface BarsNode extends Keyed {
+  kind: "bars";
+  /** 横轴 1–48 个，每个 ≤ 6 字；放不下时宿主每隔几个画一个。 */
+  labels: string[];
+  /** 1–2 条，upload / download 各至多一条。 */
+  series: BarsSeries[];
+  /** ≤ 80 字。画在柱下一行。 */
+  caption?: string;
+  /** ≤ 80 字。VoiceOver；省略时读 `caption`，都没有读「流量柱状图」。 */
+  label?: string;
+}
+
+/**
+ * 宿主画的偏好控件：manifest `contributes.settings.preferences` 里声明过的那一项，与设置页同一个控件（紧凑排版）。
+ * 扩展读不到、写不到控件里的字——`urlList` 的地址仍是用户亲手填的，白名单语义不变。没声明过的宿主拒绝整棵树。
+ */
+export interface PreferenceNode extends Keyed {
+  kind: "preference";
+  /**
+   * 那一项偏好的 key（线缆上原样是 `props.preference`）。不叫 `key`：`key` 是每个节点的稳定身份，序列化时不进 props。
+   */
+  preference: string;
+}
+
 export type UINode =
   | StackNode
   | ScrollNode
@@ -420,7 +523,12 @@ export type UINode =
   | DropZoneNode
   | KeycapNode
   | ImageNode
-  | ChartNode;
+  | ChartNode
+  | SidebarNode
+  | GridNode
+  | TableNode
+  | BarsNode
+  | PreferenceNode;
 
 export type UINodeKind = UINode["kind"];
 

@@ -1,7 +1,7 @@
 {
   "manifestVersion": 2,
   "id": "code-format",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "name": "代码格式化",
   "symbol": "wand.and.stars",
   "description": "给 Jarvis 的 Git 加上「格式化」：文件 diff 页里工作区那一份源码，按语言交给你装好的格式化工具——clang-format、swift-format、ktfmt、google-java-format、ruff、shfmt、prettier 等，先看对比，点「写入文件」才改。",

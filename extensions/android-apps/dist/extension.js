@@ -1,4 +1,4 @@
-// jarvis-extension bundle · android-apps@1.0.5 · sdk 2.10.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · android-apps@1.0.6 · sdk 2.10.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -338,6 +338,9 @@
               case "createItem":
                 if (!engine.createItem) break;
                 return engine.createItem(request, context, signal);
+              case "addItem":
+                if (!engine.addItem) break;
+                return engine.addItem(request, context, signal);
             }
             break;
           }

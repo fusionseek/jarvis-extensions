@@ -24,6 +24,12 @@ v2 的目录**只列宿主真的做得到的**：声明得到、调不到的能�
 | `host.version` / `host.channel` | 宿主版本（`CFBundleShortVersionString`）、`release` / `development` |
 | `environment` | `reduceMotion` / `reduceTransparency` / `increaseContrast` / `locale`。界面上的适配由宿主做；这里给出来是让扩展自己的逻辑也能让步 |
 
+#### `networkStatus()`（jarvis-mac `specs/20261028-191224-git-push-error-proxy-dashboard-issue-links` P-3）
+
+单独导出的函数（`import { networkStatus } from "@fusionseek/jarvis-extension-sdk"`），不挂在 `jarvis` 上——没用到它的扩展打包时被摇掉。
+线缆 `network.status`，隐式、只读：此刻的主网络接口 `{ kind: "wifi" | "ethernet" | "other", interface: "en0", name: "Wi-Fi" }`，没有网络为 `{ kind: "none" }`。
+增强模式开着时 sing-box 的隧道会成为主接口，宿主照样报底下那块实体网卡。不读 SSID（macOS 14 起要定位授权）、不读地址。
+
 #### `jarvis.ui`
 
 | 方法 | 说明 |

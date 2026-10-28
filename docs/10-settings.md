@@ -180,6 +180,7 @@ Issue Type / 子 Issue / blocked by 的读写）全在引擎扩展里。先例�
 | `createOption` | `projectId`、`fieldId`、`name` | `{ field }`（已有选项的 id 不变） | 45 秒 |
 | `createIteration`（SDK 2.2） | `projectId`、`fieldId`、`name`、`startDate`（`YYYY-MM-DD`）、`iterationDurationDays` | `{ field }`（已有迭代——含已结束的——的 id 不变） | 45 秒 |
 | `createItem`（SDK 2.3） | `projectId`、`repository`、`title`、`body?` | `{ item }`：建好、已加进 Project 的那一条 | 45 秒 |
+| `addItem`（jarvis-mac `specs/20261028-191224-git-push-error-proxy-dashboard-issue-links` I-1） | `projectId`、`repository`、`number` | `{ item }`：把仓库里已有的那条 Issue 加进 Project 之后读回的那一条（已经在里面时交回原条目，幂等）；不写字段 | 45 秒 |
 
 | 契约规则 | 值 | 为什么 |
 | --- | --- | --- |
@@ -192,7 +193,7 @@ Issue Type / 子 Issue / blocked by 的读写）全在引擎扩展里。先例�
 | 编辑只执行 | `applyEdit` 的每一步宿主都按工作流、必填与漂移守卫校验过 | 引擎再判断一遍只会与宿主分歧 |
 | 失败 | 抛错；`message` 原样显示在发起处 | 用户要知道是哪一步、被谁拒了 |
 | 按 id 读 | `itemIds` 里请求了却没交回的，宿主当作「已移出 Project」从列表与镜像里去掉；所以读失败（权限、限流、超时）必须抛错，不能交回一个空页 | 「刷新本视图」只重读眼前这几条：全量翻页要十几次请求，按 id 一次 100 条 |
-| 可选能力 | `describe.features` ⊆ `nativeHierarchy`、`nativeDependencies`、`issueTypes`、`createFields`、`draftIssues`、`createIterations`（SDK 2.2）、`createItems`（SDK 2.3）、`readItemsById`（SDK 2.6）；`contractVersion` 当前是 1 | 没声明的那一项，宿主把对应入口置灰并说明；契约只追加不改名 |
+| 可选能力 | `describe.features` ⊆ `nativeHierarchy`、`nativeDependencies`、`issueTypes`、`createFields`、`draftIssues`、`createIterations`（SDK 2.2）、`createItems`（SDK 2.3）、`readItemsById`（SDK 2.6）、`addItems`（jarvis-mac `specs/20261028-191224-git-push-error-proxy-dashboard-issue-links` I-1）；`contractVersion` 当前是 1 | 没声明的那一项，宿主把对应入口置灰并说明；契约只追加不改名 |
 
 参考实现：[`extensions/github-project`](../extensions/github-project)（GitHub Projects v2）。
 

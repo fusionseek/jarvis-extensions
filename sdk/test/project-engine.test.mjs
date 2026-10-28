@@ -26,6 +26,7 @@ const { defineExtension, jarvis, JarvisError, sdkVersion, capabilityTiers } = aw
 let cancelled = false;
 let releaseItems;
 let createItemRequest;
+let addItemRequest;
 
 defineExtension({
   services: {
@@ -73,6 +74,19 @@ defineExtension({
           },
         };
       },
+      // jarvis-mac specs/20261028-191224-git-push-error-proxy-dashboard-issue-links I-1：把已有的 Issue 加进 Project。
+      addItem: async (request) => {
+        addItemRequest = request;
+        return {
+          item: {
+            id: "PVTI_added",
+            contentType: "issue",
+            updatedAt: "2026-10-28T00:00:00Z",
+            content: { repository: request.repository, number: request.number, title: "已有的 Issue", isOpen: true },
+            values: {},
+          },
+        };
+      },
     },
   },
 });
@@ -112,6 +126,11 @@ test("各方法的入参来自 params.request", async () => {
   const created = await call("createItem", createRequest);
   assert.deepEqual(createItemRequest, createRequest, "createItem（SDK 2.3）按 params.request 分派，可选的 body 原样转交");
   assert.deepEqual(created.result.value.item.content, { repository: "fusionseek/jarvis-mac", number: 7, title: "新建条目", isOpen: true });
+  const addRequest = { projectId: "PVT_1", repository: "fusionseek/jarvis-mac", number: 117 };
+  const added = await call("addItem", addRequest);
+  assert.deepEqual(addItemRequest, addRequest, "addItem 按 params.request 分派");
+  assert.equal(added.result.value.item.id, "PVTI_added");
+  assert.equal(added.result.value.item.content.number, 117);
 });
 
 test("抛出的 JarvisError 原样交回，别的错误变成 host.failure；没实现的方法是 capability.unknown", async () => {

@@ -1,4 +1,4 @@
-// jarvis-extension bundle · code-highlight@1.0.2 · sdk 2.10.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · code-highlight@1.0.3 · sdk 2.10.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -337,6 +337,9 @@
               case "createItem":
                 if (!engine2.createItem) break;
                 return engine2.createItem(request, context, signal);
+              case "addItem":
+                if (!engine2.addItem) break;
+                return engine2.addItem(request, context, signal);
             }
             break;
           }

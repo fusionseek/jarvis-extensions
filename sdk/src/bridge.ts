@@ -207,6 +207,12 @@ export type MenuBarItem = MenuBarActionItem | MenuBarSeparator | MenuBarHeader |
  * 扩展改不掉：菜单栏图标是扩展唯一常驻在屏幕上的东西，用户必须总能从它回到 Jarvis 管它的地方。
  */
 export interface MenuBarModel {
+  /**
+   * 这一刻不画图标（jarvis-mac `specs/20261028-191224-git-push-error-proxy-dashboard-issue-links` P-1）：代理关着时「菜单图标去掉」那种。显示 = 用户的「在菜单栏显示」**且**这里不为真——
+   * 用户关掉的，扩展打不开。藏着时后台会话照旧常驻、模型照旧缓存；变回 `false` 时宿主立即画出最新一份。宿主记住上一次，
+   * 下次启动、第一份模型到之前的占位按它来，图标不先闪一下。
+   */
+  hidden?: boolean;
   /** 图标（SF Symbol）。省略 = manifest `contributes.menuBar.symbol`；宿主画不出时同样退回它。 */
   symbol?: string;
   /**
@@ -557,6 +563,20 @@ export function eventName(propName: string): string {
 }
 
 /** 把一棵节点树序列化到线缆上；回调函数在这里换成句柄。 */
+/**
+ * `networkStatus()` 的返回（隐式、只读，jarvis-mac `specs/20261028-191224-git-push-error-proxy-dashboard-issue-links` P-3）：此刻的主网络接口。增强模式开着时 sing-box 的隧道会成为主接口，
+ * 宿主照样报底下那块实体网卡（「Wi-Fi」「以太网」）。不读 SSID（macOS 14 起要定位授权）、不读地址。
+ */
+export type NetworkStatus =
+  | { kind: "none" }
+  | {
+      kind: "wifi" | "ethernet" | "other";
+      /** BSD 名（`en0`），≤ 16 字。 */
+      interface: string;
+      /** 系统给的本地化名称（「Wi-Fi」「以太网」），≤ 40 字。 */
+      name: string;
+    };
+
 export function serialize(root: UINode, register: (fn: (payload: unknown) => void) => string): SerializedNode {
   const walk = (node: UINode): SerializedNode => {
     const props: Record<string, unknown> = {};

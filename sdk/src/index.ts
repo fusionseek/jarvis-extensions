@@ -24,7 +24,7 @@
  */
 import type { EnvironmentInfo, HostInfo, Jarvis, ProcessHandle, ProcessResult, ProcessRunOptions, Unsubscribe } from "./capabilities.js";
 import { JarvisError } from "./capabilities.js";
-import type { ActivationContext, CommandContext, HostEvent, InvokeResult, HostBridge, CommandSummary, MenuBarEvent, ServiceCall, Surface } from "./bridge.js";
+import type { ActivationContext, CommandContext, HostEvent, InvokeResult, HostBridge, CommandSummary, MenuBarEvent, NetworkStatus, ServiceCall, Surface } from "./bridge.js";
 import { bridgeProtocolVersion, countNodes, serialize } from "./bridge.js";
 import type { CancelSignal, CodeFormatEngine, CodeFormatRequest, CodeHighlightEngine, CodeHighlightRequest, ServiceContext, ServiceImplementation, JunkCleanEngine, LauncherAppsEngine, ProjectEngine, ProjectEngineRequest } from "./services.js";
 import type { UINode } from "./ui.js";
@@ -36,6 +36,7 @@ export * from "./ui.js";
 export * from "./capabilities.js";
 export * from "./services.js";
 export * from "./ocr.js";
+export * from "./layout.js";
 export type {
   ActivationContext,
   BrowserActiveTab,
@@ -63,6 +64,7 @@ export type {
   MenuBarModel,
   MenuBarSeparator,
   MenuBarSubmenu,
+  NetworkStatus,
   OrbMeterModel,
   SerializedNode,
   ServiceCall,
@@ -405,6 +407,9 @@ class Runtime {
             case "createItem":
               if (!engine.createItem) break;
               return engine.createItem(request as Parameters<NonNullable<ProjectEngine["createItem"]>>[0], context, signal);
+            case "addItem":
+              if (!engine.addItem) break;
+              return engine.addItem(request as Parameters<NonNullable<ProjectEngine["addItem"]>>[0], context, signal);
           }
           break;
         }
@@ -562,6 +567,15 @@ const runtime = new Runtime();
 /** 交出扩展定义。整个 bundle 只能调用一次。 */
 export function defineExtension(definition: ExtensionDefinition): void {
   runtime.define(definition);
+}
+
+/**
+ * 此刻的主网络接口（隐式、只读，jarvis-mac `specs/20261028-191224-git-push-error-proxy-dashboard-issue-links` P-3）：「Wi-Fi」「以太网」，或没有网络。
+ * 不挂在 `jarvis` 上：那是一个对象，加一个成员会让每个扩展的产物都变一点；没用到它的扩展打包时这个函数被摇掉。
+ * @returns 状态。
+ */
+export function networkStatus(): Promise<NetworkStatus> {
+  return runtime.invoke<NetworkStatus>("network", "status", {});
 }
 
 function namespaced(namespace: string) {

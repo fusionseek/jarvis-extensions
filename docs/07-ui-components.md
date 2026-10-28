@@ -89,6 +89,19 @@ v2 的扩展最多有三面（[02](02-architecture.md#运行时前台会话与�
 | `image` | 缩略图 | small 64pt 高 / medium 112 / large 160，宽不超内容宽，圆角 8、白 8% 边 | 只能是宿主颁发的句柄（截图、剪贴板里的图、拖进来的图）；它是给用户核对"截到的是哪一块"用的，不是相册；`label` 必填 |
 | `chart`（SDK 2.10） | 流量曲线：与菜单栏菜单顶部那块**同一种画法**（`TrafficSparklineShape`） | 满宽、高 56pt，白 4% 底、圆角 8；下行系统青、上行系统橙，每条按自己的最大值归一；`caption` 11pt 一行 | `series` 1–2 条（`upload` / `download` 各至多一条），每条 ≤ 120 个非负数；`caption`、`label` ≤ 80 字；不可点、没有子节点 |
 
+### 版式与读数（`layout.*`，jarvis-mac `specs/20261028-191224-git-push-error-proxy-dashboard-issue-links` P-2 / P-3）
+
+构造器在 `layout` 上，不在 `ui` 上：`ui` 是一个对象，加成员会让每个扩展的产物都变；`layout` 没被用到时打包整块摇掉。
+`import { layout } from "@fusionseek/jarvis-extension-sdk"`。宿主在提交时逐项校验（bridge `$defs.*NodeProps`），读不出来整棵树拒掉。
+
+| 节点 | 宿主实现 | tokens | 规则 |
+| --- | --- | --- | --- |
+| `sidebar` | 左侧一列导航（每项借「项目」左栏那一行 `ProjectSidebarRow`）+ 1pt 分隔线 + 右侧那一页 | 侧栏 176 宽、上下 10；右侧左右内距 20 | **只许做根**；`items` 2–8 项（`value` 1–40 字不重、`title` ≤ 24 字、`symbol`），`value` 必须是其中一个；`onChange` 必挂、只挂它；**恰好一个子节点**，可以是 `scroll`。窗口里以它为根时正文不受 720pt 上限、铺满整扇窗；为窗口设计——400 宽的面板里请用 `segmented` |
+| `grid` | `LazyVGrid(.adaptive(minimum:))`，一行里的子节点等高 | `minimum` 80–480 的整数（省略 160）；`spacing` 同 `stack` | 统计卡、节点卡一行放几张由宽度决定；不可点（点交给里面的 `card`） |
+| `table` | 表头 + 斑马纹行（白 3%），单行中间截断、悬停看全文、可选中 | 行高 24、表头 22、11.5pt / 表头 10.5pt bold；列宽 `narrow` 56 / `regular` 104 / `wide` 200 / `fill` 弹性，列距 10 | 1–8 列，≤ 300 行；每行 `cells` 个数 = 列数、每格 ≤ 200 字；`alignment: "trailing"` 给数字列，`mono` 用等宽字；`tint` 给整行的字着色；没有行时画 `emptyText`；**行是 props 不是节点**，不占 500 个节点的预算；不可点 |
+| `bars` | 一排堆叠柱：下行（系统青）在下、上行（系统橙）叠在上面，按最高那一根归一 | 高 96，柱距占一格 30%，圆角 2，非零的柱至少 1.5pt；横轴标签 9.5pt、放不下时每隔几根画一个；`caption` 11pt 一行 | `labels` 1–48 个（≤ 6 字），`series` 1–2 条（`upload` / `download` 各至多一条），每条个数 = `labels`、≥ 0；`caption`、`label` ≤ 80 字；不可点、没有子节点 |
+| `preference` | 设置页那一行偏好控件，紧凑排版（标题与说明在上、控件在下占满宽） | 同 设置 › 扩展 | 只点名 manifest `contributes.settings.preferences` 里声明过的一项（字段叫 `preference`，线缆上原样是 `props.preference`——`key` 是节点自己的身份）；没声明的整棵树拒掉。**扩展读不到、写不到控件里的字**：`urlList` 的地址仍是用户亲手在宿主画的框里填的，白名单语义不变。`secret` 的值不进偏好变更通知，扩展要知道变没变得自己现问 `preferences.get` |
+
 ### 清单与卡片
 
 | 节点 | 宿主实现 | tokens | 规则 |
@@ -171,6 +184,7 @@ ui.scroll({
 | `symbol` | 状态栏图标（SF Symbol，跟系统深浅色走） | 省略或画不出时退回 manifest `contributes.menuBar.symbol` |
 | `title` | 图标右侧的短字 | ≤ 16 字（速率这类读数）；省略 = 只有图标。别放长句：菜单栏是所有应用共用的一条窄带。SDK 2.10 起可以**两行**（一个 `\n`、每行 ≤ 10 字），宿主画成 9pt 等宽数字的上下两行——上下行速率那种 |
 | `tooltip` | 悬停提示 | ≤ 80 字 |
+| `hidden`（jarvis-mac `specs/20261028-191224-git-push-error-proxy-dashboard-issue-links` P-1） | 不画这枚图标 | `true` 时宿主不画（「代理没开就不显示」）。显示 = 用户的「在菜单栏显示」**且**这里不为真：用户关掉的扩展打不开。藏着时后台会话照旧常驻、模型照旧缓存；变回 `false` 时立即画出最新一份。宿主记住上一次的值，下次启动、第一份模型到之前的占位照它，图标不先闪一下 |
 | `{ kind: "item", id, title, subtitle?, symbol?, checked?, enabled?, tone? }` | 一行 `NSMenuItem` | `checked` 画系统的勾；`enabled: false` 灰掉、点不了；`subtitle` 是标题下的灰字；`tone`（SDK 2.10）：`critical` 画系统红（失败的请求）、`secondary` 画次要色。点了发 `select`，带回 `id` |
 | `{ kind: "separator" }` | 分隔线 | 不带任何别的字段 |
 | `{ kind: "header", title }` | 灰色段标题 | 不可点 |

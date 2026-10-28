@@ -131,6 +131,7 @@ export const projectEngineContractVersion = 1 as const;
  * - `createIterations`：能在迭代字段末尾加一个迭代（`createIteration`）。没声明时宿主迭代页的「新增迭代」置灰、提示更新扩展；
  * - `createItems`（SDK 2.3）：能在仓库里建一条 Issue 并加进 Project（`createItem`）。没声明时宿主的「新建」置灰、提示更新扩展；
  * - `readItemsById`（SDK 2.6）：`readItems` 认 `itemIds`，只读回这几条。没声明时宿主「刷新本视图」不发 `itemIds`，只做一次增量读。
+ * - `addItems`（jarvis-mac `specs/20261028-191224-git-push-error-proxy-dashboard-issue-links` I-1）：能把仓库里已有的一条 Issue 加进 Project（`addItem`）。没声明时宿主的「加入 Project」置灰、提示更新扩展。
  */
 export type ProjectEngineFeature =
   | "nativeHierarchy"
@@ -140,7 +141,8 @@ export type ProjectEngineFeature =
   | "draftIssues"
   | "createIterations"
   | "createItems"
-  | "readItemsById";
+  | "readItemsById"
+  | "addItems";
 
 /** `describe` 的返回：契约版本、此刻能不能用、托管服务、可选能力。要快（宿主给 15 秒）。 */
 export interface ProjectEngineDescription {
@@ -402,6 +404,18 @@ export interface ProjectCreateItemRequest {
 }
 
 /**
+ * `addItem` 的入参（jarvis-mac `specs/20261028-191224-git-push-error-proxy-dashboard-issue-links` I-1）：把 `repository` 里已有的第 `number` 号 Issue 加进 `projectId` 这个 Project。
+ * 已经在里面时 GitHub 交回原条目（幂等）——引擎照常交回那一条，不当成错误。
+ */
+export interface ProjectAddItemRequest {
+  projectId: string;
+  /** `owner/name`。 */
+  repository: string;
+  /** Issue 编号（≥ 1）。 */
+  number: number;
+}
+
+/**
  * 线缆上 `params.request` 的全集（`$defs.projectEngineRequest`）：每个方法只用到其中几项。
  * SDK 不替你检查哪几项该在——宿主按 schema 发，引擎按自己方法的入参读。
  */
@@ -413,7 +427,8 @@ export type ProjectEngineRequest = ProjectListRequest &
       ProjectCreateFieldRequest &
       ProjectCreateOptionRequest &
       ProjectCreateIterationRequest &
-      ProjectCreateItemRequest
+      ProjectCreateItemRequest &
+      ProjectAddItemRequest
   >;
 
 /** `listProjects` 的返回（≤ 200 个）。 */
@@ -481,10 +496,15 @@ export interface ProjectEngine {
    * 字段值不在这里写——宿主随后经 `applyEdit` 写预填的字段。
    */
   createItem?(request: ProjectCreateItemRequest, context: ServiceContext, signal: CancelSignal): Promise<ProjectCreatedItem>;
+  /**
+   * 把仓库里已有的一条 Issue 加进 Project（jarvis-mac `specs/20261028-191224-git-push-error-proxy-dashboard-issue-links` I-1；声明了 `addItems` 才会被调）。
+   * 交回的条目与 `createItem` 同一个形状、必须已经在 Project 里；不写字段。
+   */
+  addItem?(request: ProjectAddItemRequest, context: ServiceContext, signal: CancelSignal): Promise<ProjectCreatedItem>;
 }
 
 /** 项目引擎的方法名（线缆上 `service` 事件的 `method`）。 */
-export type ProjectEngineMethod = "describe" | "listProjects" | "readSchema" | "readItems" | "applyEdit" | "createField" | "createOption" | "createIteration" | "createItem";
+export type ProjectEngineMethod = "describe" | "listProjects" | "readSchema" | "readItems" | "applyEdit" | "createField" | "createOption" | "createIteration" | "createItem" | "addItem";
 
 /** 清理引擎的方法名（线缆上 `service` 事件的 `method`）。 */
 export type JunkCleanMethod = "status" | "run" | "action";
