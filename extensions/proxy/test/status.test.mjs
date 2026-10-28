@@ -156,7 +156,7 @@ test("菜单：关着、出错、没装、没授权、被拦着、速率", () =>
   assert.ok(items(missing.items).some((item) => item.id === "install"));
   assert.ok(!items(missing.items).some((item) => item.id === "toggle"));
   const badPath = buildMenuModel(input({ phase: "notInstalled", preferences: normalizePreferences({ singBoxPath: "/x/sing-box" }) }));
-  assert.equal(badPath.items[0].title, "设置里填的 sing-box 路径不可用");
+  assert.equal(badPath.items[0].title, "设置里选的 sing-box 路径不可用");
   assert.ok(!items(badPath.items).some((item) => item.id === "install"), "坏路径不给安装");
 
   const denied = buildMenuModel(input({ phase: "notGranted", granted: [] }));

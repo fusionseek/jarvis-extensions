@@ -1,4 +1,4 @@
-// jarvis-extension bundle · proxy@1.0.0 · sdk 2.10.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · proxy@1.0.1 · sdk 2.10.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -2486,7 +2486,7 @@
       case "notGranted":
         return "\u8FD8\u6CA1\u6388\u6743\uFF1A\u6253\u5F00\u300C\u4EE3\u7406\u300D\u70B9\u6388\u6743";
       case "notInstalled":
-        return input.preferences.singBoxPath ? "\u8BBE\u7F6E\u91CC\u586B\u7684 sing-box \u8DEF\u5F84\u4E0D\u53EF\u7528" : "\u6CA1\u6709\u627E\u5230 sing-box";
+        return input.preferences.singBoxPath ? "\u8BBE\u7F6E\u91CC\u9009\u7684 sing-box \u8DEF\u5F84\u4E0D\u53EF\u7528" : "\u6CA1\u6709\u627E\u5230 sing-box";
       case "noNodes":
         return "\u6CA1\u6709\u8282\u70B9\uFF1A\u5728\u8BBE\u7F6E\u91CC\u586B\u8BA2\u9605\u5730\u5740";
       case "running":
@@ -3752,7 +3752,7 @@
         }
         const status = await jarvis.daemon.status(DAEMON_ID, executable);
         if (status.executable === "") {
-          return { ok: false, message: preferences.singBoxPath ? `\u8BBE\u7F6E\u91CC\u586B\u7684 sing-box \u8DEF\u5F84\u4E0D\u53EF\u7528\uFF1A${preferences.singBoxPath}` : "\u6CA1\u6709\u627E\u5230 sing-box\uFF1A\u5148\u5728\u300C\u4EE3\u7406\u300D\u91CC\u5B89\u88C5" };
+          return { ok: false, message: preferences.singBoxPath ? `\u8BBE\u7F6E\u91CC\u9009\u7684 sing-box \u8DEF\u5F84\u4E0D\u53EF\u7528\uFF1A${preferences.singBoxPath}` : "\u6CA1\u6709\u627E\u5230 sing-box\uFF1A\u5148\u5728\u300C\u4EE3\u7406\u300D\u91CC\u5B89\u88C5" };
         }
         let nodes = await this.nodes();
         if (nodes.length === 0 && granted.includes("network.https")) {
@@ -5059,8 +5059,8 @@
             key: "bad-path",
             tint: "alert",
             symbol: "questionmark.folder",
-            title: "\u8BBE\u7F6E\u91CC\u586B\u7684 sing-box \u8DEF\u5F84\u4E0D\u53EF\u7528",
-            body: `${snapshot.preferences.singBoxPath} \u4E0D\u5B58\u5728\u6216\u4E0D\u662F\u53EF\u6267\u884C\u6587\u4EF6\uFF0C\u6587\u4EF6\u540D\u5FC5\u987B\u662F sing-box\u3002\u6539\u5BF9\u8DEF\u5F84\uFF0C\u6216\u8005\u6E05\u7A7A\u5B83\u8BA9 Jarvis \u81EA\u5DF1\u627E\uFF08Homebrew \u88C5\u7684\u4F1A\u81EA\u52A8\u627E\u5230\uFF09\u3002`,
+            title: "\u8BBE\u7F6E\u91CC\u9009\u7684 sing-box \u8DEF\u5F84\u4E0D\u53EF\u7528",
+            body: `${snapshot.preferences.singBoxPath} \u4E0D\u5B58\u5728\u6216\u4E0D\u662F\u53EF\u6267\u884C\u6587\u4EF6\uFF0C\u6587\u4EF6\u540D\u5FC5\u987B\u662F sing-box\u3002\u5728\u8BBE\u7F6E\u91CC\u91CD\u65B0\u300C\u9009\u62E9\u300D\u4E00\u4EFD\uFF0C\u6216\u8005\u70B9\u300C\u6E05\u9664\u300D\u8BA9 Jarvis \u81EA\u5DF1\u627E\uFF08Homebrew \u88C5\u7684\u4F1A\u81EA\u52A8\u627E\u5230\uFF09\u3002`,
             actions: [action("settings", "\u6253\u5F00\u8BBE\u7F6E", () => session2.openSettings())]
           }) : ui.note({
             key: "not-installed",

@@ -1,9 +1,9 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-28T05:33:54.216Z",
+  "generatedAt": "2026-10-28T07:28:48.527Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "2d416cbe0bb5e3d8b431ec30e4fe0bde1d3db937"
+    "commit": "181b5b9cd5d5deecb1811f6efda3bf223375c39c"
   },
   "extensions": [
     {
@@ -54,7 +54,7 @@
         "sha256": "a22eda10d159da4ffd1c7763904ff197e58d27d6112c41a6535759d601190906",
         "byteCount": 63376
       },
-      "updatedAt": "2026-10-28T12:15:12+08:00"
+      "updatedAt": "2026-10-28T13:50:29+08:00"
     },
     {
       "manifest": {
@@ -393,7 +393,7 @@
         "sha256": "82551b07831bc3e2d2950b26242bf8ead5d9699c29d921b35f3f911d15b8e576",
         "byteCount": 37692
       },
-      "updatedAt": "2026-10-28T12:15:12+08:00"
+      "updatedAt": "2026-10-28T13:50:29+08:00"
     },
     {
       "manifest": {
@@ -433,7 +433,7 @@
         "sha256": "8e29b4e74515fb659f99976d54d9791e0ac9573c07d5a9f3ebcf2a12eaac6430",
         "byteCount": 59915
       },
-      "updatedAt": "2026-10-28T12:15:12+08:00"
+      "updatedAt": "2026-10-28T13:50:29+08:00"
     },
     {
       "manifest": {
@@ -514,7 +514,7 @@
         "sha256": "09148492ec32a8a1f8e666e84efe1f5943c721afa5861256046b6d5204019dfd",
         "byteCount": 88532
       },
-      "updatedAt": "2026-10-28T12:15:12+08:00"
+      "updatedAt": "2026-10-28T13:50:29+08:00"
     },
     {
       "manifest": {
@@ -655,7 +655,7 @@
         "sha256": "5a1788320f2f3fa51b00a4d429da108ff9c7cc2b67af04166fc866409a39cdd4",
         "byteCount": 123717
       },
-      "updatedAt": "2026-10-28T12:15:12+08:00"
+      "updatedAt": "2026-10-28T13:50:29+08:00"
     },
     {
       "manifest": {
@@ -709,7 +709,7 @@
         "sha256": "25964cca66fa9af0caf080c16ca500be16ead77b822df1db96f4ff1336ce9593",
         "byteCount": 40948
       },
-      "updatedAt": "2026-10-28T12:15:12+08:00"
+      "updatedAt": "2026-10-28T13:50:29+08:00"
     },
     {
       "manifest": {
@@ -833,13 +833,13 @@
         "sha256": "b8ddaba2e19469106cec0f68d2c2d5b93ab29c12caf4c638f23a42ed73fe48bb",
         "byteCount": 57766
       },
-      "updatedAt": "2026-10-28T12:15:12+08:00"
+      "updatedAt": "2026-10-28T13:50:29+08:00"
     },
     {
       "manifest": {
         "manifestVersion": 2,
         "id": "proxy",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "name": "代理",
         "symbol": "network",
         "description": "用你自己装的 sing-box 跑你的订阅：菜单栏随手开关、切节点与策略组，系统代理或增强模式（TUN）接管整机网络；能导入 Surge 配置的规则，给正在看的网页一键加规则，悬浮球上看有效流量与成败。认 SS、VMess、VLESS（含 REALITY）、Trojan、Hysteria2、TUIC 与 sing-box JSON。",
@@ -849,7 +849,7 @@
         },
         "main": "dist/extension.js",
         "sdk": "^2.10.0",
-        "minimumJarvisVersion": "3.2.7",
+        "minimumJarvisVersion": "3.2.8",
         "capabilities": [
           {
             "id": "process.daemon",
@@ -935,7 +935,7 @@
                 "else",
                 "    printf '这台 Mac 上没有 Homebrew（brew 命令），没法替你装。还剩两条路：\\n\\n'",
                 "    printf '1. 先装 Homebrew（会要管理员密码），在终端里运行：\\n     %s\\n   装好之后回到「代理」，再点一次「在终端中安装」。\\n\\n' '/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"'",
-                "    printf '2. 从 %s 下载 darwin 版本，解压出 sing-box，\\n   放进 /usr/local/bin，或在「代理」的设置里填它的完整路径。\\n' 'https://github.com/SagerNet/sing-box/releases'",
+                "    printf '2. 从 %s 下载 darwin 版本，解压出 sing-box，\\n   放进 /usr/local/bin，或在「代理」的设置里「选择」它。\\n' 'https://github.com/SagerNet/sing-box/releases'",
                 "    status=1",
                 "fi",
                 "printf '\\n'",
@@ -1132,12 +1132,11 @@
               },
               {
                 "key": "singBoxPath",
-                "type": "text",
-                "title": "sing-box 路径",
-                "description": "留空时在 Homebrew、~/.local/bin 等位置自动找；也可以填可执行文件的完整路径（文件名必须是 sing-box）",
-                "default": "",
-                "placeholder": "留空自动查找",
-                "monospaced": true
+                "type": "executable",
+                "title": "sing-box",
+                "description": "「代理」用的内核。默认在 Homebrew、~/.local/bin 等位置自动找；也可以「选择」一份（文件名必须是 sing-box）",
+                "executable": "sing-box",
+                "install": "install"
               },
               {
                 "key": "updateInterval",
@@ -1188,10 +1187,10 @@
       "path": "extensions/proxy",
       "bundle": {
         "path": "extensions/proxy/dist/extension.js",
-        "sha256": "ac84a7c3b2e4a3b230b45b155dea6fac7246328eeacdc5af03a751d3dce0f820",
-        "byteCount": 281204
+        "sha256": "1c52d8ce2c31d6b0dd854e76e64d77a486977657c5bd8dce583c9bd24383eaec",
+        "byteCount": 281264
       },
-      "updatedAt": "2026-10-28T12:15:12+08:00"
+      "updatedAt": "2026-10-28T13:50:29+08:00"
     },
     {
       "manifest": {
@@ -1283,7 +1282,7 @@
         "sha256": "54edd883511749ec04bf008a12969e5af5fd50d6ebf978b18e528f538c4ed471",
         "byteCount": 42754
       },
-      "updatedAt": "2026-10-28T12:15:12+08:00"
+      "updatedAt": "2026-10-28T13:50:29+08:00"
     },
     {
       "manifest": {
@@ -1522,7 +1521,7 @@
         "sha256": "78fc1525906ff5f0925c423d8171d13ba01fac1353fd4f4424c93e650f3b12b5",
         "byteCount": 87983
       },
-      "updatedAt": "2026-10-28T12:15:12+08:00"
+      "updatedAt": "2026-10-28T13:50:29+08:00"
     }
   ]
 }

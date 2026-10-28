@@ -603,7 +603,7 @@ export function statusLine(input: Pick<MenuInput, "phase" | "preferences" | "sel
     case "notGranted":
       return "还没授权：打开「代理」点授权";
     case "notInstalled":
-      return input.preferences.singBoxPath ? "设置里填的 sing-box 路径不可用" : "没有找到 sing-box";
+      return input.preferences.singBoxPath ? "设置里选的 sing-box 路径不可用" : "没有找到 sing-box";
     case "noNodes":
       return "没有节点：在设置里填订阅地址";
     case "running":

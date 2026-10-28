@@ -584,7 +584,7 @@ export class ProxyCore {
       }
       const status = await jarvis.daemon.status(DAEMON_ID, executable);
       if (status.executable === "") {
-        return { ok: false, message: preferences.singBoxPath ? `设置里填的 sing-box 路径不可用：${preferences.singBoxPath}` : "没有找到 sing-box：先在「代理」里安装" };
+        return { ok: false, message: preferences.singBoxPath ? `设置里选的 sing-box 路径不可用：${preferences.singBoxPath}` : "没有找到 sing-box：先在「代理」里安装" };
       }
       let nodes = await this.nodes();
       if (nodes.length === 0 && granted.includes("network.https")) {

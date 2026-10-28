@@ -112,7 +112,7 @@ test("填了坏路径：不给安装，指向设置", async () => {
   await activate();
   assert.equal(callsOf(scene, "daemon.status").at(-1).params.executable, "/nowhere/sing-box");
   const note = byKey("bad-path");
-  assert.equal(note.props.title, "设置里填的 sing-box 路径不可用");
+  assert.equal(note.props.title, "设置里选的 sing-box 路径不可用");
   assert.deepEqual(note.props.actions.map((action) => action.id), ["settings"], "装一个新的救不了写错的路径");
   assert.equal(byKey("not-installed"), undefined);
   scene.badPath = null;

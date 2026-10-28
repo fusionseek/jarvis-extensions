@@ -183,8 +183,8 @@ function notes(session: Session, snapshot: Snapshot): UINode[] {
               key: "bad-path",
               tint: "alert",
               symbol: "questionmark.folder",
-              title: "设置里填的 sing-box 路径不可用",
-              body: `${snapshot.preferences.singBoxPath} 不存在或不是可执行文件，文件名必须是 sing-box。改对路径，或者清空它让 Jarvis 自己找（Homebrew 装的会自动找到）。`,
+              title: "设置里选的 sing-box 路径不可用",
+              body: `${snapshot.preferences.singBoxPath} 不存在或不是可执行文件，文件名必须是 sing-box。在设置里重新「选择」一份，或者点「清除」让 Jarvis 自己找（Homebrew 装的会自动找到）。`,
               actions: [action("settings", "打开设置", () => session.openSettings())],
             })
           : ui.note({
