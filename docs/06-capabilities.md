@@ -20,7 +20,7 @@ v2 的目录**只列宿主真的做得到的**：声明得到、调不到的能�
 
 | 属性 | 值 |
 | --- | --- |
-| `sdk.version` | SDK 版本，`2.9.0` |
+| `sdk.version` | SDK 版本，`2.10.0` |
 | `host.version` / `host.channel` | 宿主版本（`CFBundleShortVersionString`）、`release` / `development` |
 | `environment` | `reduceMotion` / `reduceTransparency` / `increaseContrast` / `locale`。界面上的适配由宿主做；这里给出来是让扩展自己的逻辑也能让步 |
 
@@ -85,8 +85,8 @@ manifest `contributes.settings.preferences` 与各服务 `preferences` 里声明
 
 #### `jarvis.menuBar`（菜单栏域，SDK 2.9）
 
-`update(model)`：推一份菜单栏模型——图标（`symbol`，省略 = manifest 的）、图标右侧的短字（`title` ≤ 16 字）、`tooltip`、菜单项 `items`
-（`item` / `separator` / `header` / `submenu`，形状见 [07](07-ui-components.md#菜单栏sdk-29不是第四面)）。不要点头：它只改这个扩展自己那枚图标；
+`update(model)`：推一份菜单栏模型——图标（`symbol`，省略 = manifest 的）、图标右侧的短字（`title` ≤ 16 字；2.10 起可以两行，每行 ≤ 10 字）、`tooltip`、菜单项 `items`
+（`item` / `separator` / `header` / `submenu`，2.10 起还有流量曲线 `chart` 与 `item.tone`，子菜单至多三层；形状见 [07](07-ui-components.md#菜单栏sdk-29不是第四面)）。不要点头：它只改这个扩展自己那枚图标；
 但只对入驻了菜单栏域（`contributes.menuBar`）的扩展放行，别的一律 `surface.unavailable`。
 
 | 规则 | 值 | 为什么 |
@@ -97,6 +97,25 @@ manifest `contributes.settings.preferences` 与各服务 `preferences` 里声明
 | 固定项 | 菜单末尾宿主追加分隔线、「打开「名」」「「名」的设置」，扩展改不掉 | 菜单栏图标是扩展唯一常驻在屏幕上的东西，用户必须总能从它回到 Jarvis 管它的地方 |
 
 事件（`start` / `open` / `select`）落到 `defineExtension({ menuBar })` 的回调，跑在后台会话，见 [12](12-developer-guide.md)。
+
+#### `jarvis.orb`（悬浮球那一层，SDK 2.10）
+
+`update(model | null)`：推一份读数到收起态的悬浮球上；`null` 撤掉。不要点头：它只改悬浮球上属于这个扩展的那一层；但只对声明了 `contributes.orb`
+的扩展放行，别的一律 `surface.unavailable`。本期只有一种读数（jarvis-mac `specs/20261028-111714-proxy-tun-orb-traffic-page-rules` T-6）：
+
+| 字段 | 含义 |
+| --- | --- |
+| `kind` | `"traffic"` |
+| `upload` / `download` | **有效**速率（字节 / 秒，≥ 0）：只算拿到过回包的连接上的字节 |
+| `succeeded` / `failed` | 最近一个窗口里判定了的连接数：宿主据此画外圈一道环的青（成功）/ 红（失败）两段 |
+| `caption` | ≤ 40 字：悬停提示与 VoiceOver 补一句 |
+
+| 规则 | 值 | 为什么 |
+| --- | --- | --- |
+| 画法 | 宿主定：外圈一道成败环；球心本来画产品标识时改画两行速率（下行在上），未读、番茄钟、清理闪示照旧压过它；停靠成细条时不画 | 悬浮球是 Jarvis 的主入口，扩展不画像素 |
+| 合并与过期 | 宿主按 250 ms 合并；**5 秒没有更新自动撤掉** | 后台会话没了，不能让一个停住的读数挂在球上——要它一直在就每秒推一次 |
+| 几个扩展都推 | 画最近推的那一个 | |
+| 用户可以关 | 设置 · 扩展 里「在悬浮球上显示」（默认开，存在 `<id>#host`） | 被关掉时 `update` 照样兑现，只是不画 |
 
 #### `jarvis.log`
 
@@ -192,6 +211,7 @@ v1 的卡片动作与 `dismiss` 已删除（[11](11-inbox.md)）。
 - 方法只认 GET / POST / PUT / DELETE；不带 cookie、不带 Jarvis 的任何凭据；宿主追加 `X-Jarvis-Extension: <id>/<version>`；
 - 响应 ≤ 5 MB、30 秒超时；每分钟 ≤ 60 次。
 - SDK 2.9：manifest `network.preferenceHosts` 点名的 `urlList` 偏好里、用户**此刻**填着的地址，主机一并放行（请求那一刻现读：用户删掉一条，下一次请求就拦）。
+  一个扩展可以点名几项（「代理」点名订阅地址与规则集地址两项）；从别处来的地址（例如导入的配置文件里写着的）要用户自己贴进这几项才放行。
   同样只走 HTTPS、完全相等比较、重定向落点照样核对。为什么认偏好而不认页面里的输入框：偏好的控件是宿主画的，值只可能来自用户亲手输入；
   页面里的输入框扩展自己就能填，宿主分不出是谁写的。
 
@@ -230,6 +250,12 @@ SDK 2.7 的三个选项（给格式化工具这一类「读一份文本、吐一
 
 路径必须与 manifest `files.read` 里的某一个逐字相等（展开 `~`、规整之后比——`~/Library/Logs/mole/../../Keychains/x` 绕不过去）。
 换了 inode 或文件变小 = 被轮转了，由扩展自己从 0 接着读。每分钟 ≤ 1200 次（一次清理要读几百次日志）。
+
+#### `files.pick` — 让用户挑一个文件（SDK 2.10）
+
+`files.pick({ title?, directory?, extensions? })` → `{ name, text }`；用户取消为 `null`。宿主画 `NSOpenPanel`（起点 `directory` 可以用 `~`，
+`extensions` 是可挑的扩展名、不带点），交回文件名与 UTF-8 正文（≤ 4 MiB）——**扩展拿不到路径**。只在前台会话（要用户在场）；每分钟 ≤ 10 次。
+低风险：用户亲手挑的那一份才给，与 `files.read`（manifest 逐字写死几个路径、随时可读）不同。
 
 #### `terminal.run` — 在终端里执行脚本
 
@@ -312,6 +338,56 @@ const proxy = await jarvis.systemProxy.enable({ port: 7890 });
 if (proxy.blocker) showNote(proxy.blocker.message);               // 被 Surge 这类工具拦着：原样告诉用户
 const delay = await jarvis.daemon.request({ id: "sing-box", method: "GET", path: "/proxies/auto/delay?url=…&timeout=5000", headers: { Authorization: `Bearer ${secret}` } });
 ```
+
+#### `daemon.reload` — 换配置不断进程（SDK 2.10）
+
+`daemon.reload({ id, config? })`：宿主重写同一个配置文件，再发 manifest `process.daemons[].reload` 声明的信号（本期只认 `SIGHUP`；sing-box 收到它原进程重载、pid 不变）。
+没声明 `reload` → `capability.undeclared`；没在跑 → `host.failure`。状态保持 `running`——为什么不 `stop` + `start`：系统代理的兜底还原看的是「这个扩展还有没有在跑的常驻进程」，
+停一下再起，中间那一两秒宿主会以为内核没了、把系统代理还原掉。
+
+### 增强模式（TUN，SDK 2.10）
+
+`network.tunnel`（**高风险**）：以管理员身份运行 sing-box 接管整机网络，命令行工具与不认系统代理的应用也走它（jarvis-mac
+`specs/20261028-111714-proxy-tun-orb-traffic-page-rules` T-2…T-4）。TUN 要 root（建 utun、改路由表），所以它是**宿主**的能力，不是「让常驻进程以 root 跑」：
+宿主装一个只做五件事的网络助手（root LaunchDaemon）——收配置、过守卫、填 TUN 段、写进 root 目录、用 root 所有的 sing-box 副本跑它。
+manifest 写 `process.tunnel: { "executable": "sing-box" }`（本期只认 sing-box：宿主的守卫只懂它）。
+
+| 方法 | 说明 |
+| --- | --- |
+| `tunnel.status(executable?)` | `{ state, pid?, startedAt?, exitCode?, signal?, controlPort?, helper: { state: notInstalled / outdated / ready / unreachable, version?, kernelVersion?, kernelSHA256? }, kernel: { executable, matchesInstalled }, blocker? }` |
+| `tunnel.start({ config, controlPort, executable?, excludeRoutes?, stack?, ipv6? })` | 定位 sing-box → 拦截判定 → 网络助手没装 / 版本不对 / 副本与用户那份不是同一版时**当场安装**（系统弹管理员密码框；取消 → `permission.denied`）→ 守卫、填 TUN 段、起内核、等 1.5 秒 |
+| `tunnel.reload(config)` | 换配置不断进程（网络助手重写配置、过守卫、SIGHUP） |
+| `tunnel.stop()` | 停内核，路由表随 sing-box 退出由它自己还原 |
+| `tunnel.logs()` | 最近 500 行 |
+| `tunnel.observe(listener) → Unsubscribe` | 与 `daemon.observe` 同形状的 `output` / `exit` 事件；线缆上参数只有 `{ token }` |
+| `tunnel.request({ method, path, headers?, body?, timeout? })` | 与 `daemon.request` 相同、不带 `id`：只发往 TUN 内核报的 `127.0.0.1:<controlPort>` |
+
+| 规则 | 值 | 为什么 |
+| --- | --- | --- |
+| TUN 段 | **宿主填**：地址 `172.19.0.1/30`（与 IPv6 的一段）、`auto_route`、`strict_route`、协议栈（`stack`，默认 mixed）、不进 TUN 的路由（必加回环、链路本地、组播 + `excludeRoutes` ≤ 256 条）；并强制 `route.auto_detect_interface` | 扩展给不了、也改不了：配置里写 `tun` 入站会被拒 |
+| 守卫 | 拒绝 `log.output`、任意层级以 `_path` 结尾的键与 `data_directory` / `acme`、键 `path`（`transport` 里的 URL 路径除外）、`type: local` 的规则集、非 `mixed` / `http` / `socks` 或不监听回环地址的入站、`set_system_proxy`、`external_ui*`、`v2ray_api`、`cache_file.path`、`endpoints` / `services` / 顶层 `certificate`，以及 Clash API 不在 `127.0.0.1:<controlPort>` 的配置；顶层键只认 `log / dns / ntp / inbounds / outbounds / route / experimental / http_clients` | 它以 root 运行：配置里的任何一个文件路径都是一次以 root 读写任意文件 |
+| 跑哪一份 | 安装那一刻从用户的 sing-box 拷进 `/Library/Application Support/Jarvis Tunnel/` 的副本（root 所有、记下哈希、每次启动前核对）；`brew upgrade` 之后 `kernel.matchesInstalled` 为假，下一次开启时再要一次管理员授权把新版拷进去 | 让 root 执行一个用户可写的文件，等于让任何用户进程把它换掉 |
+| 租约 | 发 `start` 的那条连接就是这次运行的租约：Jarvis 退出、崩溃、被杀，内核**立刻停** | TUN 不会在 Jarvis 不在的时候接着接管整机网络 |
+| 拦截 | 主网卡此刻已经是别人的 `utun`（Surge 增强模式、其他 VPN）：不启动，返回带 `blocker` 的 `stopped` 状态（不抛错） | 两个 TUN 同时接管网络会互相抢路由 |
+| 与系统代理 | 可以共存：`systemProxy.enable` 认「在跑的常驻进程**或** TUN 内核」 | 与 Surge 增强模式相同：认系统代理的应用少绕一次 TUN |
+| 卸载网络助手 | 只在宿主的设置里（设置 · 扩展 · 它那块「网络助手」一行），扩展做不了 | root 的东西，用户必须总能自己卸掉 |
+
+### 浏览器（SDK 2.10）
+
+#### `browser.activeTab` — 读取浏览器当前页
+
+`browser.activeTab()` → `{ browser: { bundleId, name, path }, frontmost, status, url?, title?, message? }`；从没用过任何浏览器为 `null`。
+此刻的前台 App 是浏览器就读它，否则读**最近一次激活过的**浏览器（`frontmost: false`）——点开菜单栏图标不改变前台 App，所以从菜单栏读到的正是用户刚才在看的那一页。
+
+| 规则 | 值 |
+| --- | --- |
+| 支持 | Safari（含 Technology Preview）、Chrome、Edge、Brave、Arc、Vivaldi、Chromium；Firefox → `unsupported`（它没有读地址的 AppleScript） |
+| 读法 | 宿主经 `/usr/bin/osascript` 发一条只读的 Apple Event（2 秒超时）；只读当前标签的地址与标题 |
+| 授权 | 第一次对某个浏览器读时系统弹「“Jarvis”想要控制“Safari”」；拒绝 → `status: denied`，`message` 指到「系统设置 › 隐私与安全性 › 自动化」 |
+| 频率 | 每分钟 ≤ 60 次（菜单每点开一次读一次） |
+| `path` | 浏览器包的路径：Chromium 系的网络进程在包里面，扩展据此在连接表里认它的连接 |
+
+中风险：你在看什么网站，不出本机。
 
 ### Git 操作域（SDK 2.1）
 

@@ -168,16 +168,30 @@ ui.scroll({
 | 模型 | 宿主画成 | 规则 |
 | --- | --- | --- |
 | `symbol` | 状态栏图标（SF Symbol，跟系统深浅色走） | 省略或画不出时退回 manifest `contributes.menuBar.symbol` |
-| `title` | 图标右侧的短字 | ≤ 16 字（速率这类读数）；省略 = 只有图标。别放长句：菜单栏是所有应用共用的一条窄带 |
+| `title` | 图标右侧的短字 | ≤ 16 字（速率这类读数）；省略 = 只有图标。别放长句：菜单栏是所有应用共用的一条窄带。SDK 2.10 起可以**两行**（一个 `\n`、每行 ≤ 10 字），宿主画成 9pt 等宽数字的上下两行——上下行速率那种 |
 | `tooltip` | 悬停提示 | ≤ 80 字 |
-| `{ kind: "item", id, title, subtitle?, symbol?, checked?, enabled? }` | 一行 `NSMenuItem` | `checked` 画系统的勾；`enabled: false` 灰掉、点不了；`subtitle` 是标题下的灰字。点了发 `select`，带回 `id` |
+| `{ kind: "item", id, title, subtitle?, symbol?, checked?, enabled?, tone? }` | 一行 `NSMenuItem` | `checked` 画系统的勾；`enabled: false` 灰掉、点不了；`subtitle` 是标题下的灰字；`tone`（SDK 2.10）：`critical` 画系统红（失败的请求）、`secondary` 画次要色。点了发 `select`，带回 `id` |
 | `{ kind: "separator" }` | 分隔线 | 不带任何别的字段 |
 | `{ kind: "header", title }` | 灰色段标题 | 不可点 |
-| `{ kind: "submenu", title, symbol?, enabled?, items }` | 子菜单 | 至多两层 |
+| `{ kind: "submenu", title, symbol?, enabled?, items }` | 子菜单 | 至多三层（SDK 2.10 起；2.9 是两层）——「当前页面 › 域名 › 走代理 / 直连 / 拒绝」要三层；再深的画成灰的空项 |
+| `{ kind: "chart", series, caption? }`（SDK 2.10） | 菜单顶部一块流量曲线（原生视图，约 240×48，不可点） | `series` 1–2 条 `{ tone: "upload" \| "download", values: [≥ 0]（≤ 120 个，旧的在前） }`，颜色宿主定、两条按最大值统一缩放；`caption` ≤ 80 字画在曲线下面。没有 `id` |
 | （宿主追加） | 分隔线、「打开「名」」「「名」的设置」 | 扩展改不掉：用户必须总能从这枚图标回到 Jarvis 管它的地方 |
 
 整份 ≤ 300 项（含子菜单里的）、文字 ≤ 80 字；超出的部分宿主丢掉并记警告。图标位置由用户 ⌘ 拖动排，系统记住。
-颜色同样不由扩展定：状态用符号换（开着 `network`、关着 `network.slash`、出错 `exclamationmark.triangle`），不用色。
+颜色同样不由扩展定：状态用符号换（开着 `network`、增强模式开着 `network.badge.shield.half.filled`、关着 `network.slash`、出错 `exclamationmark.triangle`），不用色；
+唯一的例外是 `item.tone`——失败的那一行要一眼认出来。
+
+## 悬浮球那一层（SDK 2.10）：不是一面，只有读数
+
+声明了 `contributes.orb` 的扩展可以经 `jarvis.orb.update(model)` 在**收起态**的悬浮球上画一层读数（本期只有 `traffic`）。同样不吃节点树、不画像素：
+
+| 读数 | 宿主画成 |
+| --- | --- |
+| `succeeded` / `failed` | 外圈一道环贴着球缘内侧，从 12 点钟顺时针：青色段 = 成功占比、红色段 = 其余；两者都是 0 时一道淡淡的空环（「开着但没有流量」） |
+| `download` / `upload` | 球心本来要画产品标识时改画两行速率（下行在上，至多 4 个字符：`0`、`512`、`34K`、`1.2M`）；未读、番茄钟、清理闪示照旧压过它 |
+| `caption` | 悬停提示与 VoiceOver 补一句 |
+
+停靠成细条时不画；Reduce Motion 下环的长度直接跳；Increase Contrast 下环加粗、颜色不透明度拉满。5 秒没有更新自动撤掉。
 
 ## Gotchas
 

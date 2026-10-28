@@ -208,6 +208,12 @@ export function checkExtension(dir) {
     }
   }
 
+  // ── TUN 增强模式（SDK 2.10，jarvis-mac specs/20261028-111714-proxy-tun-orb-traffic-page-rules T-4）──
+  // 内核由 schema 钉成 sing-box；这里管它与能力成对：声明得到、跑不起来的能力，用户点了头也走不到那条路。
+  if (has("network.tunnel") !== Boolean(manifest.process?.tunnel)) {
+    problem(dir, "network.tunnel 能力与 process.tunnel 必须同时出现或同时缺席");
+  }
+
   // ── Git 操作域（与宿主 ExtensionManifest.checkGit 同一份）──────────────
   // 变更名不重、格式与个数由 schema 管；这里管 schema 表达不了的两条成对关系。
   const mutations = manifest.git?.mutations ?? [];

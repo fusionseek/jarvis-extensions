@@ -11,14 +11,22 @@
 import type { CapabilityID } from "./manifest.js";
 import type { FileHandle } from "./ui.js";
 import type {
+  BrowserActiveTab,
   DaemonEvent,
+  DaemonReloadRequest,
   DaemonRequest,
   DaemonResponse,
   DaemonStartRequest,
   DaemonStatus,
+  FilesPickRequest,
+  FilesPickResult,
   MenuBarModel,
+  OrbMeterModel,
   SystemProxyEnableRequest,
   SystemProxyStatus,
+  TunnelRequest,
+  TunnelStartRequest,
+  TunnelStatus,
 } from "./bridge.js";
 
 /** 结构化错误码。 */
@@ -161,7 +169,7 @@ export interface MenuBarAPI {
   /**
    * 推一份菜单栏模型（`menuBar.update`）。宿主缓存最后一份、按 250 ms 合并只画最后一份；后台会话被收掉之后图标与菜单照旧在。
    *
-   * @param model 图标、短字、悬停提示与菜单项。超出上限（≤ 300 项、子菜单至多两层）的部分宿主丢掉并记警告，不整份拒绝。
+   * @param model 图标、短字（2.10 起可以两行）、悬停提示与菜单项（2.10 起有流量曲线 `chart`）。超出上限（≤ 300 项、子菜单至多三层）的部分宿主丢掉并记警告，不整份拒绝。
    * @returns 宿主收下即兑现（不等画完）。
    */
   update(model: MenuBarModel): Promise<void>;
@@ -480,6 +488,14 @@ export interface FilesAPI {
   stat(path: string): Promise<FileStat | null>;
   /** `files.read`。从字节偏移 `offset` 起读完整的行，一次 ≤ 1 MB。文件不在时为 `null`。 */
   tail(path: string, offset: number): Promise<FileTail | null>;
+  /**
+   * `files.pick`（SDK 2.10）。宿主画打开面板让用户挑一个文件，交回文件名与 UTF-8 正文（≤ 4 MiB）——**拿不到路径**。
+   * 只在前台会话（要用户在场）；后台会话里 `surface.unavailable`。每分钟 ≤ 10 次。用户取消为 `null`。
+   *
+   * @param request 面板提示、起点目录（可以用 `~`）、可挑的扩展名（不带点）。
+   * @returns 文件名与正文；取消为 `null`。
+   */
+  pick(request?: FilesPickRequest): Promise<FilesPickResult>;
 }
 
 /** 终端。 */
@@ -542,6 +558,15 @@ export interface DaemonAPI {
    */
   request(request: DaemonRequest): Promise<DaemonResponse>;
   /**
+   * 换配置不断进程（SDK 2.10）：宿主重写同一个配置文件，再发 manifest `process.daemons[].reload` 声明的信号（本期只有 SIGHUP）。
+   * 没声明 `reload` → `capability.undeclared`；没在跑 → `host.failure`；声明了 `config` 却没带 → `invalid.argument`。
+   * 状态保持 `running`——系统代理不会被当成「内核没了」还原。工具自己读新配置失败时（sing-box 会留着旧的那份接着跑），错误在它的输出里。
+   *
+   * @param request id 与新的配置正文。
+   * @returns 此刻的状态。
+   */
+  reload(request: DaemonReloadRequest): Promise<DaemonStatus>;
+  /**
    * 订阅它的输出与退出（`daemon.observe` / `daemon.unsubscribe`，token 由 SDK 生成）。输出 100 ms 合批推一次；退出推一条 `exit`。
    * 订阅跟着**这个会话**走：前台页面与后台会话各订各的，会话没了订阅也就没了。宿主拒绝订阅（没授权、没声明）时不抛，记一条 warn。
    *
@@ -553,7 +578,96 @@ export interface DaemonAPI {
 }
 
 /**
- * 系统代理（`system.proxy`）。只能指向本机：主机写死 `127.0.0.1`，且这个扩展此刻必须有一个 `running` 的常驻进程。
+ * TUN 增强模式（`network.tunnel`，SDK 2.10，jarvis-mac `specs/20261028-111714-proxy-tun-orb-traffic-page-rules` T-2…T-4）。
+ *
+ * 以管理员身份运行 sing-box 接管整机网络：命令行工具、不认系统代理的 App 也走它。跑的不是用户目录里那一份，而是**安装那一刻**拷进
+ * root 目录、校验过哈希的副本，由宿主的网络助手（root LaunchDaemon）起停。**第一次打开时**（以及助手版本不对、`brew upgrade` 之后副本不对时）
+ * 宿主当场弹管理员密码框装上 / 换掉它；用户取消 → `permission.denied`。
+ *
+ * 扩展能决定的：配置正文（过守卫）、何时起停、不进 TUN 的路由。宿主硬拦的：TUN 段宿主填、配置里不许有任何文件路径与非回环监听、
+ * 发 `start` 的那条连接是租约——Jarvis 退出、崩溃、被杀，内核立刻停，TUN 不会在 Jarvis 不在的时候接着接管网络。卸载助手只在宿主的设置里，扩展做不了。
+ *
+ * 同一时刻只有一个扩展的内核在跑。与系统代理可以共存：`systemProxy.enable` 认「在跑的常驻进程**或** TUN 内核」。
+ */
+export interface TunnelAPI {
+  /**
+   * 此刻的状态：内核、网络助手、用户那份 sing-box 与副本是不是同一版、有没有别的 VPN 占着主网卡。
+   *
+   * @param executable 用户在偏好里填的 sing-box 路径；省略 = 宿主自动定位。
+   * @returns 状态。
+   */
+  status(executable?: string): Promise<TunnelStatus>;
+  /**
+   * 起 TUN 内核。网络助手没装 / 版本不对 / 副本不对 → 宿主先装（管理员密码），再起。等 1.5 秒：期间退出算启动失败（`host.failure`，`detail` 带输出末尾 20 行）。
+   * 别的 VPN 占着主网卡时**不启动、不拒绝**：返回 `stopped` 且带 `blocker`。配置没过守卫 → `invalid.argument`；已经在跑 → `host.failure`。
+   *
+   * @param request 配置正文、Clash API 端口、sing-box 路径（可省）、不进 TUN 的路由、协议栈、IPv6。
+   * @returns `running` 的状态（或带 `blocker` 的 `stopped`）。
+   */
+  start(request: TunnelStartRequest): Promise<TunnelStatus>;
+  /**
+   * 换配置不断进程：网络助手重写配置、过守卫、SIGHUP（sing-box 原进程重载，pid 不变）。没在跑 → `host.failure`；没过守卫 → `invalid.argument`。
+   *
+   * @param config 新的配置正文。
+   * @returns 此刻的状态。
+   */
+  reload(config: string): Promise<TunnelStatus>;
+  /**
+   * 停内核：路由表随 sing-box 退出由它自己还原。没在跑时照样兑现。订阅者收到一条 `expected: true` 的 `exit`。
+   *
+   * @returns 停下之后的状态。
+   */
+  stop(): Promise<TunnelStatus>;
+  /**
+   * 最近 500 行输出（旧的在前）。
+   *
+   * @returns 输出行。
+   */
+  logs(): Promise<string[]>;
+  /**
+   * 经 TUN 内核的本机控制口说话：与 `daemon.request` 相同，只是不带 `id`。
+   *
+   * @param request 方法、路径、三个可用的请求头、请求体、超时。
+   * @returns 与 `net.fetch` 同一形状的响应。
+   */
+  request(request: TunnelRequest): Promise<DaemonResponse>;
+  /**
+   * 订阅输出与退出（`tunnel.observe` / `tunnel.unsubscribe`），事件形状与 `daemon.observe` 相同。订阅跟着这个会话走。
+   *
+   * @param listener 每来一条调一次。
+   * @returns 取消订阅。
+   */
+  observe(listener: (event: DaemonEvent) => void): Unsubscribe;
+}
+
+/**
+ * 悬浮球那一层（SDK 2.10）。隐式能力——不要点头：它只改悬浮球上属于这个扩展的那一层；但只对声明了 manifest `contributes.orb` 的扩展放行，
+ * 别的一律 `surface.unavailable`。画法宿主定（外圈成败环、球心空着时两行速率），用户可以在 设置 · 扩展 里关掉「在悬浮球上显示」。
+ */
+export interface OrbAPI {
+  /**
+   * 推一份读数（`orb.update`）；`null` 撤掉。宿主按 250 ms 合并，5 秒没有更新自动撤掉——要它一直在就每秒推一次。
+   *
+   * @param model 读数或 `null`。
+   * @returns 宿主收下即兑现。
+   */
+  update(model: OrbMeterModel): Promise<void>;
+}
+
+/** 浏览器（SDK 2.10）。 */
+export interface BrowserAPI {
+  /**
+   * `browser.activeTab`。前台浏览器（不是前台就用最近一次激活过的那个）当前标签的地址与标题，经一条只读的 Apple Event 读：
+   * Safari、Chrome、Edge、Brave、Arc、Vivaldi、Chromium；Firefox 为 `unsupported`。第一次对某个浏览器读时系统弹「自动化」授权。
+   * 每分钟 ≤ 60 次。从没用过任何浏览器为 `null`。
+   *
+   * @returns 读到的那一页与状态。
+   */
+  activeTab(): Promise<BrowserActiveTab>;
+}
+
+/**
+ * 系统代理（`system.proxy`）。只能指向本机：主机写死 `127.0.0.1`，且这个扩展此刻必须有一个 `running` 的常驻进程（SDK 2.10 起或 TUN 内核）。
  *
  * 宿主对每个启用的、有网卡的网络服务设 HTTP / HTTPS（与 SOCKS）代理；没有网卡的服务（VPN / 代理工具自己注册的那种）不碰——往别人的服务里写代理是越界。
  * 接管前每个服务原来的设置存进宿主的库，还原时只还原**此刻仍指着这个端口**的服务（别人在期间改过的不动）。
@@ -856,6 +970,12 @@ export interface Jarvis {
   readonly daemon: DaemonAPI;
   /** SDK 2.9。 */
   readonly systemProxy: SystemProxyAPI;
+  /** SDK 2.10。 */
+  readonly tunnel: TunnelAPI;
+  /** SDK 2.10。 */
+  readonly orb: OrbAPI;
+  /** SDK 2.10。 */
+  readonly browser: BrowserAPI;
   readonly git: GitAPI;
   readonly android: AndroidAPI;
   readonly apps: AppsAPI;

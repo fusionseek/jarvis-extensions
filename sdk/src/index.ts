@@ -17,9 +17,10 @@
  * | 菜单栏（SDK 2.9） | `contributes.menuBar` | `menuBar`（后台会话里的 `start` / `open` / `select`；模型经 `jarvis.menuBar.update` 推） |
  *
  * 能力按命名空间挂在 `jarvis` 上；Android 操作域（`jarvis.android`，SDK 2.4）不是域、不入驻任何东西，只是两项能力；
- * 本机应用（`jarvis.apps`，SDK 2.5）同样只是一项能力 `apps.read`；常驻进程（`jarvis.daemon`）与系统代理（`jarvis.systemProxy`，SDK 2.9）也是。
+ * 本机应用（`jarvis.apps`，SDK 2.5）同样只是一项能力 `apps.read`；常驻进程（`jarvis.daemon`）与系统代理（`jarvis.systemProxy`，SDK 2.9）也是；
+ * TUN 增强模式（`jarvis.tunnel`）、浏览器当前页（`jarvis.browser`）、挑文件（`jarvis.files.pick`，SDK 2.10）也是。
  *
- * 悬浮球不是可入驻的域。
+ * 悬浮球不是可入驻的域：SDK 2.10 起扩展可以经 `jarvis.orb.update` 在收起态的球上画一层读数（manifest `contributes.orb`），但手势、动画与状态仍是固定的。
  */
 import type { EnvironmentInfo, HostInfo, Jarvis, ProcessHandle, ProcessResult, ProcessRunOptions, Unsubscribe } from "./capabilities.js";
 import { JarvisError } from "./capabilities.js";
@@ -37,35 +38,49 @@ export * from "./services.js";
 export * from "./ocr.js";
 export type {
   ActivationContext,
+  BrowserActiveTab,
+  BrowserActiveTabStatus,
   CommandContext,
   CommandSummary,
   CommandTrigger,
   DaemonEvent,
+  DaemonReloadRequest,
   DaemonRequest,
   DaemonRequestMethod,
   DaemonResponse,
   DaemonStartRequest,
   DaemonState,
   DaemonStatus,
+  FilesPickRequest,
+  FilesPickResult,
   HostEvent,
   MenuBarActionItem,
+  MenuBarChart,
+  MenuBarChartSeries,
   MenuBarEvent,
   MenuBarHeader,
   MenuBarItem,
   MenuBarModel,
   MenuBarSeparator,
   MenuBarSubmenu,
+  OrbMeterModel,
   SerializedNode,
   ServiceCall,
   Surface,
   SystemProxyBlocker,
   SystemProxyEnableRequest,
   SystemProxyStatus,
+  TunnelBlocker,
+  TunnelHelperState,
+  TunnelRequest,
+  TunnelStack,
+  TunnelStartRequest,
+  TunnelStatus,
 } from "./bridge.js";
 export { bridgeProtocolVersion } from "./bridge.js";
 
 /** SDK 版本。主版本必须与宿主运行时一致。 */
-export const sdkVersion = "2.9.0";
+export const sdkVersion = "2.10.0";
 
 /** 一面的实现：工具箱页面、原地弹窗或窗口标签。 */
 export interface PageDefinition {
@@ -582,6 +597,8 @@ const call = {
   menuBar: namespaced("menuBar"),
   daemon: namespaced("daemon"),
   systemProxy: namespaced("systemProxy"),
+  tunnel: namespaced("tunnel"),
+  browser: namespaced("browser"),
 };
 
 const sync = {
@@ -731,6 +748,7 @@ export const jarvis: Jarvis = {
   files: {
     stat: (path) => call.files("stat", { path }),
     tail: (path, offset) => call.files("tail", { path, offset }),
+    pick: (request) => call.files("pick", request ?? {}),
   },
   terminal: {
     run: (scriptId) => call.terminal("run", { id: scriptId }),
@@ -742,6 +760,7 @@ export const jarvis: Jarvis = {
     status: (id, executable) => call.daemon("status", executable === undefined ? { id } : { id, executable }),
     logs: (id) => call.daemon("logs", { id }),
     request: (request) => call.daemon("request", request),
+    reload: (request) => call.daemon("reload", request),
     observe: (id, listener) => runtime.subscribe("daemon", "observe", listener as (payload: unknown) => void, { id }),
   },
   // 系统代理（SDK 2.9）：主机由宿主写死 127.0.0.1，扩展只给端口与例外。
@@ -749,6 +768,23 @@ export const jarvis: Jarvis = {
     status: () => call.systemProxy("status"),
     enable: (request) => call.systemProxy("enable", request),
     disable: () => call.systemProxy("disable"),
+  },
+  // TUN 增强模式（SDK 2.10）：入参原样上线缆；守卫、TUN 段、网络助手的安装都在宿主。
+  tunnel: {
+    status: (executable) => call.tunnel("status", executable === undefined ? {} : { executable }),
+    start: (request) => call.tunnel("start", request),
+    reload: (config) => call.tunnel("reload", { config }),
+    stop: () => call.tunnel("stop"),
+    logs: () => call.tunnel("logs"),
+    request: (request) => call.tunnel("request", request),
+    observe: (listener) => runtime.subscribe("tunnel", "observe", listener as (payload: unknown) => void),
+  },
+  // 悬浮球那一层（SDK 2.10）：模型原样就是 params——撤掉时线缆上是 null（不走 namespaced 那个 `?? {}`：{} 会被宿主当成一份坏模型）。
+  orb: {
+    update: (model) => runtime.invoke<void>("orb", "update", model),
+  },
+  browser: {
+    activeTab: () => call.browser("activeTab"),
   },
   git: {
     repositories: () => call.git("repositories"),

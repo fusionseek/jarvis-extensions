@@ -197,6 +197,8 @@ v2 按**域**组织（[01](01-overview.md)）：身份与能力在顶层，入�
 | `process.terminal[]` | 声明了 `terminal.run` 时必填：`{ id, title ≤ 16, script: [行…] }`，1–80 行、每行 ≤ 240 字 | 扩展只能按 id 点名，不能传脚本内容；宿主在前面补 `#!/bin/sh` 与「执行完删掉自己」那一行 |
 | `files.read[]` | 声明了 `files.read` 时必填：1–8 个绝对路径或 `~` 开头的**文件**，不能有通配与 `..` | 宿主展开 `~`、规整之后逐字比；目录读不了 |
 | `process.daemons[]` | SDK 2.9，声明了 `process.daemon` 时必填：1–2 项 `{ id, executable, arguments, config? }`。`id` `^[a-z][a-z0-9-]{0,31}$`；`executable` 规则同 `process.executables[].name`；`arguments` 是**一组** 1–16 个参数，每个 1–64 字、不带空白与 `; & \| \` $ < >`；只认 `{config}`（宿主写下的配置文件绝对路径）与 `{workdir}`（它的工作目录）两个占位符，**必须独占一个参数**、至少用一个；`config: { fileName }` 声明了就必须在参数里用 `{config}`，反之亦然 | 运行时扩展一个参数都传不进来，它能决定的只有配置文件的内容——所以读 manifest 就知道这个进程会以什么命令行常驻。占位符独占一个参数，是因为宿主按整参数替换；至少一个，是因为 Jarvis 崩溃之后宿主靠参数里的工作目录路径认出自己留下的孤儿进程。授权屏逐字念：「会在后台常驻运行：sing-box run -c ‹配置文件› -D ‹工作目录›」 |
+| `process.daemons[].reload` | SDK 2.10，可省：只认 `"SIGHUP"` | 声明了它，`daemon.reload` 才能换配置不断进程（宿主重写配置文件再发这个信号）；没声明 = `daemon.reload` 一律拒绝 |
+| `process.tunnel` | SDK 2.10，声明了 `network.tunnel` 时必填：`{ "executable": "sing-box" }`（本期只认这一个值） | TUN 由宿主的网络助手以 root 跑，配置要过宿主的守卫——守卫只懂 sing-box。跑的是安装时拷进 root 目录、校验过哈希的副本，不是用户目录里那一份。授权屏：「会以管理员身份运行 sing-box 接管整机网络（TUN 增强模式）；第一次打开时要你输一次管理员密码，装上 Jarvis 的网络助手」 |
 | `git.mutations[]` | 声明了 `git.hosting.write` 时必填：1–32 个不重复的 GraphQL 变更名（`^[_A-Za-z][_0-9A-Za-z]*$`，≤ 80 字） | 宿主只执行顶层字段名**都在这里**的变更（别名不算数、顶层不许片段展开）；授权屏写「会以你的身份修改：…」、商店详情一行「Git 变更」逐字列出 |
 
 能力目录见 [06](06-capabilities.md)。隐式能力（`panel.*`、`window.open`、`commands.run`、`storage.*`、`preferences.*`、
@@ -241,6 +243,12 @@ v2 按**域**组织（[01](01-overview.md)）：身份与能力在顶层，入�
 宿主用 `NSStatusItem` + `NSMenu` 画，扩展经 `jarvis.menuBar.update(model)` 推一份声明式模型（[06](06-capabilities.md)、[07](07-ui-components.md)），
 代码跑在后台会话（`defineExtension({ menuBar: { start, open, select } })`）。菜单末尾宿主固定追加「打开「名」」「「名」的设置」：
 菜单栏图标是扩展唯一常驻在屏幕上的东西，用户必须总能从它回到 Jarvis 管它的地方。用户可以在 设置 · 扩展 里关掉「在菜单栏显示」（[10](10-settings.md)）。
+
+#### 悬浮球那一层：`contributes.orb`（SDK 2.10）
+
+`{ "title": "…" }`（1–20 字），一个扩展至多一项。**它不是入口**：只声明它的扩展不合法。声明了它，`jarvis.orb.update(model)` 才放行（隐式能力，不要点头）：
+扩展推读数（本期只有 `traffic`：有效上下行速率与成败连接数），宿主画在收起态的悬浮球上——外圈一道成败环，球心空着时两行速率（[06](06-capabilities.md)）。
+`title` 是 设置 · 扩展 里「在悬浮球上显示」那一行与 VoiceOver 读的名字。悬浮球仍然不是可入驻的域：手势、动画与状态都是固定的，扩展只能画这一层读数。
 
 #### 指令域：`contributes.commands[]`
 
@@ -329,7 +337,7 @@ todo 待办 memo note 速记 记 find 查找 diff compare 对比 比较 gitdiff 
 ### 跨字段规则（validate.mjs 与宿主同一份）
 
 - `network.https` ⇔ `network`（`hosts` 与 `preferenceHosts` 至少一项，schema 管）；`process.run` ⇔ `process.executables`；`terminal.run` ⇔ `process.terminal`；
-  `process.daemon` ⇔ `process.daemons`；`files.read` ⇔ `files`；`git.hosting.write` ⇔ `git.mutations`。
+  `process.daemon` ⇔ `process.daemons`；`network.tunnel` ⇔ `process.tunnel`（SDK 2.10）；`files.read` ⇔ `files`；`git.hosting.write` ⇔ `git.mutations`。
 - `system.proxy` ⇒ `process.daemon`：系统代理只能指向这个扩展自己在跑的常驻进程，没有常驻进程可起的扩展申请到了也永远打不开它。
 - 常驻进程：`id` 不重；含 `{` 或 `}` 的参数必须恰好是 `{config}` 或 `{workdir}`；至少用其中一个；用了 `{config}` ⇔ 声明了 `config`。
 - `network.preferenceHosts` 的每一项都是本扩展（设置域或任一服务）声明的 `urlList` 偏好的 key。

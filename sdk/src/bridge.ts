@@ -144,6 +144,11 @@ export interface MenuBarActionItem {
   checked?: boolean;
   /** 省略 = 可点。 */
   enabled?: boolean;
+  /**
+   * SDK 2.10：字的颜色。`critical` 画系统红（失败的请求）、`secondary` 画次要色（不重要的读数）；省略 = 普通文字色。
+   * 只改颜色，不改可点与否——要灰掉且点不了用 `enabled: false`。
+   */
+  tone?: "critical" | "secondary";
 }
 
 /** 分隔线。不带任何别的字段——带了 schema 就拒：一条分隔线上没有地方放标题。 */
@@ -158,7 +163,10 @@ export interface MenuBarHeader {
   title: string;
 }
 
-/** 子菜单。至多嵌两层；更深的、以及整份模型超过 300 项的部分，宿主丢掉并记一条警告（schema 数不了递归总数）。 */
+/**
+ * 子菜单。至多嵌三层（SDK 2.10 起；2.9 是两层）——「当前页面 › 域名 › 走代理 / 直连 / 拒绝」要三层；
+ * 更深的画成灰的空项，整份模型超过 300 项的部分宿主丢掉并记一条警告（schema 数不了递归总数）。
+ */
 export interface MenuBarSubmenu {
   kind: "submenu";
   /** 1–80 字。 */
@@ -169,8 +177,27 @@ export interface MenuBarSubmenu {
   items: MenuBarItem[];
 }
 
-/** 菜单里的一项：可点的条目、分隔线、段标题或子菜单。 */
-export type MenuBarItem = MenuBarActionItem | MenuBarSeparator | MenuBarHeader | MenuBarSubmenu;
+/** 流量曲线里的一条（SDK 2.10）：`upload` 与 `download` 各一种颜色，颜色宿主定。 */
+export interface MenuBarChartSeries {
+  tone: "upload" | "download";
+  /** ≤ 120 个非负数（旧的在前）。宿主按两条里的最大值统一缩放。 */
+  values: number[];
+}
+
+/**
+ * 菜单顶部那块流量曲线（SDK 2.10，jarvis-mac `specs/20261028-111714-proxy-tun-orb-traffic-page-rules` T-11）：
+ * 宿主用原生视图画（约 240×48），不可点、没有 `id`。
+ */
+export interface MenuBarChart {
+  kind: "chart";
+  /** 1–2 条。 */
+  series: MenuBarChartSeries[];
+  /** ≤ 80 字。画在曲线下面的一行读数（「↓ 1.2 MB/s  ↑ 34 KB/s」）。 */
+  caption?: string;
+}
+
+/** 菜单里的一项：可点的条目、分隔线、段标题、子菜单或流量曲线（SDK 2.10）。 */
+export type MenuBarItem = MenuBarActionItem | MenuBarSeparator | MenuBarHeader | MenuBarSubmenu | MenuBarChart;
 
 /**
  * `jarvis.menuBar.update` 的入参：这个扩展那枚菜单栏图标与它的菜单。
@@ -182,7 +209,10 @@ export type MenuBarItem = MenuBarActionItem | MenuBarSeparator | MenuBarHeader |
 export interface MenuBarModel {
   /** 图标（SF Symbol）。省略 = manifest `contributes.menuBar.symbol`；宿主画不出时同样退回它。 */
   symbol?: string;
-  /** 图标右侧的短字（≤ 16 字，速率之类）。省略 = 只有图标。 */
+  /**
+   * 图标右侧的短字（≤ 16 字，速率之类）。省略 = 只有图标。
+   * SDK 2.10：可以是**两行**——一个 `\n` 分隔、每行 ≤ 10 字，宿主画成 9pt 等宽数字的上下两行（Surge 那种上下行速率）。
+   */
   title?: string;
   /** 悬停提示，≤ 80 字。 */
   tooltip?: string;
@@ -326,6 +356,151 @@ export interface SystemProxyStatus {
   otherName?: string;
   blocker?: SystemProxyBlocker;
 }
+
+// ---------------------------------------------------------------------------
+// SDK 2.10：常驻进程重载、TUN 增强模式、悬浮球那一层、浏览器当前页、挑文件。bridge schema 的
+// `$defs.daemonReloadRequest` / `cidr` / `tunnelStartRequest` / `tunnelReloadRequest` / `tunnelRequest` / `tunnelStatus` /
+// `orbMeterModel` / `browserActiveTab` / `filesPickRequest` / `filesPickResult`。语义见 jarvis-mac
+// `specs/20261028-111714-proxy-tun-orb-traffic-page-rules` T-4…T-10。
+// ---------------------------------------------------------------------------
+
+/**
+ * `jarvis.daemon.reload` 的入参：换配置不断进程。只对 manifest 声明了 `reload` 的常驻进程放行（否则 `capability.undeclared`）；
+ * 声明了 `config` 时必带，宿主重写同一个配置文件（0600）再发声明的信号（本期只有 SIGHUP）。状态保持 `running`。
+ *
+ * 为什么不 `stop` + `start`：系统代理的兜底还原看的是「这个扩展还有没有在跑的常驻进程」——停一下再起，中间那一两秒宿主会以为内核没了、把系统代理还原掉。
+ */
+export interface DaemonReloadRequest {
+  id: string;
+  /** ≤ 4 MiB（按字节由宿主数）。 */
+  config?: string;
+}
+
+/** TUN 的协议栈：`mixed`（默认，TCP 走系统栈、UDP 走 gVisor）、`system`、`gvisor`。 */
+export type TunnelStack = "mixed" | "system" | "gvisor";
+
+/**
+ * `jarvis.tunnel.start` 的入参。
+ *
+ * `config` 是 sing-box 配置正文，**不含 TUN 入站**：TUN 段由宿主填（地址、`auto_route`、`strict_route`、协议栈、不进 TUN 的路由），
+ * 并强制 `route.auto_detect_interface`。正文要过宿主网络助手的守卫——任何文件路径（`log.output`、`*_path`、本地规则集……）、
+ * 监听非回环地址的入站、`external_ui`、`v2ray_api`、Clash API 不在 `127.0.0.1:<controlPort>` 都会以 `invalid.argument` 拒绝，`message` 写明是哪个键。
+ */
+export interface TunnelStartRequest {
+  /** sing-box 配置正文（≤ 4 MiB）。 */
+  config: string;
+  /** 配置里 Clash API 监听的本机端口（`experimental.clash_api.external_controller` 必须恰好是 `127.0.0.1:<它>`）。之后 `tunnel.request` 只发往它。 */
+  controlPort: number;
+  /** 用户填的 sing-box 路径；省略 = 宿主自动定位（规则同 `daemon`）。宿主拿它比对 root 目录里那份副本的哈希，不同就在这次开启时重装副本（又一次管理员授权）。 */
+  executable?: string;
+  /** 不进 TUN 的路由（CIDR，≤ 256 条）：局域网、Surge 的 `tun-excluded-routes` / `bypass-tun`。宿主另外必加回环、链路本地与组播。 */
+  excludeRoutes?: string[];
+  /** 省略 = `mixed`。 */
+  stack?: TunnelStack;
+  /** 省略 = `true`：给 TUN 配一个 IPv6 地址。 */
+  ipv6?: boolean;
+}
+
+/** `jarvis.tunnel.request` 的入参：与 `daemon.request` 相同，但没有 `id`——只发往 TUN 内核报的 `127.0.0.1:<controlPort>`，只在它 `running` 时放行，不经任何代理。 */
+export type TunnelRequest = Omit<DaemonRequest, "id">;
+
+/**
+ * 网络助手此刻的样子：`notInstalled` 没装；`outdated` 装着的版本与这一版 Jarvis 不符（下次开启时重装）；`ready` 就绪；
+ * `unreachable` 装了但连不上（被手动删坏、launchd 没拉起来）。
+ */
+export type TunnelHelperState = "notInstalled" | "outdated" | "ready" | "unreachable";
+
+/** 主网卡此刻已经是别人的 `utun`（Surge 增强模式 / 其他 VPN）：TUN 不启动。`message` 是一句可以原样给用户看的话。 */
+export interface TunnelBlocker {
+  interface: string;
+  serviceName?: string;
+  message: string;
+}
+
+/** `tunnel.start` / `stop` / `status` / `reload` 的返回。 */
+export interface TunnelStatus {
+  /** 同 `DaemonState`。 */
+  state: DaemonState;
+  /** `running` 时必有。 */
+  pid?: number;
+  /** `running` 时必有，Unix 毫秒。 */
+  startedAt?: number;
+  exitCode?: number;
+  signal?: number;
+  /** `running` 时必有。 */
+  controlPort?: number;
+  helper: {
+    state: TunnelHelperState;
+    version?: string;
+    /** root 目录里那份 sing-box 副本的版本（`sing-box version` 第一行里的版本号）。 */
+    kernelVersion?: string;
+    kernelSHA256?: string;
+  };
+  kernel: {
+    /** 此刻定位到的用户那份 sing-box，找不到为空串。 */
+    executable: string;
+    /** 与 root 目录里那份副本哈希相同。为假 = 下次开启会再要一次管理员授权，把新版拷进去（`brew upgrade sing-box` 之后就是这样）。 */
+    matchesInstalled: boolean;
+  };
+  /** 有值 = 别的 VPN / 增强模式正占着主网卡，`start` 没有启动（不抛错，同 `systemProxy.enable` 的拦截）。 */
+  blocker?: TunnelBlocker;
+}
+
+/**
+ * 悬浮球那一层的读数（SDK 2.10，`jarvis.orb.update`）。本期只有 `traffic`：
+ *
+ * - `upload` / `download`：**有效**速率（字节 / 秒，≥ 0）——只算拿到过回包的连接上的字节；
+ * - `succeeded` / `failed`：最近一个窗口里判定了的连接数，宿主据此画外圈的青 / 红两段；
+ * - `caption`（≤ 40 字）：悬停提示与 VoiceOver 补一句（「节点选择 · c95s5」）。
+ *
+ * `null` 撤掉。宿主按 250 ms 合并，**5 秒没有更新自动撤掉**——后台会话没了，不能让一个停住的读数挂在球上。
+ */
+export type OrbMeterModel = {
+  kind: "traffic";
+  upload: number;
+  download: number;
+  succeeded: number;
+  failed: number;
+  caption?: string;
+} | null;
+
+/**
+ * `browser.activeTab()` 读到的状态：`ok` 读到了；`denied` 用户没在「系统设置 › 隐私与安全性 › 自动化」里允许 Jarvis 控制这个浏览器；
+ * `unsupported` 这个浏览器读不了地址（Firefox）；`noWindow` 没有窗口；`unavailable` 读超时或出错（`message` 写原因）。
+ */
+export type BrowserActiveTabStatus = "ok" | "denied" | "unsupported" | "noWindow" | "unavailable";
+
+/**
+ * `browser.activeTab()` 的返回。此刻前台是浏览器就读它，否则读**最近一次激活过的**浏览器（`frontmost: false`）——
+ * 点开菜单栏图标不改变前台 App，所以从菜单栏读到的正是用户刚才在看的那一页。从没用过任何浏览器为 `null`。
+ */
+export type BrowserActiveTab = {
+  browser: {
+    bundleId: string;
+    name: string;
+    /** 浏览器包的路径：Chromium 系的网络进程在包里面，扩展据此在连接表里认它。 */
+    path: string;
+  };
+  frontmost: boolean;
+  status: BrowserActiveTabStatus;
+  /** `ok` 时必有。 */
+  url?: string;
+  title?: string;
+  message?: string;
+} | null;
+
+/** `files.pick` 的入参：宿主画打开面板的起点与可挑的扩展名。 */
+export interface FilesPickRequest {
+  /** ≤ 80 字。面板上的提示。 */
+  title?: string;
+  /** 起点目录，可以用 `~`（用户照样可以去别处挑）。 */
+  directory?: string;
+  /** 可挑的扩展名，不带点（≤ 16 个）。省略 = 任何文件。 */
+  extensions?: string[];
+}
+
+/** `files.pick` 的返回：用户取消为 `null`；否则文件名（**不带路径**——扩展拿不到路径）与 UTF-8 正文（≤ 4 MiB）。 */
+export type FilesPickResult = { name: string; text: string } | null;
 
 /** 宿主 → SDK 的事件。 */
 export type HostEvent =

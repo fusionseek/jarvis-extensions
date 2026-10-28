@@ -21,6 +21,9 @@
  * 菜单栏域（SDK 2.9）由替身自己接住：`menuBar.update` 不用给桩，收下的模型攒在 `menuBarModels`；`menuBarEvent()` 发 `start` / `open` / `select`。
  * 常驻进程与系统代理另有 `fakeDaemons()`：按宿主的规则答 `daemon.*` 与 `systemProxy.*`，`output()` / `crash()` 往订阅者推事件，
  * 进程没了就照宿主兜底把系统代理还原——「内核死了、横幅一条、系统代理已还原」靠它断言。
+ *
+ * SDK 2.10：`orb.update` 同样由替身接住，收下的读数（含撤掉的 `null`）攒在 `orbModels`；`fakeDaemons()` 多答 `daemon.reload` 与 `tunnel.*`——
+ * 网络助手装没装、用户取消管理员授权、别的 VPN 占着主网卡、配置没过守卫（守卫照宿主那张表演了最常见的几条），都能演。
  */
 import type {
   CommitRequest,
@@ -34,10 +37,16 @@ import type {
   MenuBarActionItem,
   MenuBarItem,
   MenuBarModel,
+  OrbMeterModel,
   SerializedNode,
   ServiceCall,
   SystemProxyBlocker,
   SystemProxyStatus,
+  TunnelBlocker,
+  TunnelHelperState,
+  TunnelRequest,
+  TunnelStartRequest,
+  TunnelStatus,
 } from "./bridge.js";
 import type { AndroidApp, AndroidAppDetail, AndroidAppScope, AndroidDevice, AndroidTool, JarvisErrorShape } from "./capabilities.js";
 import { maximumAndroidAppDetailsPerCall } from "./capabilities.js";
@@ -88,6 +97,10 @@ export interface TestHost {
   readonly latestMenuBar: MenuBarModel | undefined;
   /** 在最新一份菜单栏模型里按 id 找一项可点的条目（含子菜单里的）；没有为 `undefined`。 */
   menuItem(id: string): MenuBarActionItem | undefined;
+  /** SDK 2.10：每一份被收下的 `jarvis.orb.update` 读数（撤掉是 `null`），按先后。宿主的 250 ms 合并与 5 秒过期替身不演。 */
+  orbModels: OrbMeterModel[];
+  /** 最新一份悬浮球读数；还没推过为 `undefined`，撤掉了为 `null`。 */
+  readonly latestOrb: OrbMeterModel | undefined;
   /**
    * SDK 2.9：发一次 `menuBar` 事件并等落定。`select` 要带 `itemId`，且这一项必须在最新一份模型里、用户点得到
    * （它与它所在的子菜单都没有 `enabled: false`）——否则抛错：用户点不到的东西，测试也不该点到。
@@ -157,6 +170,7 @@ export function createTestHost(options: TestHostOptions = {}): TestHost {
   const commits: SerializedNode[] = [];
   const surfaces: string[] = [];
   const menuBarModels: MenuBarModel[] = [];
+  const orbModels: OrbMeterModel[] = [];
   const invocations: InvokeRequest[] = [];
   const logs: { level: string; message: string; data: unknown }[] = [];
   let inflight: Promise<unknown>[] = [];
@@ -165,6 +179,7 @@ export function createTestHost(options: TestHostOptions = {}): TestHost {
   // 替身自己接住的隐式能力：给了同名的桩就用桩（演拒绝）。
   const asyncStubs: Record<string, AsyncStub> = {
     "menuBar.update": () => null,
+    "orb.update": () => null,
     ...(options.async ?? {}),
   };
   const syncStubs: Record<string, SyncStub> = {
@@ -198,6 +213,10 @@ export function createTestHost(options: TestHostOptions = {}): TestHost {
     menuItem(id) {
       const latest = menuBarModels[menuBarModels.length - 1];
       return latest ? findMenuItem(latest.items, id)?.item : undefined;
+    },
+    orbModels,
+    get latestOrb() {
+      return orbModels.length === 0 ? undefined : orbModels[orbModels.length - 1];
     },
     async menuBarEvent(event, eventOptions = {}) {
       const granted = eventOptions.granted ?? [];
@@ -300,6 +319,7 @@ export function createTestHost(options: TestHostOptions = {}): TestHost {
           const value = await stub(request.params, host);
           // 宿主只画收下了的那份模型：被拒的不进 menuBarModels。
           if (key === "menuBar.update") menuBarModels.push(request.params as MenuBarModel);
+          if (key === "orb.update") orbModels.push(request.params as OrbMeterModel);
           return { ok: true, value };
         } catch (error) {
           if (isErrorShape(error)) return { ok: false, error };
@@ -515,6 +535,8 @@ export interface FakeDaemonDeclaration {
   located?: string;
   /** manifest 声明了 `config`：`start` 必须带配置正文，没声明却带了同样拒绝。 */
   config?: boolean;
+  /** SDK 2.10：manifest 声明了 `reload: "SIGHUP"`。没声明时 `daemon.reload` 以 `capability.undeclared` 拒绝。 */
+  reload?: boolean;
 }
 
 /** `fakeDaemons()` 认的方法（线缆上的 `namespace.method`）。 */
@@ -526,9 +548,18 @@ export type FakeDaemonMethod =
   | "daemon.request"
   | "daemon.observe"
   | "daemon.unsubscribe"
+  | "daemon.reload"
   | "systemProxy.status"
   | "systemProxy.enable"
-  | "systemProxy.disable";
+  | "systemProxy.disable"
+  | "tunnel.status"
+  | "tunnel.start"
+  | "tunnel.reload"
+  | "tunnel.stop"
+  | "tunnel.logs"
+  | "tunnel.request"
+  | "tunnel.observe"
+  | "tunnel.unsubscribe";
 
 /** `fakeDaemons()` 收到的一次调用。 */
 export interface FakeDaemonCall {
@@ -540,16 +571,18 @@ export interface FakeDaemonCall {
 export interface FakeDaemons {
   /** 声明过的常驻进程。 */
   daemons: FakeDaemonDeclaration[];
-  /** 交给 `createTestHost({ async })` 的桩：`daemon.*` 七个与 `systemProxy.*` 三个。 */
+  /** 交给 `createTestHost({ async })` 的桩：`daemon.*` 八个、`systemProxy.*` 三个与 `tunnel.*` 八个（SDK 2.10）。 */
   readonly stubs: Record<string, AsyncStub>;
   /** 每一次调用（含被拒的），按先后。 */
   readonly calls: FakeDaemonCall[];
-  /** 每个 id 最近一次**起来了的** `start` 交来的配置正文（没带为 `undefined`）：断言生成的配置就看它。 */
+  /** 每个 id 最近一次**起来了的** `start`（或 2.10 的 `reload`）交来的配置正文（没带为 `undefined`）：断言生成的配置就看它。 */
   readonly configs: Record<string, string | undefined>;
-  /** 每一次放行到控制口的 `daemon.request`（被拒的不在这里）。 */
-  readonly requests: DaemonRequest[];
-  /** 控制口的应答。省略时一律 `404`、空正文。 */
-  respond: (request: DaemonRequest) => DaemonResponse | Promise<DaemonResponse>;
+  /** SDK 2.10：每个 id 被 `daemon.reload` 过几次。 */
+  readonly reloads: Record<string, number>;
+  /** 每一次放行到控制口的 `daemon.request` 与 `tunnel.request`（被拒的不在这里；TUN 的没有 `id`）。 */
+  readonly requests: (DaemonRequest | TunnelRequest)[];
+  /** 控制口的应答（常驻进程与 TUN 内核共用）。省略时一律 `404`、空正文。 */
+  respond: (request: DaemonRequest | TunnelRequest) => DaemonResponse | Promise<DaemonResponse>;
   /** 一个常驻进程此刻的状态（与 `daemon.status` 不带 `executable` 时答的一样）。 */
   status(id: string): DaemonStatus;
   /** 它此刻有几个订阅者。 */
@@ -569,6 +602,30 @@ export interface FakeDaemons {
   blockSystemProxy(blocker: SystemProxyBlocker | null): void;
   /** 让另一个扩展接管着系统代理（`enable` 以 `host.failure` 拒绝并写明是谁）；`null` 放手。 */
   claimSystemProxy(otherName: string | null): void;
+  /**
+   * SDK 2.10：TUN 那一侧可以改的东西。`located` 是用户那份 sing-box（空串 = 没装）；`helper` 是网络助手此刻的样子；
+   * `matchesInstalled` 是用户那份与 root 目录里的副本是不是同一版。`start` 遇到没装 / 版本不对 / 副本不对时替身演「当场装好」
+   * （`installs` 加一，`helper` 变 `ready`、`matchesInstalled` 变真），除非 `cancelNextInstall()` 过。
+   */
+  readonly tunnel: { located: string; helper: TunnelHelperState; matchesInstalled: boolean; kernelVersion: string };
+  /** TUN 内核此刻的状态（与 `tunnel.status` 不带 `executable` 时答的一样）。 */
+  tunnelStatus(): TunnelStatus;
+  /** 最近一次起来了的 `tunnel.start` / `tunnel.reload` 的配置正文。 */
+  readonly tunnelConfig: string | undefined;
+  /** 最近一次起来了的 `tunnel.start` 的入参（配置之外的那几项断言看它）。 */
+  readonly tunnelStart: TunnelStartRequest | undefined;
+  /** 替身演了几次安装（每次 = 用户输了一次管理员密码）。 */
+  readonly installs: number;
+  /** `tunnel.reload` 了几次。 */
+  readonly tunnelReloads: number;
+  /** 下一次需要安装时用户取消了管理员授权：`tunnel.start` 以 `permission.denied` 拒绝，什么都没装。 */
+  cancelNextInstall(): void;
+  /** 让主网卡被别的 utun 占着（Surge 增强模式）；`null` 撤掉。占着时 `tunnel.start` 不启动、返回带 `blocker` 的 `stopped`。 */
+  blockTunnel(blocker: TunnelBlocker | null): void;
+  /** TUN 内核打了几行输出。 */
+  tunnelOutput(lines: string[]): void;
+  /** TUN 内核自己死了：状态 `exited`、推一条 `expected: false` 的 `exit`，再没有在跑的内核时照宿主兜底还原系统代理。 */
+  crashTunnel(exit?: { exitCode?: number; signal?: number; lines?: string[] }): void;
 }
 
 /** 替身里一个常驻进程的运行状态。 */
@@ -589,6 +646,56 @@ const daemonRequestHeaders = ["Authorization", "Content-Type", "Accept"];
 const daemonRequestPath = /^(?!.*\/\/)\/[^\s#\\]*$/;
 const maximumDaemonLogLines = 500;
 const daemonExitTailLines = 20;
+/** 与 bridge schema `$defs.cidr` 同一条。 */
+const cidrPattern = /^([0-9]{1,3}(\.[0-9]{1,3}){3}\/[0-9]{1,2}|[0-9A-Fa-f:]+\/[0-9]{1,3})$/;
+/** 宿主网络助手的配置守卫里认的顶层键（jarvis-mac T-4）。 */
+const tunnelTopLevelKeys = ["log", "dns", "ntp", "inbounds", "outbounds", "route", "experimental", "http_clients"];
+
+/**
+ * 替身那一份 TUN 配置守卫：照宿主网络助手那张表演最常见的几条（真守卫在 root 那一侧，见 jarvis-mac T-4）。
+ * 返回第一条违规的说明；通过为 `null`。
+ */
+function tunnelGuardViolation(config: unknown, controlPort: number): string | null {
+  if (typeof config !== "object" || config === null || Array.isArray(config)) return "配置要是一个 JSON 对象";
+  const root = config as Record<string, unknown>;
+  for (const key of Object.keys(root)) if (!tunnelTopLevelKeys.includes(key)) return `顶层键「${key}」不允许`;
+  const log = root.log as Record<string, unknown> | undefined;
+  if (log && "output" in log) return "log.output 不允许：TUN 模式下 sing-box 以管理员身份运行，不能把日志写到任意路径";
+  const visit = (value: unknown, path: string, inTransport: boolean): string | null => {
+    if (Array.isArray(value)) {
+      for (const [index, item] of value.entries()) {
+        const hit = visit(item, `${path}[${index}]`, inTransport);
+        if (hit) return hit;
+      }
+      return null;
+    }
+    if (typeof value !== "object" || value === null) return null;
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      const here = path ? `${path}.${key}` : key;
+      if (key.endsWith("_path") || key === "data_directory" || key === "acme") return `${here} 不允许：以管理员身份读写任意文件`;
+      if (key === "path" && !(inTransport && typeof child === "string" && child.startsWith("/"))) return `${here} 不允许：只有 transport 里的 URL 路径可以叫 path`;
+      const hit = visit(child, here, key === "transport");
+      if (hit) return hit;
+    }
+    return null;
+  };
+  const deep = visit(root, "", false);
+  if (deep) return deep;
+  for (const [index, inbound] of ((root.inbounds as Record<string, unknown>[] | undefined) ?? []).entries()) {
+    if (!["mixed", "http", "socks"].includes(String(inbound.type))) return `inbounds[${index}] 的 type「${String(inbound.type)}」不允许：TUN 段由宿主填`;
+    if (!["127.0.0.1", "::1"].includes(String(inbound.listen))) return `inbounds[${index}] 只能监听回环地址`;
+    if ("set_system_proxy" in inbound) return `inbounds[${index}].set_system_proxy 不允许：系统代理归 system.proxy`;
+  }
+  for (const [index, set] of ((((root.route as Record<string, unknown> | undefined)?.rule_set) as Record<string, unknown>[] | undefined) ?? []).entries()) {
+    if (set.type === "local") return `route.rule_set[${index}] 不能是 local`;
+  }
+  const experimental = (root.experimental ?? {}) as Record<string, unknown>;
+  if ("v2ray_api" in experimental) return "experimental.v2ray_api 不允许";
+  const clash = experimental.clash_api as Record<string, unknown> | undefined;
+  if (clash && Object.keys(clash).some((key) => key.startsWith("external_ui"))) return "experimental.clash_api.external_ui 不允许";
+  if (clash?.external_controller !== `127.0.0.1:${controlPort}`) return `experimental.clash_api.external_controller 必须是 127.0.0.1:${controlPort}`;
+  return null;
+}
 
 /**
  * 装一套常驻进程与系统代理的替身。规则照宿主（`docs/06-capabilities.md`「常驻进程」「系统代理」，jarvis-mac
@@ -610,7 +717,7 @@ const daemonExitTailLines = 20;
 export function fakeDaemons(options: { daemons?: FakeDaemonDeclaration[] } = {}): FakeDaemons {
   const calls: FakeDaemonCall[] = [];
   const configs: Record<string, string | undefined> = {};
-  const requests: DaemonRequest[] = [];
+  const requests: (DaemonRequest | TunnelRequest)[] = [];
   const failures = new Map<FakeDaemonMethod, JarvisErrorShape>();
   const runs = new Map<string, FakeDaemonRun>();
   /** token → 订阅的是哪一个进程。 */
@@ -618,6 +725,16 @@ export function fakeDaemons(options: { daemons?: FakeDaemonDeclaration[] } = {})
   let attached: TestHost | null = null;
   let nextPid = 4242;
   const proxy: { owner: SystemProxyStatus["owner"]; port?: number; otherName?: string; blocker?: SystemProxyBlocker } = { owner: "none" };
+  const reloads: Record<string, number> = {};
+  const tunnelSide = { located: "/opt/homebrew/bin/sing-box", helper: "notInstalled" as TunnelHelperState, matchesInstalled: false, kernelVersion: "1.14.4" };
+  const tunnelRun: FakeDaemonRun = { state: "stopped", logs: [] };
+  const tunnelObservers = new Set<string>();
+  let tunnelConfig: string | undefined;
+  let tunnelStart: TunnelStartRequest | undefined;
+  let tunnelBlocker: TunnelBlocker | undefined;
+  let installs = 0;
+  let tunnelReloads = 0;
+  let cancelInstall = false;
 
   const invalid = (message: string): JarvisErrorShape => ({ code: "invalid.argument", message });
   const failure = (message: string): JarvisErrorShape => ({ code: "host.failure", message });
@@ -677,10 +794,46 @@ export function fakeDaemons(options: { daemons?: FakeDaemonDeclaration[] } = {})
     }
     return status;
   };
-  /** 宿主兜底：主人的常驻进程全部停下或死掉，系统代理还原。 */
+  /** 这个扩展此刻有没有在跑的内核：常驻进程或（2.10）TUN 内核。 */
+  const anyKernelRunning = () => tunnelRun.state === "running" || [...runs.values()].some((current) => current.state === "running");
+  const tunnelStatusOf = (executable?: string): TunnelStatus => {
+    const status: TunnelStatus = {
+      state: tunnelRun.state,
+      helper: { state: tunnelSide.helper },
+      kernel: { executable: executable ?? tunnelSide.located, matchesInstalled: tunnelSide.matchesInstalled },
+    };
+    if (tunnelSide.helper === "ready") {
+      status.helper.version = "1";
+      status.helper.kernelVersion = tunnelSide.kernelVersion;
+    }
+    if (tunnelRun.pid !== undefined) status.pid = tunnelRun.pid;
+    if (tunnelRun.startedAt !== undefined) status.startedAt = tunnelRun.startedAt;
+    if (tunnelRun.exitCode !== undefined) status.exitCode = tunnelRun.exitCode;
+    if (tunnelRun.signal !== undefined) status.signal = tunnelRun.signal;
+    if (tunnelRun.controlPort !== undefined) status.controlPort = tunnelRun.controlPort;
+    if (tunnelBlocker) status.blocker = { ...tunnelBlocker };
+    return status;
+  };
+  const pushTunnel = (event: DaemonEvent) => {
+    if (!attached) return;
+    for (const token of tunnelObservers) attached.emit(token, event);
+  };
+  /** 守卫：正文要是 JSON，再过替身那一份表。 */
+  const guard = (config: unknown, controlPort: number) => {
+    if (typeof config !== "string" || config.length < 2) throw invalid("config 要是非空的配置正文");
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(config);
+    } catch {
+      throw invalid("config 不是合法的 JSON");
+    }
+    const violation = tunnelGuardViolation(parsed, controlPort);
+    if (violation) throw invalid(violation);
+  };
+  /** 宿主兜底：主人的常驻进程（与 TUN 内核）全部停下或死掉，系统代理还原。 */
   const restoreIfOrphaned = () => {
     if (proxy.owner !== "self") return;
-    if ([...runs.values()].some((current) => current.state === "running")) return;
+    if (anyKernelRunning()) return;
     proxy.owner = "none";
     delete proxy.port;
   };
@@ -784,8 +937,8 @@ export function fakeDaemons(options: { daemons?: FakeDaemonDeclaration[] } = {})
       if (bypass !== undefined && (!Array.isArray(bypass) || bypass.length > 64 || bypass.some((entry) => typeof entry !== "string" || !/^\S+$/.test(entry)))) {
         throw invalid("bypass 至多 64 条、每条不带空白");
       }
-      if (![...runs.values()].some((current) => current.state === "running")) {
-        throw failure("这个扩展没有在运行的常驻进程：系统代理指着一个没人监听的端口，等于整机断网");
+      if (!anyKernelRunning()) {
+        throw failure("这个扩展没有在运行的常驻进程或 TUN 内核：系统代理指着一个没人监听的端口，等于整机断网");
       }
       if (proxy.owner === "other") throw failure(`系统代理已由「${proxy.otherName ?? "另一个扩展"}」接管`);
       if (proxy.blocker) return proxyStatus();
@@ -801,6 +954,105 @@ export function fakeDaemons(options: { daemons?: FakeDaemonDeclaration[] } = {})
       }
       return proxyStatus();
     },
+    "daemon.reload": async (params) => {
+      record("daemon.reload", params);
+      const { id, config } = (params ?? {}) as { id?: unknown; config?: unknown };
+      const decl = declaration(id);
+      if (!decl.reload) throw { code: "capability.undeclared", message: `常驻进程「${decl.id}」没有声明 reload` } satisfies JarvisErrorShape;
+      const current = run(decl.id);
+      if (current.state !== "running") throw failure(`常驻进程「${decl.id}」没有在运行`);
+      if (decl.config && typeof config !== "string") throw invalid(`常驻进程「${decl.id}」声明了 config，reload 必须带配置正文`);
+      if (!decl.config && config !== undefined) throw invalid(`常驻进程「${decl.id}」没有声明 config，不收配置正文`);
+      configs[decl.id] = config as string | undefined;
+      reloads[decl.id] = (reloads[decl.id] ?? 0) + 1;
+      return statusOf(decl);
+    },
+    "tunnel.status": async (params) => {
+      record("tunnel.status", params);
+      const { executable } = (params ?? {}) as { executable?: unknown };
+      return tunnelStatusOf(typeof executable === "string" ? executable : undefined);
+    },
+    "tunnel.start": async (params) => {
+      record("tunnel.start", params);
+      const request = (params ?? {}) as TunnelStartRequest;
+      if (tunnelRun.state === "running") throw failure("TUN 内核已经在运行，先 stop");
+      if (!isPort(request.controlPort)) throw invalid("controlPort 必须是 1024–65535 的整数");
+      if (request.excludeRoutes !== undefined) {
+        if (!Array.isArray(request.excludeRoutes) || request.excludeRoutes.length > 256) throw invalid("excludeRoutes 至多 256 条");
+        for (const route of request.excludeRoutes) if (typeof route !== "string" || !cidrPattern.test(route)) throw invalid(`不是 CIDR：${String(route)}`);
+      }
+      if (request.stack !== undefined && !["mixed", "system", "gvisor"].includes(request.stack)) throw invalid(`不认识的协议栈：${String(request.stack)}`);
+      guard(request.config, request.controlPort);
+      const path = request.executable ?? tunnelSide.located;
+      if (path === "") throw failure("找不到 sing-box：先装上它");
+      if (tunnelBlocker) return tunnelStatusOf();
+      if (tunnelSide.helper !== "ready" || !tunnelSide.matchesInstalled) {
+        if (cancelInstall) {
+          cancelInstall = false;
+          throw { code: "permission.denied", message: "没有装上网络助手：管理员授权被取消" } satisfies JarvisErrorShape;
+        }
+        installs += 1;
+        tunnelSide.helper = "ready";
+        tunnelSide.matchesInstalled = true;
+      }
+      settleExit(tunnelRun, {}, "running");
+      tunnelRun.pid = nextPid++;
+      tunnelRun.startedAt = Date.now();
+      tunnelRun.controlPort = request.controlPort;
+      tunnelRun.logs = [];
+      tunnelConfig = request.config;
+      tunnelStart = { ...request };
+      return tunnelStatusOf();
+    },
+    "tunnel.reload": async (params) => {
+      record("tunnel.reload", params);
+      const { config } = (params ?? {}) as { config?: unknown };
+      if (tunnelRun.state !== "running" || tunnelRun.controlPort === undefined) throw failure("TUN 内核没有在运行");
+      guard(config, tunnelRun.controlPort);
+      tunnelConfig = config as string;
+      tunnelReloads += 1;
+      return tunnelStatusOf();
+    },
+    "tunnel.stop": async (params) => {
+      record("tunnel.stop", params);
+      if (tunnelRun.state === "running") {
+        settleExit(tunnelRun, { exitCode: 0 }, "stopped");
+        pushTunnel({ kind: "exit", expected: true, exitCode: 0, lines: tunnelRun.logs.slice(-daemonExitTailLines) });
+        restoreIfOrphaned();
+      }
+      return tunnelStatusOf();
+    },
+    "tunnel.logs": async (params) => {
+      record("tunnel.logs", params);
+      return [...tunnelRun.logs];
+    },
+    "tunnel.request": async (params) => {
+      record("tunnel.request", params);
+      if (typeof params === "object" && params !== null && "id" in params) throw invalid("tunnel.request 不带 id");
+      const request = (params ?? {}) as TunnelRequest;
+      if (!daemonRequestMethods.includes(request.method)) throw invalid(`不认识的方法：${String(request.method)}`);
+      if (typeof request.path !== "string" || !daemonRequestPath.test(request.path)) throw invalid(`路径不合规矩：${String(request.path)}`);
+      for (const name of Object.keys(request.headers ?? {})) {
+        if (!daemonRequestHeaders.includes(name)) throw invalid(`请求头「${name}」不放行：只认 ${daemonRequestHeaders.join(" / ")}`);
+      }
+      if (tunnelRun.state !== "running") throw failure("TUN 内核没有在运行");
+      requests.push(request);
+      return fake.respond(request);
+    },
+    "tunnel.observe": async (params, host) => {
+      record("tunnel.observe", params);
+      const { token } = (params ?? {}) as { token?: unknown };
+      if (typeof token !== "string" || token === "") throw invalid("token 不能为空");
+      attached = host;
+      tunnelObservers.add(token);
+      return null;
+    },
+    "tunnel.unsubscribe": async (params) => {
+      record("tunnel.unsubscribe", params);
+      const { token } = (params ?? {}) as { token?: unknown };
+      if (typeof token === "string") tunnelObservers.delete(token);
+      return null;
+    },
   };
 
   const fake: FakeDaemons = {
@@ -808,6 +1060,7 @@ export function fakeDaemons(options: { daemons?: FakeDaemonDeclaration[] } = {})
     stubs,
     calls,
     configs,
+    reloads,
     requests,
     respond: () => ({ status: 404, headers: {}, text: "" }),
     status(id) {
@@ -848,6 +1101,39 @@ export function fakeDaemons(options: { daemons?: FakeDaemonDeclaration[] } = {})
       proxy.owner = "other";
       proxy.otherName = otherName;
       delete proxy.port;
+    },
+    tunnel: tunnelSide,
+    tunnelStatus() {
+      return tunnelStatusOf();
+    },
+    get tunnelConfig() {
+      return tunnelConfig;
+    },
+    get tunnelStart() {
+      return tunnelStart;
+    },
+    get installs() {
+      return installs;
+    },
+    get tunnelReloads() {
+      return tunnelReloads;
+    },
+    cancelNextInstall() {
+      cancelInstall = true;
+    },
+    blockTunnel(blocker) {
+      tunnelBlocker = blocker ? { ...blocker } : undefined;
+    },
+    tunnelOutput(lines) {
+      appendLogs(tunnelRun, lines);
+      pushTunnel({ kind: "output", lines: [...lines] });
+    },
+    crashTunnel(exit = {}) {
+      if (exit.lines) appendLogs(tunnelRun, exit.lines);
+      const how = exit.signal !== undefined ? { signal: exit.signal, ...(exit.exitCode !== undefined ? { exitCode: exit.exitCode } : {}) } : { exitCode: exit.exitCode ?? 1 };
+      settleExit(tunnelRun, how, "exited");
+      pushTunnel({ kind: "exit", expected: false, ...how, lines: tunnelRun.logs.slice(-daemonExitTailLines) });
+      restoreIfOrphaned();
     },
   };
   return fake;

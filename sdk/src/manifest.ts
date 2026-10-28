@@ -38,6 +38,15 @@ export type CapabilityID =
    * 且这个扩展此刻必须有一个在跑的常驻进程；进程没了、扩展停用 / 卸载、Jarvis 退出或崩溃之后，宿主自己还原。
    */
   | "system.proxy"
+  /**
+   * TUN 增强模式（SDK 2.10）：以管理员身份运行 sing-box 接管整机网络，要 manifest `process.tunnel`。第一次打开时用户输一次管理员密码，
+   * 装上 Jarvis 的网络助手；跑的是安装时拷进 root 目录、校验过哈希的副本，配置过宿主的守卫、TUN 段由宿主填。
+   */
+  | "network.tunnel"
+  /** 读前台（或最近一次激活的）浏览器当前标签的地址与标题（SDK 2.10）。经一条只读的 Apple Event，系统「自动化」授权。 */
+  | "browser.activeTab"
+  /** 让用户在宿主画的打开面板里挑一个文件交给扩展读（SDK 2.10）：只拿到文件名与正文，拿不到路径。 */
+  | "files.pick"
   /** Git 操作域：读 Jarvis 最近打开过的仓库（名字与远端身份，不给本机路径）。要入驻 Git 域。 */
   | "git.repository.read"
   /** Git 操作域：经宿主的 Git 服务执行**只读** GraphQL、读 token 的身份与权限范围；token 不交给扩展。要入驻 Git 域。 */
@@ -69,9 +78,12 @@ export type CapabilityTier = "low" | "medium" | "high";
  *
  * SDK 2.9 的两项都是高：常驻进程与 `process.run` 一样继承 Jarvis 的全部系统权限，还一直跑着；
  * 系统代理改的是整台机器的网络出口，浏览器与大部分应用的流量从此先经过这个扩展起的进程。
+ *
+ * SDK 2.10：TUN 是高（以管理员身份跑、接管全部流量）；读浏览器当前页是中（你在看什么网站，不出本机）；挑文件是低（用户亲手挑、只给这一份）。
  */
 export const capabilityTiers: Readonly<Record<CapabilityID, CapabilityTier>> = {
   "system.openURL": "low",
+  "files.pick": "low",
   "ocr.recognize": "low",
   "speech.speak": "low",
   "android.tools.open": "low",
@@ -85,6 +97,7 @@ export const capabilityTiers: Readonly<Record<CapabilityID, CapabilityTier>> = {
   "git.hosting.read": "medium",
   "android.apps.read": "medium",
   "apps.read": "medium",
+  "browser.activeTab": "medium",
   "screenshot.capture": "high",
   "network.https": "high",
   "quickTransfer.control": "high",
@@ -94,6 +107,7 @@ export const capabilityTiers: Readonly<Record<CapabilityID, CapabilityTier>> = {
   "terminal.run": "high",
   "process.daemon": "high",
   "system.proxy": "high",
+  "network.tunnel": "high",
   "git.hosting.write": "high",
 };
 
@@ -255,12 +269,23 @@ export interface MenuBarContribution {
   symbol: string;
 }
 
+/**
+ * 悬浮球那一层（SDK 2.10）：扩展经 `jarvis.orb.update` 推读数，宿主画在收起态的悬浮球上（外圈成败环、球心空着时两行速率）。
+ * **不是入口域**：只声明它的扩展不合法。用户可以在 设置 · 扩展 里关掉「在悬浮球上显示」。
+ */
+export interface OrbContribution {
+  /** 1–20 字。设置页那个开关与 VoiceOver 里这一层的名字，例如「代理流量」。 */
+  title: string;
+}
+
 /** 扩展入驻的域。至少要有工具箱、窗口、指令、服务、菜单栏之一。 */
 export interface Contributes {
   toolbox?: ToolboxContribution;
   window?: WindowContribution;
   /** 菜单栏域（SDK 2.9）。一个扩展至多一枚图标。 */
   menuBar?: MenuBarContribution;
+  /** 悬浮球那一层（SDK 2.10）。不是入口。 */
+  orb?: OrbContribution;
   commands?: CommandSpec[];
   settings?: SettingsContribution;
   services?: ServiceContribution[];
@@ -309,6 +334,13 @@ export interface DaemonDeclaration {
   arguments: string[];
   /** 声明了它，`daemon.start` 就必须带配置正文（≤ 4 MiB），宿主写到 `{workdir}/<fileName>`（0600），停止后删掉。参数里要有 `{config}`。 */
   config?: { fileName: string };
+  /** SDK 2.10：声明了它，`daemon.reload` 才能换配置不断进程——宿主重写配置文件再发这个信号。本期只认 `SIGHUP`。 */
+  reload?: "SIGHUP";
+}
+
+/** TUN 增强模式的内核（SDK 2.10，配 `network.tunnel`）。本期只认 sing-box：宿主的配置守卫只懂它。 */
+export interface TunnelDeclaration {
+  executable: "sing-box";
 }
 
 /** 受限执行。 */
@@ -319,6 +351,8 @@ export interface ProcessDeclaration {
   terminal?: TerminalScriptDeclaration[];
   /** 配 `process.daemon`（SDK 2.9），至多 2 个。 */
   daemons?: DaemonDeclaration[];
+  /** 配 `network.tunnel`（SDK 2.10）。 */
+  tunnel?: TunnelDeclaration;
 }
 
 /**
@@ -369,7 +403,7 @@ export interface ExtensionManifest {
   capabilities: CapabilityRequest[];
   /** 声明了 `network.https` 时必填。 */
   network?: NetworkDeclaration;
-  /** 声明了 `process.run` / `terminal.run` / `process.daemon` 时必填。 */
+  /** 声明了 `process.run` / `terminal.run` / `process.daemon` / `network.tunnel` 时必填。 */
   process?: ProcessDeclaration;
   /** 声明了 `files.read` 时必填。 */
   files?: { read: string[] };

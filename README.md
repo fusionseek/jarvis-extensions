@@ -12,7 +12,8 @@ Jarvis 的开放平台：这个仓库就是**扩展商店**。Jarvis 工具箱�
 | 设置 | `contributes.settings` | 设置 › 扩展 里它那块面板，控件由宿主画 |
 | 服务 | `contributes.services` | 没有界面；扩展一个内置能力（`junkClean.engine`：设置 › 清理 里多一个清理引擎；`project.engine`：Jarvis「项目」的数据来源） |
 | Git | `contributes.git` | 不是入口；Git 设置对应托管服务下它的「关联」区段，Git 操作域的能力（`git.*`）只给入驻了它的扩展 |
-| 菜单栏（SDK 2.9） | `contributes.menuBar` | 系统菜单栏上它自己的一枚图标与菜单（宿主用原生 `NSMenu` 画，扩展推声明式模型） |
+| 菜单栏（SDK 2.9） | `contributes.menuBar` | 系统菜单栏上它自己的一枚图标与菜单（宿主用原生 `NSMenu` 画，扩展推声明式模型；2.10 起有两行标题、流量曲线、三层子菜单） |
+| 悬浮球那一层（SDK 2.10） | `contributes.orb` | 不是入口；收起态悬浮球上的一层读数（外圈成败环、球心两行速率），画法宿主定 |
 | Inbox（通道） | `inbox` | 一条 Inbox 消息 / 一条系统横幅 |
 
 ```text

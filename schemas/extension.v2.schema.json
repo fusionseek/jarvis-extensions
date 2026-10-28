@@ -146,7 +146,7 @@
     },
     "capabilityID": {
       "type": "string",
-      "description": "能力目录见 docs/06-capabilities.md。只列宿主真的做得到的；隐式能力（panel.* / storage.* / preferences.* / text.* / time.* / color.* / window.open / service.* / host.* / log）不在这里声明。git.* 三项是 Git 操作域：声明任一项都要入驻 Git 域（contributes.git），git.hosting.write 还要逐字写出 git.mutations。android.* 两项是 Android 操作域：宿主经自己的 adb 跑它写死的那几条命令（列设备、列应用、读应用名与图标），扩展只给设备序列号与包名、不给参数；android.tools.open 把一个包名交给内置的「APK 扫描」「数据导出」。apps.read 读这台 Mac 装了哪些应用（名字、Bundle ID、位置、分类、最近打开 / 添加时刻）：宿主自己扫三处应用目录，扩展不给路径；打开、删除应用由用户在 Jarvis 全局搜索里点，扩展做不了。 process.daemon 是常驻进程（manifest process.daemons 逐字声明可执行文件与一组参数；宿主托管它的生死、只放行发往它自己控制口的本机请求），system.proxy 把系统代理指向本机 127.0.0.1 的一个端口（要求这个扩展此刻有一个在跑的常驻进程；进程没了宿主自动还原）——jarvis-mac specs/20261028-091917-proxy-extension-menubar-daemon。",
+      "description": "能力目录见 docs/06-capabilities.md。只列宿主真的做得到的；隐式能力（panel.* / storage.* / preferences.* / text.* / time.* / color.* / window.open / service.* / host.* / log）不在这里声明。git.* 三项是 Git 操作域：声明任一项都要入驻 Git 域（contributes.git），git.hosting.write 还要逐字写出 git.mutations。android.* 两项是 Android 操作域：宿主经自己的 adb 跑它写死的那几条命令（列设备、列应用、读应用名与图标），扩展只给设备序列号与包名、不给参数；android.tools.open 把一个包名交给内置的「APK 扫描」「数据导出」。apps.read 读这台 Mac 装了哪些应用（名字、Bundle ID、位置、分类、最近打开 / 添加时刻）：宿主自己扫三处应用目录，扩展不给路径；打开、删除应用由用户在 Jarvis 全局搜索里点，扩展做不了。 process.daemon 是常驻进程（manifest process.daemons 逐字声明可执行文件与一组参数；宿主托管它的生死、只放行发往它自己控制口的本机请求），system.proxy 把系统代理指向本机 127.0.0.1 的一个端口（要求这个扩展此刻有一个在跑的常驻进程或 TUN 内核；都没了宿主自动还原）——jarvis-mac specs/20261028-091917-proxy-extension-menubar-daemon。SDK 2.10（jarvis-mac specs/20261028-111714-proxy-tun-orb-traffic-page-rules）：network.tunnel 以管理员身份运行 sing-box 接管整机网络（TUN 增强模式，要 manifest process.tunnel；第一次打开时用户输一次管理员密码装上 Jarvis 的网络助手，配置过宿主的守卫、TUN 段由宿主填）；browser.activeTab 读前台（或最近一次激活的）浏览器当前标签的地址与标题（系统「自动化」授权）；files.pick 让用户在宿主画的打开面板里挑一个文件交给扩展读（只拿到文件名与正文，拿不到路径）。",
       "enum": [
         "clipboard.read",
         "clipboard.write",
@@ -166,6 +166,9 @@
         "terminal.run",
         "process.daemon",
         "system.proxy",
+        "network.tunnel",
+        "browser.activeTab",
+        "files.pick",
         "git.repository.read",
         "git.hosting.read",
         "git.hosting.write",
@@ -237,7 +240,7 @@
     },
     "process": {
       "type": "object",
-      "description": "受限执行。executables 配 process.run，terminal 配 terminal.run，daemons 配 process.daemon。宿主只放行这里逐字写出的可执行文件、参数组合与脚本。",
+      "description": "受限执行。executables 配 process.run，terminal 配 terminal.run，daemons 配 process.daemon，tunnel 配 network.tunnel（SDK 2.10）。宿主只放行这里逐字写出的可执行文件、参数组合与脚本。",
       "minProperties": 1,
       "properties": {
         "executables": {
@@ -265,6 +268,19 @@
           "items": {
             "$ref": "#/$defs/daemon"
           }
+        },
+        "tunnel": {
+          "type": "object",
+          "description": "TUN 增强模式（SDK 2.10，配 network.tunnel）：宿主的网络助手以管理员身份运行哪一个内核。本期只认 sing-box——宿主的配置守卫只懂它。跑的是安装那一刻从用户的 sing-box 拷进 root 目录、校验过哈希的副本，不是用户目录里那一份。",
+          "required": [
+            "executable"
+          ],
+          "properties": {
+            "executable": {
+              "const": "sing-box"
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -380,7 +396,7 @@
     },
     "contributes": {
       "type": "object",
-      "description": "扩展入驻的域。至少要有工具箱、窗口、指令、服务、菜单栏之一——只有设置的扩展没有入口；Git 域也不是入口，它只决定扩展在 Git 里出现在哪、碰得到哪些托管服务。",
+      "description": "扩展入驻的域。至少要有工具箱、窗口、指令、服务、菜单栏之一——只有设置的扩展没有入口；Git 域也不是入口，它只决定扩展在 Git 里出现在哪、碰得到哪些托管服务；悬浮球那一层（orb，SDK 2.10）同样不是入口。",
       "anyOf": [
         {
           "required": [
@@ -417,6 +433,9 @@
         },
         "menuBar": {
           "$ref": "#/$defs/menuBar"
+        },
+        "orb": {
+          "$ref": "#/$defs/orb"
         },
         "commands": {
           "type": "array",
@@ -967,6 +986,12 @@
             }
           },
           "additionalProperties": false
+        },
+        "reload": {
+          "description": "SDK 2.10：声明了它，daemon.reload 就能换配置不断进程——宿主重写同一个配置文件，再发这个信号（本期只认 SIGHUP）。没声明 = daemon.reload 一律拒绝。",
+          "enum": [
+            "SIGHUP"
+          ]
         }
       },
       "additionalProperties": false
@@ -991,6 +1016,22 @@
           "pattern": "^[A-Za-z0-9.-]+$",
           "minLength": 1,
           "maxLength": 64
+        }
+      },
+      "additionalProperties": false
+    },
+    "orb": {
+      "type": "object",
+      "description": "悬浮球那一层（SDK 2.10）：扩展经 jarvis.orb.update 推一份读数（本期只有 traffic：有效上下行速率与最近一个窗口的成败连接数），宿主画在收起态的悬浮球上——外圈一道成败环，球心空着时两行速率。画法宿主定；5 秒没有更新自动撤掉；用户可以在 设置 · 扩展 里关掉「在悬浮球上显示」。它不是入口域：只有它的扩展不合法。",
+      "required": [
+        "title"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "设置页那个开关与 VoiceOver 里这一层的名字，例如「代理流量」。",
+          "minLength": 1,
+          "maxLength": 20
         }
       },
       "additionalProperties": false

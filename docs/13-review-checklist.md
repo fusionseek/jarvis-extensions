@@ -18,7 +18,7 @@
 - [ ] CI · `contributes` 至少入驻工具箱、窗口、指令、服务、菜单栏之一
 - [ ] CI · 跨字段：`network.https` ⇔ `network.hosts`；`process.run` ⇔ `process.executables`；`terminal.run` ⇔ `process.terminal`；
       `files.read` 能力 ⇔ `files.read` 路径；`inbox.messages` ⇔ `inbox.post`；`inbox.notifications` ⇔ `notifications.post`；
-      `git.hosting.write` ⇔ `git.mutations`；声明了 `git.*` 能力 ⇒ 入驻 Git 域；`process.daemon` ⇔ `process.daemons`；`system.proxy` ⇒ `process.daemon`；
+      `git.hosting.write` ⇔ `git.mutations`；声明了 `git.*` 能力 ⇒ 入驻 Git 域；`process.daemon` ⇔ `process.daemons`；`system.proxy` ⇒ `process.daemon`；`network.tunnel` ⇔ `process.tunnel`（SDK 2.10）；
       常驻进程的占位符只认 `{config}` / `{workdir}`、独占一个参数、至少一个、`{config}` ⇔ `config`；`network.preferenceHosts` 只点名本扩展的 `urlList`
 - [ ] CI · 命令：id 唯一、快捷键不重复、带快捷键 ⇔ 声明 `hotkeys.register`；落点 `toolbox` / `popover` 要有工具箱域、`window` 要有窗口域；
       `silent` 至少有 `clipboard.write` / `notifications.post` / `inbox.post` 之一
@@ -56,6 +56,16 @@
 - [ ] 意外退出（`expected: false`）有交代：横幅或页面上一句话；不在退出事件里无条件重启（宿主不自动重启，扩展也别写成死循环）
 - [ ] `systemProxy.enable` 的返回值看了 `blocker`：被别的工具拦着时把那句话原样给用户，不当成已经开了
 - [ ] `network.preferenceHosts` 点名的 `urlList` 在 README 里写清会访问的是什么（订阅地址），以及为什么默认进钥匙串
+
+### 增强模式、悬浮球、浏览器、挑文件（SDK 2.10）
+
+- [ ] `network.tunnel`：生成 TUN 配置的代码读一遍——不写 `tun` 入站（宿主填）、不写任何文件路径（守卫会拒，但审核要看出作者是不是在试探边界）、
+      入站只监听 `127.0.0.1`；`excludeRoutes` 的来源说得清（局域网 + 用户导入的配置）
+- [ ] `network.tunnel`：被拦着（`blocker`）、用户取消管理员授权（`permission.denied`）、`kernel.matchesInstalled` 为假这三种情形各有一句话给用户，不当成已经开了
+- [ ] `daemon.reload` / `tunnel.reload`：规则变化走重载，不在每次改规则时 `stop` + `start`（那会让宿主还原系统代理一下）
+- [ ] `contributes.orb`：每秒推一次、停了推 `null`；读数的口径（什么算成功、什么算失败）写在源码或 README 里
+- [ ] `browser.activeTab`：只在用户动作（点开菜单、按「读取当前页面」）时读，不在循环里轮询；读到的地址不出本机、不写进存储
+- [ ] `files.pick`：只在用户按下的那个按钮里调；读到的正文里有凭据（配置文件常见）时，存下来的转换结果里不能带凭据
 
 ### Git 操作域（声明了 `git.*` 的扩展）
 

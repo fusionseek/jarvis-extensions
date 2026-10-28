@@ -52,13 +52,15 @@ extensions/<id>/
    - 有不用打开界面就能做完的一步 → `commands`（`/` 指令、快捷键；落点 `toolbox` / `window` / `popover` / `silent`）；
    - 要扩展一个内置能力（清理引擎）→ `services`，没有界面；
    - 有一件一直在后台的事、要用户随手看一眼或点一下（开关、切换）→ `menuBar`（SDK 2.9，系统菜单栏上自己的一枚图标）；
+     有一个随时都想瞄一眼的读数（流量这类）→ 再声明 `contributes.orb`（SDK 2.10，悬浮球上的一层读数，不是入口）；
    - 要让用户调东西 → `settings.preferences`（服务的设置写在服务自己的 `preferences` 里）。
 2. **能力**：把你会调用的每一个 `jarvis.*` 对应到 [06](06-capabilities.md) 的 `CapabilityID`，每项一句 `reason`（4–60 字，写"拿它做什么"）。
    用到 `net.fetch` 就把主机写进 `network.hosts`；要访问的是用户自己填的地址（订阅地址）就声明一项 `urlList` 偏好，
    再在 `network.preferenceHosts` 里点名它（SDK 2.9）。
 3. **受限执行**（只在真的要跑命令时）：`process.executables` 逐个写可执行文件名与**每一组**参数；
    `files.read` 逐个写文件路径；`process.terminal` 写脚本正文；要一直跑着的（代理内核这类）写 `process.daemons`：一组参数逐字，
-   只认 `{config}` / `{workdir}` 两个占位符（SDK 2.9）。**最小、逐字**：审核者会一行一行读它们（[13](13-review-checklist.md)）。
+   只认 `{config}` / `{workdir}` 两个占位符（SDK 2.9）；换配置不想断进程就再声明 `reload: "SIGHUP"`（SDK 2.10）；要以管理员身份接管整机网络（TUN）
+   写 `process.tunnel: { "executable": "sing-box" }` 并声明 `network.tunnel`（SDK 2.10）。**最小、逐字**：审核者会一行一行读它们（[13](13-review-checklist.md)）。
 4. **Inbox**：静默命令要交结果的写 `{ messages, notifications }`；否则 `false`。
 
 ```bash
@@ -181,11 +183,22 @@ assert.equal(host.menuItem("toggle").checked, true);
 
 ```ts
 import { createTestHost, fakeDaemons } from "@fusionseek/jarvis-extension-sdk/testing";
-const daemons = fakeDaemons({ daemons: [{ id: "sing-box", config: true }] });
+// SDK 2.10：`reload: true` 让 daemon.reload 放行；同一个替身还答 tunnel.*（网络助手装没装、cancelNextInstall()、blockTunnel()、守卫）。
+const daemons = fakeDaemons({ daemons: [{ id: "sing-box", config: true, reload: true }] });
 const host = createTestHost({ async: { ...daemons.stubs } });
 daemons.respond = (request) => ({ status: 200, headers: {}, text: "{}" });
 daemons.crash("sing-box", { signal: 9 });          // 订阅者收到 expected: false 的 exit；系统代理回到没人接管
 ```
+
+SDK 2.10 的替身另外接住 `orb.update`：收下的读数（撤掉是 `null`）攒在 `host.orbModels` / `host.latestOrb`；`browser.activeTab` 与 `files.pick` 是普通能力，自己给桩：
+
+```ts
+const host = createTestHost({ async: { ...daemons.stubs, "browser.activeTab": () => tab, "files.pick": () => ({ name: "a.conf", text: "…" }) } });
+daemons.tunnel.helper = "ready";              // 网络助手装好了；"notInstalled" 时 tunnel.start 演「当场装」（daemons.installs + 1）
+daemons.blockTunnel({ interface: "utun4", message: "…" }); // 别的 VPN 占着主网卡
+assert.equal(host.latestOrb?.kind, "traffic");
+```
+
 
 ### 第五步：构建与校验
 
@@ -241,5 +254,6 @@ cd ../.. && npm install && npm run verify
 - [06 · 能力接口目录](06-capabilities.md)
 - [13 · 审核清单](13-review-checklist.md)
 - [`templates/hello-extension`](../templates/hello-extension)（工具箱 + 指令）、[`extensions/http-status`](../extensions/http-status)（工具箱 + 窗口 + 弹窗 + 设置）、
-  [`extensions/mole-clean`](../extensions/mole-clean)（服务 + 受限执行）、[`extensions/proxy`](../extensions/proxy)（菜单栏 + 常驻进程 + 系统代理，SDK 2.9）
+  [`extensions/mole-clean`](../extensions/mole-clean)（服务 + 受限执行）、[`extensions/proxy`](../extensions/proxy)（菜单栏 + 常驻进程 + 系统代理，SDK 2.9；增强模式、悬浮球读数、浏览器当前页、挑文件，SDK 2.10）
 - `jarvis-mac/specs/20261028-091917-proxy-extension-menubar-daemon/spec.md`（菜单栏域、常驻进程、系统代理的规则全文）
+- `jarvis-mac/specs/20261028-111714-proxy-tun-orb-traffic-page-rules/spec.md`（增强模式与网络助手、悬浮球那一层、浏览器当前页、挑文件、菜单栏加法的规则全文）

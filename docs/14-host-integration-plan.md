@@ -6,7 +6,8 @@
 在 `jarvis-mac` 的 Speckit feature `specs/20261011-193606-extension-domains-service-engines/` 里落地；
 Git 域、Git 操作域与项目引擎（SDK 2.1）在 `specs/20261015-123126-github-project-management/` 里落地，见文末「第二轮」；
 Android 操作域与行首图标（SDK 2.4）在 `specs/20261017-170440-issue-derive-app-scan/` 里落地，见「第三轮」；
-菜单栏域、常驻进程、按用户填的地址联网与系统代理（SDK 2.9）在 `specs/20261028-091917-proxy-extension-menubar-daemon/` 里落地，见「第七轮」。
+菜单栏域、常驻进程、按用户填的地址联网与系统代理（SDK 2.9）在 `specs/20261028-091917-proxy-extension-menubar-daemon/` 里落地，见「第七轮」；
+增强模式（TUN）与网络助手、悬浮球那一层、浏览器当前页、挑文件、常驻进程重载与菜单栏加法（SDK 2.10）在 `specs/20261028-111714-proxy-tun-orb-traffic-page-rules/`，见「第八轮」。
 扩展作者读它，是为了知道每一条规则在宿主哪一个类型里被执行；宿主开发者读它，是为了改动时知道牵动哪几处。
 
 文件名保留 `14-host-integration-plan.md`：其余文档、PR 模板与 jarvis-mac 的引用都指向这个名字，改名只会多出一批死链。
@@ -304,6 +305,27 @@ GitHub Projects v2 的全部专属知识做成扩展 [`github-project`](../exten
 | SDK 2.9 | 本仓 `sdk/src/`：`MenuBarModel` / `MenuBarItem` / `MenuBarEvent`、`DaemonStartRequest` / `DaemonStatus` / `DaemonEvent` / `DaemonRequest` / `DaemonResponse`、`SystemProxyEnableRequest` / `SystemProxyStatus`（`bridge.ts`）；`jarvis.menuBar` / `jarvis.daemon` / `jarvis.systemProxy`（`capabilities.ts`、`index.ts`，`daemon.observe` 经订阅带 `{ id, token }`）；`defineExtension({ menuBar: { start, open, select } })` 与 `menuBar` 事件分派（`index.ts`）；能力与档位、`DaemonDeclaration`、`NetworkDeclaration`、`MenuBarContribution`、偏好 `urlList`（`manifest.ts`）；替身 `menuBarModels` / `menuBarEvent()` / `menuItem()` 与 `fakeDaemons()`（`testing.ts`）；只追加 |
 | 扩展 | [`extensions/proxy`](../extensions/proxy)「代理」：工具箱、窗口、菜单栏、指令、设置；`process.daemon`、`system.proxy`、`network.https`（`preferenceHosts`）、`terminal.run`（`brew install sing-box`）等 |
 
+### 第八轮：增强模式、悬浮球那一层、浏览器当前页、挑文件（spec `20261028-111714-proxy-tun-orb-traffic-page-rules`）
+
+| 条目 | 改动 | 要点 |
+| --- | --- | --- |
+| T-2 / T-3 | 网络助手 `JarvisTunnelHelper`（root LaunchDaemon） | 独立的小可执行目标；第一次开 TUN 时经管理员授权安装（`osascript … with administrator privileges`，不用 `SMAppService`：本机构建是 ad-hoc）；只跑 root 目录里校验过哈希的 sing-box 副本；套接字属主 = 安装者、`getpeereid` 核对；发 `start` 的连接是租约，断了即停；卸载只在设置里 |
+| T-4 | 新能力 `network.tunnel`（高）、`tunnel.*` | 宿主填 TUN 段并强制 `auto_detect_interface`；配置守卫在 root 那一侧（白名单顶层键 + 拒绝一切文件路径与非回环监听）；拦截判定（主网卡是别人的 utun）；`systemProxy.enable` 认「常驻进程或 TUN 内核」 |
+| T-5 | `daemon.reload` | manifest `process.daemons[].reload: "SIGHUP"`；重写配置再发信号，状态保持 running |
+| T-6 | `contributes.orb` + `orb.update`（隐式） | 收起态悬浮球：外圈成败环、球心两行速率；250 ms 合并、5 秒过期；设置里「在悬浮球上显示」（`<id>#host` 的 `orb.visible`） |
+| T-8 | 新能力 `browser.activeTab`（中） | 前台或最近一次激活的浏览器；`osascript` 子进程读一条只读 Apple Event；`NSAppleEventsUsageDescription` 与 automation entitlement |
+| T-9 | 新能力 `files.pick`（低） | `NSOpenPanel`，只在前台会话；只交文件名与正文 |
+| T-11 | 菜单栏模型加法 | 两行标题、`chart` 项、`item.tone`、子菜单三层 |
+| T-12 | `urlList` 多行粘贴 | 粘贴多行按行拆成多条 |
+
+| 产物 | 位置 |
+| --- | --- |
+| manifest | 本仓 `schemas/extension.v2.schema.json`：能力 +3（`network.tunnel`、`browser.activeTab`、`files.pick`）、`process.tunnel`、`process.daemons[].reload`、`contributes.orb`（不是入口） |
+| 线缆 | `jarvis-mac/contracts/schemas/extensions/bridge.v2.schema.json`：`$defs.daemonReloadRequest` / `cidr` / `tunnelStartRequest` / `tunnelReloadRequest` / `tunnelRequest` / `tunnelStatus` / `orbMeterModel` / `browserActiveTab` / `filesPickRequest` / `filesPickResult`，`menuBarItem` 的 `chart` 与 `tone`、`menuBarModel` 的两行标题；网络助手的套接字协议 `contracts/schemas/tunnel-helper/helper.v1.schema.json` |
+| 校验 | 本仓 `scripts/validate.mjs`：`network.tunnel` ⇔ `process.tunnel` |
+| SDK 2.10 | 本仓 `sdk/src/`：`TunnelStartRequest` / `TunnelStatus` / `TunnelRequest` / `OrbMeterModel` / `BrowserActiveTab` / `FilesPickRequest` / `FilesPickResult` / `DaemonReloadRequest` / `MenuBarChart`（`bridge.ts`）；`jarvis.tunnel` / `jarvis.orb` / `jarvis.browser` / `jarvis.daemon.reload` / `jarvis.files.pick`（`capabilities.ts`、`index.ts`，`orb.update(null)` 线缆上就是 `null`）；替身 `orbModels` / `latestOrb` 与 `fakeDaemons()` 的 `daemon.reload` / `tunnel.*`（`testing.ts`）；只追加 |
+| 扩展 | [`extensions/proxy`](../extensions/proxy)（1.0.0 首发即含）：增强模式与 TUN 规则适配、导入 Surge 配置、当前页面规则、悬浮球上的有效流量与成败、Surge 式菜单栏 |
+
 ## Usage
 
 - 扩展作者：遇到一条规则想知道"是谁在拦"，按上表找到类型名，在 `jarvis-mac` 里读它的文档注释——每条规则都写了为什么。
@@ -322,5 +344,6 @@ GitHub Projects v2 的全部专属知识做成扩展 [`github-project`](../exten
 - `jarvis-mac/specs/20261015-123126-github-project-management/`（第二轮：Git 域、Git 操作域、项目引擎；`research.md` 是 GitHub GraphQL 的实测）
 - `jarvis-mac/specs/20261017-170440-issue-derive-app-scan/`（第三轮：Android 操作域、`row.image`）
 - `jarvis-mac/specs/20261028-091917-proxy-extension-menubar-daemon/`（第七轮：菜单栏域、常驻进程、本机控制口、按用户填的地址联网、系统代理、主库 v33）
+- `jarvis-mac/specs/20261028-111714-proxy-tun-orb-traffic-page-rules/`（第八轮：增强模式与网络助手、悬浮球那一层、浏览器当前页、挑文件、常驻进程重载、菜单栏加法）
 - `jarvis-mac/docs/foundation/extensions.md`、`docs/foundation/junk-clean.md`
 - [02 · 框架层级设计](02-architecture.md)、[05 · 能力授权模型](05-permissions.md)、[10 · 设置域与服务扩展点](10-settings.md)
