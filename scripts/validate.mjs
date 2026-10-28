@@ -214,6 +214,14 @@ export function checkExtension(dir) {
     problem(dir, "network.tunnel 能力与 process.tunnel 必须同时出现或同时缺席");
   }
 
+  // ── 菜单栏自己的设置（jarvis-mac specs/20261028-130540-proxy-walkthrough-fixes W-1，与宿主 ExtensionManifestValidation 同一份）──
+  // 个数与不重复由 schema 管；这里管「点名的 key 必须是设置域里声明过的」：宿主要把它们从通用偏好里挪到「在菜单栏显示」下面。
+  const menuBarPreferences = contributes.menuBar?.preferences ?? [];
+  const declaredPreferenceKeys = new Set((contributes.settings?.preferences ?? []).map((preference) => preference.key));
+  for (const key of menuBarPreferences) {
+    if (!declaredPreferenceKeys.has(key)) problem(dir, `contributes.menuBar.preferences 点名的「${key}」不在 contributes.settings.preferences 里`);
+  }
+
   // ── Git 操作域（与宿主 ExtensionManifest.checkGit 同一份）──────────────
   // 变更名不重、格式与个数由 schema 管；这里管 schema 表达不了的两条成对关系。
   const mutations = manifest.git?.mutations ?? [];

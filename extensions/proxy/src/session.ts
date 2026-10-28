@@ -11,7 +11,7 @@ import { allCapabilities, errorMessage, ProxyCore, tunnelCapability, type Action
 import { renderPage } from "./page.js";
 import type { PolicyRef } from "./rules.js";
 import type { ProxyMode } from "./singbox-config.js";
-import { describeFailure, normalizeSelection, requiredCapability, type GroupView, type PageView } from "./status.js";
+import { describeFailure, requiredCapability, type GroupView, type PageView } from "./status.js";
 import { storageKeys } from "./store.js";
 import { TrafficMeter, type TrafficReading } from "./traffic.js";
 
@@ -26,6 +26,9 @@ const maximumLogLines = 500;
 
 /** 点了「在终端中安装」之后等多久：与 Mole 那一份相同，10 分钟够 Homebrew 下完再装完。 */
 const installWaitMs = 10 * 60 * 1000;
+
+/** 状态段那块曲线留多少个点（一秒一个）：与菜单顶部那块同长。 */
+export const chartPoints = 60;
 
 export class Session {
   readonly core = new ProxyCore(() => jarvis.ui.update());
@@ -46,6 +49,8 @@ export class Session {
   /** 这一页自己的成败统计（「连接」页的失败列表、状态段的读数）。 */
   readonly meter = new TrafficMeter();
   reading: TrafficReading | null = null;
+  /** 状态段那块曲线：这一页开着以来最近 60 秒的有效速率（旧的在前，jarvis-mac `specs/20261028-130540-proxy-walkthrough-fixes` W-3）。页面关掉就丢。 */
+  history: { upload: number[]; download: number[] } = { upload: [], download: [] };
   /** 「规则」页里读到的当前页面；没读过为 `null`。 */
   currentPage: PageView | null = null;
   private sample: TrafficSample | null = null;
@@ -65,6 +70,7 @@ export class Session {
     this.surface = context.surface;
     this.generation += 1;
     const generation = this.generation;
+    await this.core.migrateTunSelection();
     await this.refresh();
     this.observe();
     if (!this.unwatch) this.unwatch = jarvis.preferences.onChange((changes) => void this.onPreferencesChanged(changes));
@@ -83,22 +89,16 @@ export class Session {
     this.sample = null;
     this.rate = null;
     this.reading = null;
+    this.history = { upload: [], download: [] };
     this.meter.reset();
   }
 
   /**
-   * 偏好变了：「开启时用增强模式」被改过，就让它重新说了算（丢掉菜单里拨过的那一次）；「规则集地址」变了就去拉一遍。
+   * 偏好变了：重读、重画；「规则集地址」变了就去拉一遍。
+   * 「增强模式」被设置页改了时换内核的是后台会话（它常驻、只有它一处换，见 `Background.onPreferencesChanged`），这里只跟着重画。
    * @param changes 变了的几项。
    */
   private async onPreferencesChanged(changes: Record<string, unknown>): Promise<void> {
-    if ("tun" in changes) {
-      try {
-        const selection = normalizeSelection(await jarvis.storage.get(storageKeys.selection));
-        await jarvis.storage.set(storageKeys.selection, { ...selection, tun: null });
-      } catch {
-        // 存储坏了：照旧按拨过的那一次。
-      }
-    }
     if ("ruleSets" in changes && this.snapshot?.granted.includes("network.https")) {
       const result = await this.core.updateRuleSets();
       if (result.message) this.message = result;
@@ -116,6 +116,7 @@ export class Session {
         this.rate = null;
         this.connections = null;
         this.reading = null;
+        this.history = { upload: [], download: [] };
         this.meter.reset();
       }
       if (this.installingSince !== null && (snapshot.phase !== "notInstalled" || Date.now() - this.installingSince > installWaitMs)) {
@@ -183,7 +184,13 @@ export class Session {
           this.rate = trafficRate(this.sample, sample) ?? this.rate;
           this.sample = sample;
           this.connections = snapshot;
-          this.meter.ingestSnapshot(snapshot, now);
+          const effective = this.meter.ingestSnapshot(snapshot, now);
+          if (effective) {
+            this.history = {
+              upload: [...this.history.upload, effective.upload].slice(-chartPoints),
+              download: [...this.history.download, effective.download].slice(-chartPoints),
+            };
+          }
           this.reading = this.meter.reading(now);
           jarvis.ui.update();
         }

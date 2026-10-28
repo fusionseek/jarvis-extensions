@@ -57,7 +57,9 @@ test("增强模式没打开过：菜单那一项写着第一次要管理员密�
   assert.match(tun.subtitle, /第一次打开要输一次管理员密码/);
   assert.equal(tun.checked, false);
   await select("tun");
-  assert.equal(storage.get("selection").tun, true);
+  assert.equal(scene.preferences.tun, true, "拨的是偏好本身：设置页那一项同时变开（W-6）");
+  assert.deepEqual(scene.preferenceWrites.at(-1), { key: "tun", value: true });
+  assert.equal(storage.get("selection")?.tun ?? null, null, "不再另记一份");
   assert.equal(item("tun").checked, true, "关着时勾 = 下次开启用它");
   assert.match(scene.notifications.at(-1).body, /下次开启代理时用增强模式/);
   assert.equal(callsOf(scene, "tunnel.start").length, 0);
@@ -200,10 +202,41 @@ test("/proxy tun 与 /proxy 系统代理", async () => {
   await reset();
   host.dispatch({ type: "command", context: { id: "toggle", trigger: "slash", scope: "launcher", argument: "tun", granted: scene.granted, preferences: scene.preferences } });
   await idle(scene);
-  assert.equal(storage.get("selection").tun, true);
+  assert.equal(scene.preferences.tun, true, "/proxy tun 写的也是偏好本身");
   host.dispatch({ type: "command", context: { id: "toggle", trigger: "slash", scope: "launcher", argument: "系统代理", granted: scene.granted, preferences: scene.preferences } });
   await idle(scene);
-  assert.equal(storage.get("selection").tun, false);
+  assert.equal(scene.preferences.tun, false);
+});
+
+test("设置页改「增强模式」：代理开着时后台会话当场换内核；自己写的那一次回声不再换一次", async () => {
+  await reset();
+  await select("toggle");
+  assert.equal(daemons.status("sing-box").state, "running", "偏好关着：系统代理模式");
+  const startsBefore = callsOf(scene, "tunnel.start").length;
+  // 设置页（宿主）写的：没有 tunSwitch 那一笔。
+  scene.changePreferences({ tun: true });
+  await idle(scene);
+  assert.equal(daemons.tunnelStatus().state, "running", "设置页与工具箱同一份真源：改哪边都当场生效");
+  assert.equal(daemons.status("sing-box").state, "stopped");
+  assert.equal(callsOf(scene, "tunnel.start").length, startsBefore + 1, "只换了一次");
+
+  // 菜单里拨回去：写偏好 + 自己换；回声到后台会话时认出 tunSwitch，不再换。
+  const daemonStarts = callsOf(scene, "daemon.start").length;
+  await select("tun");
+  await idle(scene);
+  assert.equal(scene.preferences.tun, false);
+  assert.equal(daemons.status("sing-box").state, "running");
+  assert.equal(callsOf(scene, "daemon.start").length, daemonStarts + 1, "回声不再起第二次");
+  await select("toggle");
+});
+
+test("上一版拨过的 selection.tun：后台会话起来时搬进偏好再清掉", async () => {
+  await reset();
+  storage.map.set("selection", JSON.stringify({ mode: "rule", node: "自动选择", tun: true, groups: {} }));
+  await menu("start");
+  assert.equal(scene.preferences.tun, true);
+  assert.equal(storage.get("selection").tun, null);
+  scene.preferences = { ...scene.preferences, tun: false };
 });
 
 test("菜单「导入 Surge 配置」「规则」经窗口命令打开（挑文件要用户在场）", async () => {

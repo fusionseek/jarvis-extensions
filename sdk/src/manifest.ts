@@ -267,6 +267,11 @@ export interface MenuBarContribution {
   title: string;
   /** SF Symbol。还没收到任何模型时（应用刚启动、后台会话还没起来）画它。 */
   symbol: string;
+  /**
+   * 这枚图标自己的设置（SDK 2.10，jarvis-mac `specs/20261028-130540-proxy-walkthrough-fixes` W-1）：`contributes.settings.preferences`
+   * 里 1–6 项的 key。宿主把它们从通用偏好里拿出来，画在设置页「在菜单栏显示」那一行下面（图标关着时置灰）。
+   */
+  preferences?: string[];
 }
 
 /**

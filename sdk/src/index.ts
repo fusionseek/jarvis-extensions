@@ -680,6 +680,9 @@ export const jarvis: Jarvis = {
   preferences: {
     get: (key) => call.preferences("get", { key }),
     all: () => call.preferences("all"),
+    set: async (key, value) => {
+      await call.preferences("set", { key, value });
+    },
     onChange: (listener) => runtime.subscribe("preferences", "observe", listener as (payload: unknown) => void),
   },
   permissions: {

@@ -286,6 +286,40 @@ export class TrafficMeter {
 }
 
 /**
+ * 菜单栏标题这一段攒够了没有：攒够 `interval` 个点（每秒一个）就交回平均值，否则 `null`（W-2：「更新频率可以调整，1 秒 - 60 秒之间」）。
+ * @param window 这一段攒下的和与个数。
+ * @param interval 偏好 `speedInterval`（1–60 秒）。
+ * @returns 平均有效速率；还没攒够为 `null`。
+ */
+export function titleAverage(window: { upload: number; download: number; count: number }, interval: number): { upload: number; download: number } | null {
+  const needed = Math.min(60, Math.max(1, Math.round(interval)));
+  if (window.count < needed) return null;
+  return { upload: window.upload / window.count, download: window.download / window.count };
+}
+
+/**
+ * 菜单栏那两行的速率写法：**恰好 4 个字符**（jarvis-mac `specs/20261028-130540-proxy-walkthrough-fixes` W-2）——
+ * 一律以 K 为最小单位、1024 进位，不足 4 位左侧补空格：`0.0K`、`0.5K`、`1.2K`、` 34K`、`512K`、`1.2M`、` 12M`、`1.1G`。
+ *
+ * 仓库主人：「数字一直在跳，这块改成固定 4 个字符显示」。宿主用等宽字体画这两行，字数不变宽度就不变；
+ * 上一版 `shortRate` 是 1–4 个字符（`0`、`512`、`34K`），状态项宽度跟着读数伸缩。
+ * @param bytesPerSecond 字节 / 秒。
+ * @returns 4 个字符。
+ */
+export function fixedRate(bytesPerSecond: number): string {
+  const units = ["K", "M", "G", "T"];
+  let value = Math.max(0, Number.isFinite(bytesPerSecond) ? bytesPerSecond : 0) / 1024;
+  let unit = 0;
+  // 进位看的是「写出来的数」：9.96K 四舍五入成 10.0 已经是 5 个字符，得写成 ` 10K`；999.6K 写出来是 1000，得进到 M。
+  while (Math.round(value) >= 1000 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const digits = Math.round(value * 10) / 10 < 10 ? (Math.round(value * 10) / 10).toFixed(1) : `${Math.min(999, Math.round(value))}`;
+  return `${digits}${units[unit]}`.padStart(4, " ");
+}
+
+/**
  * 球心那两行的速率写法：至多 4 个字符——`0`、`512`、`34K`、`1.2M`、`12M`、`1.1G`（宿主画，这里给悬停提示与菜单用同一种写法）。
  * @param bytesPerSecond 字节 / 秒。
  * @returns 短字。

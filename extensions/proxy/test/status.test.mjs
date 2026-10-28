@@ -172,8 +172,15 @@ test("菜单：关着、出错、没装、没授权、被拦着、速率", () =>
   assert.equal(busy.items[0].title, "正在测速");
   assert.equal(items(busy.items).find((item) => item.id === "toggle").enabled, false);
 
+  // 还没有有效读数时用总流量那一份，形状同样是两行、每行箭头 + 4 个字符（W-2：宿主用等宽字体画，宽度不跳）。
   const speed = buildMenuModel(input({ preferences: normalizePreferences({ showSpeed: true }), rate: { up: 36 * 1024, down: 1.2 * 1024 * 1024 } }));
-  assert.equal(speed.title, "↓1.2M ↑36K");
+  assert.equal(speed.title, "↓1.2M\n↑ 36K");
+  const averaged = buildMenuModel(input({ preferences: normalizePreferences({ showSpeed: true, speedInterval: 5 }), rate: { up: 1, down: 1 }, titleRate: { upload: 512, download: 34 * 1024 } }));
+  assert.equal(averaged.title, "↓ 34K\n↑0.5K", "按间隔平均的那一份优先");
+  assert.equal(normalizePreferences({ speedInterval: 0 }).speedInterval, 1);
+  assert.equal(normalizePreferences({ speedInterval: 61 }).speedInterval, 60);
+  assert.equal(normalizePreferences({ speedInterval: "5" }).speedInterval, 1, "类型不对回到默认");
+  assert.equal(normalizePreferences({}).speedInterval, 1);
 });
 
 test("菜单：节点太多时截到上限、整份不超过 300 项；长名字剪到 80 字、不补省略号", () => {
@@ -245,7 +252,7 @@ test("Surge 式菜单：几百个节点、七个策略组、八个页面域名�
   walk(model.items);
   for (const id of ids) assert.match(id, /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/);
   assert.equal(new Set(ids).size, ids.length, "id 不重");
-  assert.equal(model.title, "↓1.2M\n↑34K");
+  assert.equal(model.title, "↓1.2M\n↑ 34K");
   assert.ok(model.title.split("\n").every((line) => line.length <= 10));
   assert.equal(model.items[0].kind, "chart");
   assert.equal(model.symbol, "network.badge.shield.half.filled");

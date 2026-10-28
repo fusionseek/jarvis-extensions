@@ -7,7 +7,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { loadSource } from "./support.mjs";
 
-const { TrafficMeter, parseLogLine, splitHostPort, shortRate } = await loadSource();
+const { TrafficMeter, parseLogLine, splitHostPort, shortRate, fixedRate, titleAverage } = await loadSource();
 
 /** 一条连接的几行日志（`timestamp: true` 的写法）。 */
 const lines = (id, source, target, { dial = true, process = "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper" } = {}) => [
@@ -98,4 +98,34 @@ test("球心的短写：至多 4 个字符", () => {
   assert.equal(shortRate(12 * 1024 * 1024), "12M");
   assert.equal(shortRate(1.1 * 1024 ** 3), "1.1G");
   for (const value of [0, 999, 1000, 1023, 9.96 * 1024, 999 * 1024, 1024 ** 3 * 999]) assert.ok(shortRate(value).length <= 4, `${value} → ${shortRate(value)}`);
+});
+
+test("菜单栏的速率：恰好 4 个字符，K 起步、左侧补空格（W-2「固定 4 个字符显示，不要老跳」）", () => {
+  const table = [
+    [0, "0.0K"],
+    [512, "0.5K"],
+    [1.2 * 1024, "1.2K"],
+    [9.96 * 1024, " 10K"],
+    [34 * 1024, " 34K"],
+    [512 * 1024, "512K"],
+    [999.6 * 1024, "1.0M"],
+    [1.2 * 1024 * 1024, "1.2M"],
+    [12 * 1024 * 1024, " 12M"],
+    [1.1 * 1024 ** 3, "1.1G"],
+    [Number.NaN, "0.0K"],
+    [-5, "0.0K"],
+  ];
+  for (const [value, expected] of table) assert.equal(fixedRate(value), expected, `${value}`);
+  for (let exponent = 0; exponent < 50; exponent += 1) {
+    const value = 1.37 ** exponent * 700;
+    assert.equal(fixedRate(value).length, 4, `${value} → 「${fixedRate(value)}」`);
+  }
+});
+
+test("菜单栏速率按间隔取平均：攒够 speedInterval 个点才换（1–60 秒，越界夹住）", () => {
+  assert.deepEqual(titleAverage({ upload: 10, download: 20, count: 1 }, 1), { upload: 10, download: 20 });
+  assert.equal(titleAverage({ upload: 10, download: 20, count: 4 }, 5), null, "还差一秒");
+  assert.deepEqual(titleAverage({ upload: 50, download: 100, count: 5 }, 5), { upload: 10, download: 20 });
+  assert.deepEqual(titleAverage({ upload: 3, download: 3, count: 1 }, 0), { upload: 3, download: 3 }, "0 秒夹成 1 秒");
+  assert.equal(titleAverage({ upload: 60, download: 60, count: 60 }, 600) !== null, true, "600 秒夹成 60 秒");
 });

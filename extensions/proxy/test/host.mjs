@@ -182,6 +182,19 @@ export async function createProxyHost() {
     terminal: [],
     opened: [],
     permissionRequests: [],
+    /** 扩展经 `preferences.set` 写过的（jarvis-mac specs/20261028-130540-proxy-walkthrough-fixes W-6），按先后。 */
+    preferenceWrites: [],
+    /** `preferences.onChange` 的订阅 token。 */
+    preferenceObservers: new Set(),
+    /**
+     * 偏好变了（设置页改的、或扩展经 `preferences.set` 写的）：与宿主一样，重画事件 + 推给每个 `onChange` 订阅。
+     * @param {Record<string, unknown>} changes 变了的几项。
+     */
+    changePreferences(changes) {
+      scene.preferences = { ...scene.preferences, ...changes };
+      host.dispatch({ type: "preferencesChanged", changes });
+      for (const token of scene.preferenceObservers) host.emit(token, changes);
+    },
     /** 宿主认为不存在的那个路径（`daemon.status` 对它答空串）。 */
     badPath: null,
     /** `browser.activeTab()` 答什么（SDK 2.10）；`null` = 从没用过浏览器。 */
@@ -211,6 +224,15 @@ export async function createProxyHost() {
         return { granted: ids, denied: [] };
       },
       "preferences.all": async () => ({ ...scene.preferences }),
+      // 宿主的规则（ExtensionPreferenceWritePolicy）：只认开关 / 单选 / 数字；写完与设置页编辑同一条通知，所有会话（含写的那一个）收一次。
+      "preferences.set": async ({ key, value }) => {
+        if (key === "subscriptions" || key === "ruleSets" || key === "singBoxPath" || key === "testURL") {
+          throw { code: "invalid.argument", message: `「${key}」只有用户能在设置页里改` };
+        }
+        scene.preferenceWrites.push({ key, value });
+        scene.changePreferences({ [key]: value });
+        return null;
+      },
       "preferences.get": async ({ key }) => (key === "subscriptions" ? [...scene.subscriptions] : key === "ruleSets" ? [...scene.ruleSetURLs] : scene.preferences[key]),
       "browser.activeTab": async () => scene.tab,
       "files.pick": async (params) => {
@@ -221,8 +243,14 @@ export async function createProxyHost() {
         scene.commandsRun.push(id);
         return null;
       },
-      "preferences.observe": async () => null,
-      "preferences.unsubscribe": async () => null,
+      "preferences.observe": async ({ token }) => {
+        scene.preferenceObservers.add(token);
+        return null;
+      },
+      "preferences.unsubscribe": async ({ token }) => {
+        scene.preferenceObservers.delete(token);
+        return null;
+      },
       "net.fetch": async (params) => {
         scene.fetches.push(params);
         const response = scene.responses[params.url];

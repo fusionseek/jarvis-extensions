@@ -68,6 +68,16 @@ manifest `contributes.settings.preferences` 与各服务 `preferences` 里声明
 `get(key)` / `all()` / `onChange(listener)`；用户在设置页改动后触发 `onChange(changes)` 并自动重画。
 `secret` 类型只能 `get(key)` 单独读（宿主从钥匙串取），`all()` 与 `onChange` 里都没有它。
 
+`set(key, value)`（SDK 2.10，隐式、不要点头）：改自己声明过的一项。菜单、页面里的开关（「增强模式（TUN）」）与设置页是同一件事时，
+只能有一份真源——扩展另记一份，工具箱开着、设置页关着（jarvis-mac `specs/20261028-130540-proxy-walkthrough-fixes` W-6）。
+
+| 规则 | 为什么 |
+| --- | --- |
+| 只认 `toggle`（布尔）、`select`（选项里的值）、`number`（在 `minimum…maximum`、合 `step`） | 只改扩展自己的行为，写错了用户在设置页一眼看得见、点一下改得回 |
+| `text` / `secret` / `urlList` / `directory` / `multiselect` 一律 `invalid.argument` | `urlList` 是 `network.preferenceHosts` 放行主机的依据，路径决定读哪、跑什么，机密进钥匙串：这几种只能来自用户亲手输入 |
+| 写完与设置页编辑同一条通知：每个活着的会话（**包括写的那一个**）收一次 `onChange`，开着的设置页就地刷新 | 后台会话要据此跟上；写的那一方自己已经处理过的，用一笔自己的记号认出回声 |
+| 每个会话每分钟至多 60 次 | 拨开关是用户点出来的，只挡死循环 |
+
 #### `jarvis.permissions`
 
 | 方法 | 说明 |

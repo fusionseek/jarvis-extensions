@@ -14,7 +14,6 @@ const {
   trafficRate,
   formatBytes,
   formatRate,
-  compactRate,
   formatDelay,
   runLimited,
   randomSecret,
@@ -86,9 +85,6 @@ test("读数的写法", () => {
   assert.equal(formatBytes(1536), "1.5 KB");
   assert.equal(formatBytes(36 * 1024 * 1024), "36 MB");
   assert.equal(formatRate(3 * 1024 * 1024), "3.0 MB/s");
-  assert.equal(compactRate({ up: 36 * 1024, down: 1.2 * 1024 * 1024 }), "↓1.2M ↑36K");
-  assert.equal(compactRate({ up: 0, down: 900 }), "↓900 ↑0");
-  assert.ok(compactRate({ up: 1023 * 1024 * 1024, down: 1023 * 1024 * 1024 }).length <= 16, "菜单栏短字 ≤ 16 字");
   assert.equal(formatDelay(undefined), "");
   assert.equal(formatDelay(null), "超时");
   assert.equal(formatDelay(88), "88 ms");

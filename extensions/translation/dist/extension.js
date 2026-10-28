@@ -103,7 +103,8 @@
     swatch: make("swatch"),
     dropzone: make("dropzone"),
     keycap: make("keycap"),
-    image: make("image")
+    image: make("image"),
+    chart: make("chart")
   };
 
   // sdk/src/ocr.ts
@@ -713,6 +714,9 @@
     preferences: {
       get: (key2) => call.preferences("get", { key: key2 }),
       all: () => call.preferences("all"),
+      set: async (key2, value) => {
+        await call.preferences("set", { key: key2, value });
+      },
       onChange: (listener) => runtime.subscribe("preferences", "observe", listener)
     },
     permissions: {

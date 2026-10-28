@@ -137,6 +137,13 @@ export interface PreferencesAPI {
   get<T = unknown>(key: string): Promise<T>;
   /** 全部偏好；`secret` 类型**不在**里面，只能按 key 单独取。 */
   all(): Promise<Record<string, unknown>>;
+  /**
+   * 改自己声明过的一项偏好（SDK 2.10，jarvis-mac `specs/20261028-130540-proxy-walkthrough-fixes` W-6）：菜单、页面里的开关与设置页同一份真源。
+   * 只认 `toggle`（布尔）、`select`（选项里的值）、`number`（在 minimum…maximum 且合 step）；`text` / `secret` / `urlList` / `directory` / `multiselect`
+   * 永远只能用户在设置页写——宿主拒绝（`invalid.argument`）。写完与设置页编辑同一条通知：每个活着的会话（包括调用者自己）收到一次 `onChange`。
+   * 每个会话每分钟至多 60 次。
+   */
+  set(key: string, value: boolean | string | number): Promise<void>;
   onChange(listener: (changes: Record<string, unknown>) => void): Unsubscribe;
 }
 

@@ -367,6 +367,27 @@ export interface ImageNode extends Keyed {
   size?: "small" | "medium" | "large";
 }
 
+/** 一条流量曲线（SDK 2.10）：`upload` 与 `download` 各至多一条，颜色宿主定（下行青、上行橙）。 */
+export interface ChartSeries {
+  tone: "upload" | "download";
+  /** ≤ 120 个非负数（旧的在前）。每条按自己的最大值归一。 */
+  values: number[];
+}
+
+/**
+ * 一块流量曲线（SDK 2.10，jarvis-mac `specs/20261028-130540-proxy-walkthrough-fixes` W-3）：与菜单栏菜单里那块同一种画法，
+ * 在面板里满宽、高约 56pt。不可点、没有子节点。
+ */
+export interface ChartNode extends Keyed {
+  kind: "chart";
+  /** 1–2 条。 */
+  series: ChartSeries[];
+  /** ≤ 80 字。画在曲线下面的一行读数。 */
+  caption?: string;
+  /** ≤ 80 字。VoiceOver 读的说明；省略时读 `caption`，都没有读「流量曲线」。 */
+  label?: string;
+}
+
 export type UINode =
   | StackNode
   | ScrollNode
@@ -398,7 +419,8 @@ export type UINode =
   | SwatchNode
   | DropZoneNode
   | KeycapNode
-  | ImageNode;
+  | ImageNode
+  | ChartNode;
 
 export type UINodeKind = UINode["kind"];
 
@@ -447,4 +469,5 @@ export const ui = {
   dropzone: make<DropZoneNode>("dropzone"),
   keycap: make<KeycapNode>("keycap"),
   image: make<ImageNode>("image"),
+  chart: make<ChartNode>("chart"),
 } as const;

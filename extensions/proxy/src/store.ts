@@ -35,7 +35,34 @@ export const storageKeys = {
   surge: "surge",
   /** `Record<tag, RuleSetRecord>`：导入配置里那些外部规则集拉没拉到，内容另外切块（`ruleset:<tag>:<序号>`）。 */
   ruleSets: "ruleSets",
+  /**
+   * `TunSwitch`：自己刚把偏好 `tun` 改成了什么（jarvis-mac `specs/20261028-130540-proxy-walkthrough-fixes` W-6）。
+   * 宿主把每次偏好变更都通知给所有会话、包括写的那一个；后台会话看到 30 秒内、值相同的这一笔，就知道是自己人在换内核，不再换一次。
+   */
+  tunSwitch: "tunSwitch",
 } as const;
+
+/** 自己刚写的那一次增强模式开关（`storageKeys.tunSwitch`）。 */
+export interface TunSwitch {
+  on: boolean;
+  at: number;
+}
+
+/** 自己写的那一笔多久之内算「回声」。 */
+export const tunSwitchEchoMs = 30_000;
+
+/**
+ * 一次 `tun` 偏好变更是不是自己刚写的那一次的回声。
+ * @param marker 存储里的那一笔。
+ * @param on 变更后的值。
+ * @param now 现在。
+ * @returns 是回声为 `true`（不要再换内核）。
+ */
+export function isTunSwitchEcho(marker: unknown, on: boolean, now: number): boolean {
+  if (typeof marker !== "object" || marker === null) return false;
+  const value = marker as Partial<TunSwitch>;
+  return value.on === on && typeof value.at === "number" && now - value.at >= 0 && now - value.at < tunSwitchEchoMs;
+}
 
 /**
  * 导入的 Surge 规则的一块。

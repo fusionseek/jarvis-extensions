@@ -129,6 +129,19 @@ function statusSection(session: Session, snapshot: Snapshot): UINode {
       }),
     );
   }
+  if (running && (session.history.download.length > 1 || session.history.upload.length > 1)) {
+    // 菜单栏菜单顶部那块曲线放进工具箱（仓库主人走查第 3 条）：同一种画法，宿主画（`ui.chart`）。
+    children.push(
+      ui.chart({
+        key: "traffic-chart",
+        series: [
+          { tone: "download", values: session.history.download },
+          { tone: "upload", values: session.history.upload },
+        ],
+        label: "最近一分钟的有效流量：青色下行、橙色上行",
+      }),
+    );
+  }
   if (running && session.reading) {
     children.push(
       ui.text({
@@ -261,7 +274,7 @@ function notes(session: Session, snapshot: Snapshot): UINode[] {
           }),
         );
       }
-      const wantedKernel = wantsTunnel(snapshot.selection, snapshot.preferences) ? "tunnel" : "daemon";
+      const wantedKernel = wantsTunnel(snapshot.preferences) ? "tunnel" : "daemon";
       const restart = restartReasons(snapshot.control, snapshot.preferences, wantedKernel);
       const reload = reloadReasons(snapshot.control, snapshot.preferences, nodesDigest(snapshot.nodes), snapshot.rulesDigest);
       if (restart.length > 0) {
@@ -297,7 +310,7 @@ function notes(session: Session, snapshot: Snapshot): UINode[] {
 /** 增强模式要说的几件事：没授权、被别的 VPN 拦着、要输管理员密码。 */
 function tunNotes(session: Session, snapshot: Snapshot): UINode[] {
   if (snapshot.phase === "notGranted" || snapshot.phase === "notInstalled") return [];
-  const wanted = wantsTunnel(snapshot.selection, snapshot.preferences);
+  const wanted = wantsTunnel(snapshot.preferences);
   if (!wanted || snapshot.kernel === "tunnel") return [];
   if (!snapshot.tun.granted) {
     return [

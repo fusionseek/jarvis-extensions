@@ -139,7 +139,11 @@
     },
     "menuBar": {
       "title": "代理",
-      "symbol": "network"
+      "symbol": "network",
+      "preferences": [
+        "showSpeed",
+        "speedInterval"
+      ]
     },
     "orb": {
       "title": "代理流量"
@@ -208,8 +212,8 @@
         {
           "key": "tun",
           "type": "toggle",
-          "title": "开启时用增强模式（TUN）",
-          "description": "以管理员身份运行 sing-box 接管整机网络，命令行工具与不认系统代理的应用也走它。第一次打开要输一次管理员密码装网络助手。菜单里拨过之后以那一次为准，直到再改这一项",
+          "title": "增强模式（TUN）",
+          "description": "以管理员身份运行 sing-box 接管整机网络，命令行工具与不认系统代理的应用也走它。与菜单、工具箱里的开关是同一项；代理开着时改它会当场换模式。第一次打开要输一次管理员密码",
           "default": false
         },
         {
@@ -322,8 +326,18 @@
           "key": "showSpeed",
           "type": "toggle",
           "title": "菜单栏显示速率",
-          "description": "开着时在图标旁显示上下行速率，每秒刷新",
+          "description": "开着时在图标旁两行显示上下行有效速率，每行固定 4 个字符（0.5K、 34K、1.2M），宽度不跳",
           "default": false
+        },
+        {
+          "key": "speedInterval",
+          "type": "number",
+          "title": "速率刷新间隔（秒）",
+          "description": "菜单栏的速率多少秒换一次，写的是这段时间的平均值。1–60 秒；悬浮球与曲线照旧每秒一点",
+          "default": 1,
+          "minimum": 1,
+          "maximum": 60,
+          "step": 1
         }
       ]
     }

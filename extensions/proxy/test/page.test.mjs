@@ -152,6 +152,16 @@ test("开：总开关、模式、点节点、测速、速率、终端命令；�
   await timers.advance(1000);
   await idle(scene);
   assert.equal(byKey("status").props.trailing, "↓ 3.0 MB/s  ↑ 2.0 KB/s");
+  // 菜单顶部那块曲线也在工具箱里（仓库主人走查第 3 条）：两个点以上才画。
+  assert.equal(byKey("traffic-chart"), undefined, "一个点画不成线");
+  clash.totals = { upload: 4096, download: 4 * 1024 * 1024 };
+  await timers.advance(1000);
+  await idle(scene);
+  const chart = byKey("traffic-chart");
+  assert.equal(chart.kind, "chart");
+  assert.deepEqual(chart.props.series.map((series) => series.tone), ["download", "upload"]);
+  assert.equal(chart.props.series[0].values.length, 2);
+  assert.ok(chart.props.label.length <= 80);
 
   assert.equal(byKey("terminal-copy").props.text, "export https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890 all_proxy=socks5://127.0.0.1:7890");
   assert.ok(countNodes(host.latest) <= 500);
@@ -182,18 +192,42 @@ test("系统代理被 Surge 拦着：说明卡写它的原话，给复制终端�
   await fire(byKey("power"), "change", false);
 });
 
+const portInUse = {
+  code: "host.failure",
+  message: "sing-box 启动后 1 秒内退出了",
+  detail: [
+    "+0800 2026-10-28 10:00:00 INFO network: updated default interface en0",
+    "+0800 2026-10-28 10:00:00 FATAL[0000] start service: start clash-api: listen tcp 127.0.0.1:19090: bind: address already in use",
+  ].join("\n"),
+};
+
+test("端口被 Jarvis 自己占着：先停掉自己的内核、再起一次，用户看不到失败", async () => {
+  await reset();
+  await activate();
+  daemons.failNext("daemon.start", portInUse);
+  const before = daemons.calls.length;
+  await fire(byKey("power"), "change", true);
+  // 停掉自己的内核之后等半秒再起（扩展里的 sleep 由假定时器接管）。
+  await timers.advance(500);
+  await idle(scene);
+  assert.equal(byKey("failed"), undefined, "第二次起来了：这一次冲突是自己的旧内核，不该报给用户");
+  assert.equal(daemons.status("sing-box").state, "running");
+  const methods = daemons.calls.slice(before).map((call) => call.method);
+  const firstStart = methods.indexOf("daemon.start");
+  const retry = methods.lastIndexOf("daemon.start");
+  assert.ok(firstStart >= 0 && retry > firstStart, "起了两次");
+  assert.ok(methods.slice(firstStart, retry).includes("daemon.stop"), "两次之间先停自己的内核，把端口放出来");
+  await fire(byKey("power"), "change", false);
+});
+
 test("起不来：端口被占，说明卡写哪个端口、怎么办，附上最后几行输出", async () => {
   await reset();
   await activate();
-  daemons.failNext("daemon.start", {
-    code: "host.failure",
-    message: "sing-box 启动后 1 秒内退出了",
-    detail: [
-      "+0800 2026-10-28 10:00:00 INFO network: updated default interface en0",
-      "+0800 2026-10-28 10:00:00 FATAL[0000] start service: start clash-api: listen tcp 127.0.0.1:19090: bind: address already in use",
-    ].join("\n"),
-  });
+  // 停掉自己的内核再试一次仍然冲突：才是真的被别的程序占着。
+  daemons.failNext("daemon.start", portInUse, 2);
   await fire(byKey("power"), "change", true);
+  await timers.advance(500);
+  await idle(scene);
   const note = byKey("failed");
   assert.equal(note.props.title, "控制端口 19090 被别的程序占着");
   assert.equal(note.props.body, "在设置里换一个控制端口，或者先关掉占着它的程序。");

@@ -373,7 +373,7 @@ test("菜单栏速率：开着且偏好要显示时，图标旁每秒刷新上�
   clash.totals = { upload: 10 * 1024, download: 2 * 1024 * 1024 };
   await timers.advance(1000);
   await idle(scene);
-  assert.equal(host.latestMenuBar.title, "↓2M\n↑10K", "两行：下行在上、上行在下，每行 ≤ 10 字");
+  assert.equal(host.latestMenuBar.title, "↓2.0M\n↑ 10K", "两行：下行在上、上行在下，每行箭头 + 恰好 4 个字符（W-2）");
   const orb = host.latestOrb;
   assert.equal(orb.kind, "traffic", "悬浮球那一层跟着推");
   assert.equal(orb.download, 2 * 1024 * 1024);
@@ -385,4 +385,27 @@ test("菜单栏速率：开着且偏好要显示时，图标旁每秒刷新上�
   assert.equal(chart.kind, "chart", "两个点以上才画菜单顶部那块曲线");
   assert.deepEqual(chart.series.map((series) => series.tone), ["download", "upload"]);
   assert.deepEqual(chart.series[0].values, [2 * 1024 * 1024, 2 * 1024 * 1024]);
+});
+
+test("菜单栏速率刷新间隔：设成 3 秒时标题 3 秒换一次、写这 3 秒的平均（悬浮球照旧每秒）", async () => {
+  await reset();
+  scene.preferences = { showSpeed: true, speedInterval: 3, updateInterval: "never" };
+  await menu("start");
+  if (daemons.status("sing-box").state !== "running") await select("toggle");
+  clash.totals = { upload: 0, download: 0 };
+  await timers.advance(1000);
+  const speeds = [1, 2, 6].map((megabytes) => megabytes * 1024 * 1024);
+  let total = 0;
+  const titles = [];
+  for (const speed of speeds) {
+    total += speed;
+    clash.totals = { upload: 0, download: total };
+    await timers.advance(1000);
+    await idle(scene);
+    titles.push(host.latestMenuBar.title);
+  }
+  assert.equal(titles[0], "↓1.0M\n↑0.0K", "第一段还没攒满：先写第一个点，图标旁不空着");
+  assert.equal(titles[1], "↓1.0M\n↑0.0K", "间隔没到：不换");
+  assert.equal(titles[2], "↓3.0M\n↑0.0K", "满 3 秒换成这 3 秒的平均（1M、2M、6M）");
+  assert.equal(host.latestOrb.download, 6 * 1024 * 1024, "悬浮球写的是这一秒");
 });

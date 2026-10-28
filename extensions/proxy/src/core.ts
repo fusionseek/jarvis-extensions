@@ -47,6 +47,7 @@ import {
 } from "./singbox-config.js";
 import {
   describeFailure,
+  isPortConflict,
   isRuleSetFailure,
   memberTitle,
   normalizePreferences,
@@ -80,6 +81,7 @@ import {
   parseSubscriptionUserinfo,
   storageKeys,
   subscriptionId,
+  type TunSwitch,
   type ControlRecord,
   type FetchOutcome,
   type LatencyRecord,
@@ -96,6 +98,9 @@ export const INSTALL_SCRIPT_ID = "install";
  * 带上它，回来的要么是本扩展认得的分享链接，要么是 sing-box 自己的 JSON——而不是 Clash YAML（本期不认）。
  */
 export const SUBSCRIPTION_USER_AGENT = "sing-box 1.14.4 (Jarvis)";
+
+/** 停掉自己的内核之后等多久再起：sing-box 收到 SIGTERM 关监听、宿主收进程都要一点时间。 */
+const portReleaseMs = 500;
 
 /** 等内核就绪（Clash API 开始答话）至多多久。远程规则集第一次下载就在这段时间里，30 秒足够慢网络把两份几十 KB 的文件拉完。 */
 const readyTimeoutMs = 30_000;
@@ -474,7 +479,7 @@ export class ProxyCore {
       kernel,
       tun: {
         granted: granted.includes(tunnelCapability),
-        wanted: wantsTunnel(selection, preferences),
+        wanted: wantsTunnel(preferences),
         active: kernel === "tunnel",
         helper: tunnel?.helper.state ?? null,
         matchesInstalled: tunnel?.kernel.matchesInstalled ?? false,
@@ -564,7 +569,7 @@ export class ProxyCore {
     if (!granted.includes(requiredCapability)) return { ok: false, message: "还没有授权「代理」在后台运行 sing-box" };
     const preferences = await this.preferences(context.preferences);
     const selection = await this.selection();
-    const kernel: KernelKind = wantsTunnel(selection, preferences) ? "tunnel" : "daemon";
+    const kernel: KernelKind = wantsTunnel(preferences) ? "tunnel" : "daemon";
     if (kernel === "tunnel" && !granted.includes(tunnelCapability)) {
       return { ok: false, message: "还没有授权增强模式（TUN）：打开「代理」点授权，或在菜单里关掉增强模式" };
     }
@@ -596,7 +601,7 @@ export class ProxyCore {
       let fallback = false;
       const rules = await this.ruleInputs(preferences);
       try {
-        await this.startKernel(kernel, nodes, preferences, selection, secret, chinaRules, rules);
+        await this.startKernelReleasingOwnPorts(kernel, nodes, preferences, selection, secret, chinaRules, rules);
       } catch (error) {
         if ((error as { blocked?: boolean }).blocked) throw error;
         if (!(chinaRules && !rules.surge && isRuleSetFailure(errorLines(error).join("\n")))) throw error;
@@ -662,6 +667,49 @@ export class ProxyCore {
       groupSelection: selection.groups,
     };
     return buildConfig(options);
+  }
+
+  /**
+   * 起内核；撞上「端口被占着」时先停掉自己的两个内核、等半秒再起一次（W-4）。
+   *
+   * 仓库主人：「Jarvis 自己的端口释放和占用，我理解应该可以自行处理」。占着 7890 / 19090 的多半是 Jarvis 自己：
+   * 另一种模式的内核还没退完、上一个实例留下的 sing-box（宿主在 `daemon.start` 前也会收同目录的遗留进程）。
+   * 第二次还冲突才是真的被别的程序占着，照常报出来。
+   */
+  private async startKernelReleasingOwnPorts(
+    kernel: KernelKind,
+    nodes: ProxyNode[],
+    preferences: ProxyPreferences,
+    selection: Selection,
+    secret: string,
+    chinaRules: boolean,
+    rules: RuleInputs,
+  ): Promise<void> {
+    try {
+      await this.startKernel(kernel, nodes, preferences, selection, secret, chinaRules, rules);
+    } catch (error) {
+      if ((error as { blocked?: boolean }).blocked || !isPortConflict(errorLines(error))) throw error;
+      jarvis.log.info("端口被占着：先停掉自己的内核再起一次");
+      await this.stopOwnKernels();
+      await sleep(portReleaseMs);
+      await this.startKernel(kernel, nodes, preferences, selection, secret, chinaRules, rules);
+    }
+  }
+
+  /** 停自己的两个内核（哪一个在跑都停得掉；没在跑是空操作）。 */
+  private async stopOwnKernels(): Promise<void> {
+    try {
+      await jarvis.daemon.stop(DAEMON_ID);
+    } catch (error) {
+      jarvis.log.warn("常驻内核没能停下", errorMessage(error));
+    }
+    if ((await this.granted()).includes(tunnelCapability)) {
+      try {
+        await jarvis.tunnel.stop();
+      } catch (error) {
+        jarvis.log.warn("增强模式没能停下", errorMessage(error));
+      }
+    }
   }
 
   /**
@@ -831,7 +879,7 @@ export class ProxyCore {
     if (!control || !kernel) return { ok: true, message: "" };
     const preferences = await this.preferences();
     const selection = await this.selection();
-    const wanted: KernelKind = wantsTunnel(selection, preferences) ? "tunnel" : "daemon";
+    const wanted: KernelKind = wantsTunnel(preferences) ? "tunnel" : "daemon";
     if (control.mixedPort !== preferences.mixedPort || control.controlPort !== preferences.controlPort || wanted !== kernel) return this.restart();
     this.setBusy("正在重新载入");
     try {
@@ -927,17 +975,47 @@ export class ProxyCore {
   }
 
   /**
-   * 开 / 关增强模式：记下来（以后开启都按它，直到偏好「开启时用增强模式」再被改）；开着就换一个内核重开——
+   * 开 / 关增强模式：写偏好 `tun`（W-6：菜单、工具箱、`/proxy tun` 与设置页同一份真源），开着就换一个内核重开——
    * 两个内核都要监听同一个本地端口，不能同时跑。第一次打开时宿主会弹管理员密码框装网络助手。
+   * 写之前先记一笔 `tunSwitch`：宿主把这次变更也通知给后台会话，它据此认出是自己人在换，不再换一次。
    * @param on 开还是关。
    */
   async setTun(on: boolean): Promise<ActionResult> {
-    const selection = await this.selection();
-    await write(storageKeys.selection, { ...selection, tun: on });
+    await write(storageKeys.tunSwitch, { on, at: Date.now() } satisfies TunSwitch);
+    try {
+      await jarvis.preferences.set("tun", on);
+    } catch (error) {
+      return { ok: false, message: `没能改「增强模式」：${errorMessage(error)}` };
+    }
+    return this.applyTun(on);
+  }
+
+  /**
+   * 按偏好 `tun` 换内核：开着且内核与它不符时重开；没开着什么都不做（下次开启按它）。设置页改了这一项走这里（后台会话）。
+   * @param on 偏好此刻的值。
+   * @returns 结果。
+   */
+  async applyTun(on: boolean): Promise<ActionResult> {
     const kernel = await this.activeKernel();
     if (!kernel) return { ok: true, message: on ? "下次开启代理时用增强模式" : "下次开启代理时用系统代理模式" };
     if ((kernel === "tunnel") === on) return { ok: true, message: "" };
     return this.restart();
+  }
+
+  /**
+   * 上一版把菜单里拨的增强模式记在 `selection.tun`：读到布尔值就写进偏好再清掉，之后只看偏好（W-6）。
+   * 写不进去（旧宿主没有 `preferences.set`）时留着不动，下次再试。
+   */
+  async migrateTunSelection(): Promise<void> {
+    const selection = await this.selection();
+    if (selection.tun === null) return;
+    try {
+      await write(storageKeys.tunSwitch, { on: selection.tun, at: Date.now() } satisfies TunSwitch);
+      await jarvis.preferences.set("tun", selection.tun);
+      await write(storageKeys.selection, { ...selection, tun: null });
+    } catch (error) {
+      jarvis.log.warn("增强模式的旧开关没能搬进偏好", errorMessage(error));
+    }
   }
 
   /**

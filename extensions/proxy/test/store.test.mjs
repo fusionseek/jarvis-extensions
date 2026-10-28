@@ -113,3 +113,12 @@ test("读数：多久以前、用量与到期", () => {
   assert.equal(describeUsage(usage), "已用 3.0 GB / 500 GB · 2027-01-01 到期");
   assert.equal(describeUsage({ upload: 0, download: 12 * 1024 ** 3, total: 0, expire: null }), "已用 12 GB");
 });
+
+test("增强模式开关的回声：30 秒内、值相同才算自己写的那一次（W-6）", async () => {
+  const { isTunSwitchEcho } = await loadSource();
+  assert.equal(isTunSwitchEcho({ on: true, at: 1_000 }, true, 1_500), true);
+  assert.equal(isTunSwitchEcho({ on: true, at: 1_000 }, false, 1_500), false, "值不同：设置页又改了一次");
+  assert.equal(isTunSwitchEcho({ on: true, at: 1_000 }, true, 31_001), false, "过了 30 秒：不是这一次的回声");
+  assert.equal(isTunSwitchEcho(undefined, true, 1_000), false);
+  assert.equal(isTunSwitchEcho({ on: "yes", at: 1 }, true, 2), false);
+});

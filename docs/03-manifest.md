@@ -238,6 +238,7 @@ v2 按**域**组织（[01](01-overview.md)）：身份与能力在顶层，入�
 | --- | --- | --- |
 | `title` | 1–20 字 | 设置 · 扩展 里「在菜单栏显示」那一行与 VoiceOver 读的名字 |
 | `symbol` | SF Symbol，`^[A-Za-z0-9.-]+$` | 还没收到任何模型时（应用刚启动、后台会话还没起来）画它 |
+| `preferences`（SDK 2.10，可省） | 1–6 个不重复的 key，每个必须在 `contributes.settings.preferences` 里声明过 | 这枚图标自己的设置（「菜单栏显示速率」「速率刷新间隔」）：宿主把它们从通用偏好里拿出来，画在设置页「在菜单栏显示」下面、图标关着时置灰——排在授权与十几项偏好之后，用户找不到它 |
 
 入驻了菜单栏域，系统菜单栏上就有这个扩展**自己的**一枚图标（不并进 Jarvis 那枚 sparkles）：仓库主人要「菜单独立」。
 宿主用 `NSStatusItem` + `NSMenu` 画，扩展经 `jarvis.menuBar.update(model)` 推一份声明式模型（[06](06-capabilities.md)、[07](07-ui-components.md)），

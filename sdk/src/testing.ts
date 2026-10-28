@@ -594,8 +594,11 @@ export interface FakeDaemons {
    * 这个扩展再没有在跑的常驻进程时，照宿主兜底把它接管着的系统代理还原。
    */
   crash(id: string, exit?: { exitCode?: number; signal?: number; lines?: string[] }): void;
-  /** 下一次（只一次）调用这个方法时以 `error` 拒绝：演「1 秒内就退出了」这种启动失败。 */
-  failNext(method: FakeDaemonMethod, error: JarvisErrorShape): void;
+  /**
+   * 下一次调用这个方法时以 `error` 拒绝：演「1 秒内就退出了」这种启动失败。`times`（SDK 2.10，默认 1）连着拒几次——
+   * 扩展遇到端口冲突会先停自己的内核再试一次，演「真被别的程序占着」要连拒两次。
+   */
+  failNext(method: FakeDaemonMethod, error: JarvisErrorShape, times?: number): void;
   /** 系统代理此刻的状态（与 `systemProxy.status` 答的一样）。 */
   readonly systemProxy: SystemProxyStatus;
   /** 让系统代理被别的工具拦着（Surge 增强模式）；`null` 撤掉。拦着时 `enable` 不写、返回带 `blocker` 的状态。 */
@@ -718,7 +721,7 @@ export function fakeDaemons(options: { daemons?: FakeDaemonDeclaration[] } = {})
   const calls: FakeDaemonCall[] = [];
   const configs: Record<string, string | undefined> = {};
   const requests: (DaemonRequest | TunnelRequest)[] = [];
-  const failures = new Map<FakeDaemonMethod, JarvisErrorShape>();
+  const failures = new Map<FakeDaemonMethod, { error: JarvisErrorShape; remaining: number }>();
   const runs = new Map<string, FakeDaemonRun>();
   /** token → 订阅的是哪一个进程。 */
   const observers = new Map<string, string>();
@@ -742,8 +745,9 @@ export function fakeDaemons(options: { daemons?: FakeDaemonDeclaration[] } = {})
     calls.push({ method, params });
     const pending = failures.get(method);
     if (pending) {
-      failures.delete(method);
-      throw pending;
+      if (pending.remaining <= 1) failures.delete(method);
+      else pending.remaining -= 1;
+      throw pending.error;
     }
   };
   const declaration = (id: unknown): FakeDaemonDeclaration => {
@@ -1082,8 +1086,8 @@ export function fakeDaemons(options: { daemons?: FakeDaemonDeclaration[] } = {})
       push(id, { kind: "exit", expected: false, ...how, lines: current.logs.slice(-daemonExitTailLines) });
       restoreIfOrphaned();
     },
-    failNext(method, error) {
-      failures.set(method, error);
+    failNext(method, error, times = 1) {
+      failures.set(method, { error, remaining: Math.max(1, Math.floor(times)) });
     },
     get systemProxy() {
       return proxyStatus();

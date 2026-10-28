@@ -261,15 +261,6 @@ export function formatRate(bytesPerSecond: number): string {
   return `${formatBytes(bytesPerSecond)}/s`;
 }
 
-/**
- * 速率的紧凑写法（菜单栏图标旁那几个字，≤ 16 字）：单位只留首字母、去掉空格与 `/s`，例如 `↓1.2M ↑36K`。
- * @param rate 速率。
- * @returns 短字。
- */
-export function compactRate(rate: TrafficRate): string {
-  const short = (bytesPerSecond: number): string => formatBytes(bytesPerSecond).replace(" ", "").replace(/B$/, "") || "0";
-  return `↓${short(rate.down)} ↑${short(rate.up)}`;
-}
 
 /**
  * 延迟的写法。

@@ -1,9 +1,9 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-28T04:08:21.102Z",
+  "generatedAt": "2026-10-28T05:33:54.216Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "2e4a3ef822ad6e9340af9996a78e297e35052d18"
+    "commit": "2d416cbe0bb5e3d8b431ec30e4fe0bde1d3db937"
   },
   "extensions": [
     {
@@ -51,10 +51,10 @@
       "path": "extensions/android-apps",
       "bundle": {
         "path": "extensions/android-apps/dist/extension.js",
-        "sha256": "95882f780dfd7ec5191b5c87e6e0157861da9651bd15f9de20a0559f5fd58dfe",
-        "byteCount": 63251
+        "sha256": "a22eda10d159da4ffd1c7763904ff197e58d27d6112c41a6535759d601190906",
+        "byteCount": 63376
       },
-      "updatedAt": "2026-10-28T11:14:00+08:00"
+      "updatedAt": "2026-10-28T12:15:12+08:00"
     },
     {
       "manifest": {
@@ -390,10 +390,10 @@
       "path": "extensions/code-format",
       "bundle": {
         "path": "extensions/code-format/dist/extension.js",
-        "sha256": "1f695d7a8449c20a897042b57af6a41a950fc49ef7b44e3a53050b0449319f22",
-        "byteCount": 37567
+        "sha256": "82551b07831bc3e2d2950b26242bf8ead5d9699c29d921b35f3f911d15b8e576",
+        "byteCount": 37692
       },
-      "updatedAt": "2026-10-28T11:14:00+08:00"
+      "updatedAt": "2026-10-28T12:15:12+08:00"
     },
     {
       "manifest": {
@@ -430,10 +430,10 @@
       "path": "extensions/code-highlight",
       "bundle": {
         "path": "extensions/code-highlight/dist/extension.js",
-        "sha256": "29cb444c450aa45bd42d607f967f71fba2bfe8869ff711256bba06708dbad15a",
-        "byteCount": 59790
+        "sha256": "8e29b4e74515fb659f99976d54d9791e0ac9573c07d5a9f3ebcf2a12eaac6430",
+        "byteCount": 59915
       },
-      "updatedAt": "2026-10-28T11:14:00+08:00"
+      "updatedAt": "2026-10-28T12:15:12+08:00"
     },
     {
       "manifest": {
@@ -511,10 +511,10 @@
       "path": "extensions/github-project",
       "bundle": {
         "path": "extensions/github-project/dist/extension.js",
-        "sha256": "5553f84f6bbf3ecf08cce7fd5924eab8edd3e0d1bf8fb06315576b39ba24946f",
-        "byteCount": 88407
+        "sha256": "09148492ec32a8a1f8e666e84efe1f5943c721afa5861256046b6d5204019dfd",
+        "byteCount": 88532
       },
-      "updatedAt": "2026-10-28T11:14:00+08:00"
+      "updatedAt": "2026-10-28T12:15:12+08:00"
     },
     {
       "manifest": {
@@ -652,10 +652,10 @@
       "path": "extensions/http-status",
       "bundle": {
         "path": "extensions/http-status/dist/extension.js",
-        "sha256": "60c684123ee3e1680131ec4848693bd3915a28d03d868a833e6c8c397b404e45",
-        "byteCount": 123592
+        "sha256": "5a1788320f2f3fa51b00a4d429da108ff9c7cc2b67af04166fc866409a39cdd4",
+        "byteCount": 123717
       },
-      "updatedAt": "2026-10-28T11:14:00+08:00"
+      "updatedAt": "2026-10-28T12:15:12+08:00"
     },
     {
       "manifest": {
@@ -706,10 +706,10 @@
       "path": "extensions/mac-apps",
       "bundle": {
         "path": "extensions/mac-apps/dist/extension.js",
-        "sha256": "c615e809c2fefb698e8c318d7ba362fc614d960636a8a479b0ff1d9ce4528e42",
-        "byteCount": 40823
+        "sha256": "25964cca66fa9af0caf080c16ca500be16ead77b822df1db96f4ff1336ce9593",
+        "byteCount": 40948
       },
-      "updatedAt": "2026-10-28T11:14:00+08:00"
+      "updatedAt": "2026-10-28T12:15:12+08:00"
     },
     {
       "manifest": {
@@ -830,10 +830,10 @@
       "path": "extensions/mole-clean",
       "bundle": {
         "path": "extensions/mole-clean/dist/extension.js",
-        "sha256": "79ff9b02a09de254a59381d6423f7d34ee7ad912415ea1db44910c0133816895",
-        "byteCount": 57641
+        "sha256": "b8ddaba2e19469106cec0f68d2c2d5b93ab29c12caf4c638f23a42ed73fe48bb",
+        "byteCount": 57766
       },
-      "updatedAt": "2026-10-28T11:14:00+08:00"
+      "updatedAt": "2026-10-28T12:15:12+08:00"
     },
     {
       "manifest": {
@@ -977,7 +977,11 @@
           },
           "menuBar": {
             "title": "代理",
-            "symbol": "network"
+            "symbol": "network",
+            "preferences": [
+              "showSpeed",
+              "speedInterval"
+            ]
           },
           "orb": {
             "title": "代理流量"
@@ -1046,8 +1050,8 @@
               {
                 "key": "tun",
                 "type": "toggle",
-                "title": "开启时用增强模式（TUN）",
-                "description": "以管理员身份运行 sing-box 接管整机网络，命令行工具与不认系统代理的应用也走它。第一次打开要输一次管理员密码装网络助手。菜单里拨过之后以那一次为准，直到再改这一项",
+                "title": "增强模式（TUN）",
+                "description": "以管理员身份运行 sing-box 接管整机网络，命令行工具与不认系统代理的应用也走它。与菜单、工具箱里的开关是同一项；代理开着时改它会当场换模式。第一次打开要输一次管理员密码",
                 "default": false
               },
               {
@@ -1160,8 +1164,18 @@
                 "key": "showSpeed",
                 "type": "toggle",
                 "title": "菜单栏显示速率",
-                "description": "开着时在图标旁显示上下行速率，每秒刷新",
+                "description": "开着时在图标旁两行显示上下行有效速率，每行固定 4 个字符（0.5K、 34K、1.2M），宽度不跳",
                 "default": false
+              },
+              {
+                "key": "speedInterval",
+                "type": "number",
+                "title": "速率刷新间隔（秒）",
+                "description": "菜单栏的速率多少秒换一次，写的是这段时间的平均值。1–60 秒；悬浮球与曲线照旧每秒一点",
+                "default": 1,
+                "minimum": 1,
+                "maximum": 60,
+                "step": 1
               }
             ]
           }
@@ -1174,10 +1188,10 @@
       "path": "extensions/proxy",
       "bundle": {
         "path": "extensions/proxy/dist/extension.js",
-        "sha256": "3ec363e05693cacf2985d270cd09d1fc68e101950d8b12d31b8d902da0eb525e",
-        "byteCount": 272479
+        "sha256": "ac84a7c3b2e4a3b230b45b155dea6fac7246328eeacdc5af03a751d3dce0f820",
+        "byteCount": 281204
       },
-      "updatedAt": "2026-10-28T11:14:00+08:00"
+      "updatedAt": "2026-10-28T12:15:12+08:00"
     },
     {
       "manifest": {
@@ -1266,10 +1280,10 @@
       "path": "extensions/send-to-phone",
       "bundle": {
         "path": "extensions/send-to-phone/dist/extension.js",
-        "sha256": "caae6318071523c3bf3b805af1a572b89d8d31401d402ff385b27e83e1c9cab5",
-        "byteCount": 42629
+        "sha256": "54edd883511749ec04bf008a12969e5af5fd50d6ebf978b18e528f538c4ed471",
+        "byteCount": 42754
       },
-      "updatedAt": "2026-10-28T11:14:00+08:00"
+      "updatedAt": "2026-10-28T12:15:12+08:00"
     },
     {
       "manifest": {
@@ -1505,10 +1519,10 @@
       "path": "extensions/translation",
       "bundle": {
         "path": "extensions/translation/dist/extension.js",
-        "sha256": "e82975eb420281f160adb186a65ba93bc02974e6422221a2be58b726805b7914",
-        "byteCount": 87851
+        "sha256": "78fc1525906ff5f0925c423d8171d13ba01fac1353fd4f4424c93e650f3b12b5",
+        "byteCount": 87983
       },
-      "updatedAt": "2026-10-28T11:14:00+08:00"
+      "updatedAt": "2026-10-28T12:15:12+08:00"
     }
   ]
 }

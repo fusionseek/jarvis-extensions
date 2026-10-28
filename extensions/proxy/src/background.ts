@@ -21,8 +21,8 @@ import {
   type FailureRecord,
   type PageView,
 } from "./status.js";
-import { isUpdateDue, storageKeys, type Schedule } from "./store.js";
-import { shortRate, TrafficMeter, type Attempt, type TrafficReading } from "./traffic.js";
+import { isTunSwitchEcho, isUpdateDue, storageKeys, type Schedule } from "./store.js";
+import { shortRate, titleAverage, TrafficMeter, type Attempt, type TrafficReading } from "./traffic.js";
 
 /** 自动更新多久看一次日程。宿主的定时器单次至多 30 秒，看日程本身只读一个键，一分钟一次足够。 */
 const scheduleTickMs = 30_000;
@@ -43,6 +43,8 @@ export interface MenuExtras {
   busy: string | null;
   reading?: TrafficReading | null;
   history?: { upload: number[]; download: number[] } | null;
+  /** 菜单栏两行写的那一份：最近 `speedInterval` 秒的平均有效速率（W-2）。 */
+  titleRate?: { upload: number; download: number } | null;
   page?: PageView | null;
   recent?: Attempt[];
 }
@@ -75,6 +77,7 @@ export async function pushMenu(snapshot: Snapshot, extra: MenuExtras): Promise<v
         recent: extra.recent ?? [],
         reading: extra.reading ?? null,
         history: extra.history ?? null,
+        titleRate: extra.titleRate ?? null,
       }),
     );
   } catch (error) {
@@ -128,6 +131,11 @@ export class Background {
   private orbShown = false;
   private refreshing: Promise<void> | null = null;
   private refreshAgain = false;
+  /** 菜单栏两行此刻写的那一份（W-2）；还没攒满第一段为 `null`。 */
+  private titleRate: { upload: number; download: number } | null = null;
+  /** 这一段里攒下的有效速率：凑满 `speedInterval` 个点取平均，换一次标题。 */
+  private titleWindow: { upload: number; download: number; count: number } = { upload: 0, download: 0, count: 0 };
+  private unwatchPreferences: Unsubscribe | null = null;
 
   private extras(): MenuExtras {
     return {
@@ -136,6 +144,7 @@ export class Background {
       busy: this.core.busy,
       reading: this.reading,
       history: this.history,
+      titleRate: this.titleRate,
       page: this.page,
       recent: this.meter.recent(Date.now(), 12),
     };
@@ -148,6 +157,8 @@ export class Background {
   async start(context: MenuBarContext): Promise<void> {
     this.context = context;
     this.observe(context.granted);
+    if (!this.unwatchPreferences) this.unwatchPreferences = jarvis.preferences.onChange((changes) => void this.onPreferencesChanged(changes));
+    await this.core.migrateTunSelection();
     await this.refresh();
     const snapshot = this.lastSnapshot;
     if (snapshot && snapshot.preferences.autoStart && !this.autoStarted && (snapshot.phase === "stopped" || snapshot.phase === "failed")) {
@@ -288,6 +299,28 @@ export class Background {
     void this.speedLoop();
   }
 
+  /**
+   * 偏好变了（设置页、或某个会话经 `preferences.set` 写的）：菜单与读数按新偏好重推。
+   * 「增强模式」被设置页改了、代理开着、内核与它不符 → 在这里换内核（W-6：设置页与工具箱同一份真源，改哪边都当场生效）。
+   * 自己人写的那一次（`tunSwitch` 30 秒内、值相同）由写的那一方换，这里不再换一次。后台会话常驻，换内核只在这一处。
+   * @param changes 变了的几项。
+   */
+  private async onPreferencesChanged(changes: Record<string, unknown>): Promise<void> {
+    if (this.context) this.context = { ...this.context, preferences: { ...this.context.preferences, ...changes } };
+    if ("speedInterval" in changes) this.titleWindow = { upload: 0, download: 0, count: 0 };
+    if (typeof changes.tun === "boolean") {
+      let echo = false;
+      try {
+        echo = isTunSwitchEcho(await jarvis.storage.get(storageKeys.tunSwitch), changes.tun, Date.now());
+      } catch {
+        echo = false;
+      }
+      if (!echo) await this.report(await this.core.applyTun(changes.tun), false);
+    }
+    await this.refresh();
+    void this.speedLoop();
+  }
+
   /** 菜单里的动作只在失败（或订阅更新这种要交代结果的）时发横幅：成功的开关菜单图标自己就说明了。 */
   private async report(result: ActionResult, always: boolean): Promise<void> {
     if (!result.ok || (always && result.message)) await this.notify(result.ok ? "代理" : "代理没能完成", result.message);
@@ -353,6 +386,8 @@ export class Background {
     this.reading = null;
     this.lastSample = null;
     this.history = { upload: [], download: [] };
+    this.titleRate = null;
+    this.titleWindow = { upload: 0, download: 0, count: 0 };
   }
 
   /** 重读状态、重推菜单。同一时刻只有一次在跑，期间再要求的合并成跑完后的一次。 */
@@ -437,6 +472,27 @@ export class Background {
   }
 
   /**
+   * 攒一个点进这一段；凑满 `speedInterval` 个就取平均、换标题（W-2）。间隔 1 秒时每个点都换，与上一版相同。
+   * @param effective 这一秒的有效速率。
+   */
+  private accumulateTitle(effective: { upload: number; download: number }): void {
+    const interval = this.lastSnapshot?.preferences.speedInterval ?? 1;
+    this.titleWindow = {
+      upload: this.titleWindow.upload + effective.upload,
+      download: this.titleWindow.download + effective.download,
+      count: this.titleWindow.count + 1,
+    };
+    const next = titleAverage(this.titleWindow, interval);
+    if (next) {
+      this.titleRate = next;
+      this.titleWindow = { upload: 0, download: 0, count: 0 };
+    } else if (!this.titleRate) {
+      // 第一段还没攒满：先写第一个点，之后照间隔换。空着的话图标旁那两行要等满一段才出现——状态项宽度又跳一次。
+      this.titleRate = { upload: effective.upload, download: effective.download };
+    }
+  }
+
+  /**
    * 流量：开着时每秒读一次连接快照——喂给成败统计（拿到回包的判成功）、算有效速率，推悬浮球与菜单（两行速率、曲线）。
    * 条件不成立（关了）就退出循环并撤掉悬浮球那一层。
    */
@@ -458,6 +514,7 @@ export class Background {
         if (effective) {
           this.history.upload = [...this.history.upload, effective.upload].slice(-historyLength);
           this.history.download = [...this.history.download, effective.download].slice(-historyLength);
+          this.accumulateTitle(effective);
         }
         this.reading = this.meter.reading(now);
         await this.pushOrb(this.reading);

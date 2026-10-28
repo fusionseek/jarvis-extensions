@@ -87,6 +87,7 @@ v2 的扩展最多有三面（[02](02-architecture.md#运行时前台会话与�
 | `swatch` | 色块 | `ColorPicker.Preview`：34pt / 圆角 8、外套白 4% 底 / 白 12% 边 | 外框不是装饰：当前色可能与面板底同色 |
 | `qrcode` | `QuickTransferQRCode` | 122pt | 最多一个；文本 ≤ 1 KB |
 | `image` | 缩略图 | small 64pt 高 / medium 112 / large 160，宽不超内容宽，圆角 8、白 8% 边 | 只能是宿主颁发的句柄（截图、剪贴板里的图、拖进来的图）；它是给用户核对"截到的是哪一块"用的，不是相册；`label` 必填 |
+| `chart`（SDK 2.10） | 流量曲线：与菜单栏菜单顶部那块**同一种画法**（`TrafficSparklineShape`） | 满宽、高 56pt，白 4% 底、圆角 8；下行系统青、上行系统橙，每条按自己的最大值归一；`caption` 11pt 一行 | `series` 1–2 条（`upload` / `download` 各至多一条），每条 ≤ 120 个非负数；`caption`、`label` ≤ 80 字；不可点、没有子节点 |
 
 ### 清单与卡片
 

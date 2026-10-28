@@ -14,12 +14,12 @@ import type {
   TunnelHelperState,
   TunnelStatus,
 } from "@fusionseek/jarvis-extension-sdk";
-import { compactRate, formatDelay, type TrafficRate } from "./clash.js";
+import { formatDelay, type TrafficRate } from "./clash.js";
 import { DIRECT_TAG, SELECTOR_TAG, URLTEST_TAG, type ProxyProtocol } from "./nodes.js";
 import { pageRuleFor, policyTitle, type PageDomain, type PageRule, type PolicyRef } from "./rules.js";
 import { clashModeNames, type DNSMode, type KernelKind, type ProxyMode } from "./singbox-config.js";
 import { updateIntervals, type ControlRecord, type UpdateInterval } from "./store.js";
-import { shortRate, type Attempt, type TrafficReading } from "./traffic.js";
+import { fixedRate, shortRate, type Attempt, type TrafficReading } from "./traffic.js";
 
 // MARK: - 偏好
 
@@ -39,7 +39,12 @@ export interface ProxyPreferences {
   updateInterval: UpdateInterval;
   /** 菜单栏显示速率。 */
   showSpeed: boolean;
-  /** 开启时用增强模式（TUN）。菜单与面板里拨过之后以那一次为准（`Selection.tun`），直到这一项再被改。 */
+  /** 菜单栏速率多少秒换一次（1–60）：写的是这段时间里的平均有效速率（jarvis-mac `specs/20261028-130540-proxy-walkthrough-fixes` W-2）。 */
+  speedInterval: number;
+  /**
+   * 增强模式（TUN）。**唯一的真源**：菜单、工具箱、`/proxy tun` 拨开关都写它（`jarvis.preferences.set`，W-6），设置页那一项就是它。
+   * 上一版另有 `Selection.tun`（菜单里拨过之后以那一次为准），于是工具箱开着、设置页关着。
+   */
   tun: boolean;
   /** TUN 下的 DNS。 */
   dnsMode: DNSMode;
@@ -63,6 +68,7 @@ export const defaultPreferences: Readonly<ProxyPreferences> = {
   singBoxPath: "",
   updateInterval: "daily",
   showSpeed: false,
+  speedInterval: 1,
   tun: false,
   dnsMode: "fakeip",
   tunStack: "mixed",
@@ -93,6 +99,10 @@ export function normalizePreferences(raw: Record<string, unknown> | undefined): 
     singBoxPath: text(source.singBoxPath, ""),
     updateInterval: updateIntervals.includes(interval as UpdateInterval) ? (interval as UpdateInterval) : defaultPreferences.updateInterval,
     showSpeed: flag(source.showSpeed, defaultPreferences.showSpeed),
+    speedInterval:
+      typeof source.speedInterval === "number" && Number.isFinite(source.speedInterval)
+        ? Math.min(60, Math.max(1, Math.round(source.speedInterval)))
+        : defaultPreferences.speedInterval,
     tun: flag(source.tun, defaultPreferences.tun),
     dnsMode: source.dnsMode === "realip" ? "realip" : "fakeip",
     tunStack: source.tunStack === "system" || source.tunStack === "gvisor" ? source.tunStack : "mixed",
@@ -107,7 +117,10 @@ export interface Selection {
   mode: ProxyMode;
   /** 「节点选择」选中的组员：节点名或「自动选择」。 */
   node: string;
-  /** 在菜单 / 面板里拨过的增强模式；`null` = 跟着偏好「开启时用增强模式」。 */
+  /**
+   * 上一版在菜单 / 面板里拨过的增强模式；`null` = 没拨过。**只读来迁移**：读到布尔值时写进偏好 `tun` 再清掉（`ProxyCore.migrateTunSelection`），
+   * 是否用增强模式只看偏好（W-6）。
+   */
   tun: boolean | null;
   /** 导入的策略组各选了谁（组名 → 组员 tag）。 */
   groups: Record<string, string>;
@@ -132,13 +145,12 @@ export function normalizeSelection(raw: unknown): Selection {
 }
 
 /**
- * 这一次开启用不用增强模式：菜单 / 面板里拨过的为准，没拨过跟着偏好。
- * @param selection 选择。
+ * 这一次开启用不用增强模式：只看偏好 `tun`（W-6：菜单、工具箱、设置页同一份真源）。
  * @param preferences 偏好。
  * @returns 用不用。
  */
-export function wantsTunnel(selection: Selection, preferences: ProxyPreferences): boolean {
-  return selection.tun ?? preferences.tun;
+export function wantsTunnel(preferences: ProxyPreferences): boolean {
+  return preferences.tun;
 }
 
 /** 出站模式的中文名。 */
@@ -274,6 +286,15 @@ export function isRuleSetFailure(text: string): boolean {
  * @param preferences 偏好（说清是哪个端口）。
  * @returns 一句话与下一步。
  */
+/**
+ * 内核的输出是不是「端口被占着」（jarvis-mac `specs/20261028-130540-proxy-walkthrough-fixes` W-4）。
+ * @param lines 输出。
+ * @returns 是为 `true`。
+ */
+export function isPortConflict(lines: readonly string[]): boolean {
+  return /address already in use/i.test(lines.join("\n"));
+}
+
 export function describeFailure(lines: readonly string[], preferences: ProxyPreferences): { message: string; hint: string } {
   const text = lines.join("\n");
   const last = lastMeaningfulLine(lines);
@@ -469,6 +490,17 @@ export interface MenuInput {
   reading?: TrafficReading | null;
   /** 最近一分钟的有效速率（旧的在前），菜单顶部那块曲线。 */
   history?: { upload: number[]; download: number[] } | null;
+  /** 菜单栏两行写的那一份：最近 `speedInterval` 秒的平均有效速率（W-2）；还没攒满第一段时为 `null`，回落到 `reading`。 */
+  titleRate?: { upload: number; download: number } | null;
+}
+
+/**
+ * 菜单栏图标旁那两行：`↓ 34K` / `↑1.2K`，下行在上（用户关心的是下行）。
+ * @param rate 字节 / 秒。
+ * @returns 两行（`\n` 分隔），每行恰好 5 个字符。
+ */
+export function speedTitle(rate: { upload: number; download: number }): string {
+  return `↓${fixedRate(rate.download)}\n↑${fixedRate(rate.upload)}`;
 }
 
 /**
@@ -816,8 +848,9 @@ export function buildMenuModel(input: MenuInput): MenuBarModel {
 
   const model: MenuBarModel = { symbol, items, tooltip: menuText(`代理 · ${statusLine(input)}`) };
   if (running && input.preferences.showSpeed) {
-    if (reading) model.title = `↓${shortRate(reading.download)}\n↑${shortRate(reading.upload)}`;
-    else if (input.rate) model.title = compactRate(input.rate);
+    // 两行、每行恰好「箭头 + 4 个字符」：宿主用等宽字体画，读数怎么变状态项都不伸缩（W-2）。
+    const shown = input.titleRate ?? (reading ? { upload: reading.upload, download: reading.download } : input.rate ? { upload: input.rate.up, download: input.rate.down } : null);
+    if (shown) model.title = speedTitle(shown);
   }
   return model;
 }

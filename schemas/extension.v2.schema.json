@@ -1016,6 +1016,18 @@
           "pattern": "^[A-Za-z0-9.-]+$",
           "minLength": 1,
           "maxLength": 64
+        },
+        "preferences": {
+          "type": "array",
+          "description": "这枚图标自己的设置（jarvis-mac specs/20261028-130540-proxy-walkthrough-fixes W-1）：contributes.settings.preferences 里几项的 key，宿主把它们从通用偏好列表里拿出来，画在设置页「在菜单栏显示」那一行下面（图标关着时置灰）。每个 key 必须在 settings.preferences 里声明过。",
+          "minItems": 1,
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-zA-Z0-9]*$",
+            "maxLength": 32
+          }
         }
       },
       "additionalProperties": false

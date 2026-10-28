@@ -103,7 +103,8 @@
     swatch: make("swatch"),
     dropzone: make("dropzone"),
     keycap: make("keycap"),
-    image: make("image")
+    image: make("image"),
+    chart: make("chart")
   };
 
   // sdk/src/index.ts
@@ -583,6 +584,9 @@
     preferences: {
       get: (key) => call.preferences("get", { key }),
       all: () => call.preferences("all"),
+      set: async (key, value) => {
+        await call.preferences("set", { key, value });
+      },
       onChange: (listener) => runtime.subscribe("preferences", "observe", listener)
     },
     permissions: {
@@ -816,10 +820,6 @@
   function formatRate(bytesPerSecond) {
     return `${formatBytes(bytesPerSecond)}/s`;
   }
-  function compactRate(rate) {
-    const short = (bytesPerSecond) => formatBytes(bytesPerSecond).replace(" ", "").replace(/B$/, "") || "0";
-    return `\u2193${short(rate.down)} \u2191${short(rate.up)}`;
-  }
   function formatDelay(delay) {
     if (delay === void 0) return "";
     return delay === null ? "\u8D85\u65F6" : `${delay} ms`;
@@ -1044,8 +1044,19 @@
     /** `StoredSurge`：导入的 Surge 配置，规则另外切块（`surge:rules:<序号>`）。 */
     surge: "surge",
     /** `Record<tag, RuleSetRecord>`：导入配置里那些外部规则集拉没拉到，内容另外切块（`ruleset:<tag>:<序号>`）。 */
-    ruleSets: "ruleSets"
+    ruleSets: "ruleSets",
+    /**
+     * `TunSwitch`：自己刚把偏好 `tun` 改成了什么（jarvis-mac `specs/20261028-130540-proxy-walkthrough-fixes` W-6）。
+     * 宿主把每次偏好变更都通知给所有会话、包括写的那一个；后台会话看到 30 秒内、值相同的这一笔，就知道是自己人在换内核，不再换一次。
+     */
+    tunSwitch: "tunSwitch"
   };
+  var tunSwitchEchoMs = 3e4;
+  function isTunSwitchEcho(marker, on, now) {
+    if (typeof marker !== "object" || marker === null) return false;
+    const value = marker;
+    return value.on === on && typeof value.at === "number" && now - value.at >= 0 && now - value.at < tunSwitchEchoMs;
+  }
   function surgeRuleChunkKey(index) {
     return `surge:rules:${index}`;
   }
@@ -2222,6 +2233,22 @@
       }
     }
   };
+  function titleAverage(window, interval) {
+    const needed = Math.min(60, Math.max(1, Math.round(interval)));
+    if (window.count < needed) return null;
+    return { upload: window.upload / window.count, download: window.download / window.count };
+  }
+  function fixedRate(bytesPerSecond) {
+    const units2 = ["K", "M", "G", "T"];
+    let value = Math.max(0, Number.isFinite(bytesPerSecond) ? bytesPerSecond : 0) / 1024;
+    let unit = 0;
+    while (Math.round(value) >= 1e3 && unit < units2.length - 1) {
+      value /= 1024;
+      unit += 1;
+    }
+    const digits = Math.round(value * 10) / 10 < 10 ? (Math.round(value * 10) / 10).toFixed(1) : `${Math.min(999, Math.round(value))}`;
+    return `${digits}${units2[unit]}`.padStart(4, " ");
+  }
   function shortRate(bytesPerSecond) {
     const units2 = ["", "K", "M", "G", "T"];
     let value = Math.max(0, bytesPerSecond);
@@ -2245,6 +2272,7 @@
     singBoxPath: "",
     updateInterval: "daily",
     showSpeed: false,
+    speedInterval: 1,
     tun: false,
     dnsMode: "fakeip",
     tunStack: "mixed",
@@ -2268,6 +2296,7 @@
       singBoxPath: text(source.singBoxPath, ""),
       updateInterval: updateIntervals.includes(interval) ? interval : defaultPreferences.updateInterval,
       showSpeed: flag2(source.showSpeed, defaultPreferences.showSpeed),
+      speedInterval: typeof source.speedInterval === "number" && Number.isFinite(source.speedInterval) ? Math.min(60, Math.max(1, Math.round(source.speedInterval))) : defaultPreferences.speedInterval,
       tun: flag2(source.tun, defaultPreferences.tun),
       dnsMode: source.dnsMode === "realip" ? "realip" : "fakeip",
       tunStack: source.tunStack === "system" || source.tunStack === "gvisor" ? source.tunStack : "mixed",
@@ -2286,8 +2315,8 @@
     }
     return { mode, node, tun, groups };
   }
-  function wantsTunnel(selection, preferences) {
-    return selection.tun ?? preferences.tun;
+  function wantsTunnel(preferences) {
+    return preferences.tun;
   }
   var modeTitles = { rule: "\u89C4\u5219", global: "\u5168\u5C40", direct: "\u76F4\u8FDE" };
   var modeHelps = {
@@ -2329,6 +2358,9 @@
   }
   function isRuleSetFailure(text) {
     return /initial rule-set/i.test(text);
+  }
+  function isPortConflict(lines) {
+    return /address already in use/i.test(lines.join("\n"));
   }
   function describeFailure(lines, preferences) {
     const text = lines.join("\n");
@@ -2400,6 +2432,10 @@
   var maximumMenuItems = 300;
   var maximumMenuNodes = 250;
   var maximumRecentRequests = 12;
+  function speedTitle(rate) {
+    return `\u2193${fixedRate(rate.download)}
+\u2191${fixedRate(rate.upload)}`;
+  }
   function menuText(text) {
     if (text.length <= 80) return text;
     let cut = text.slice(0, 80);
@@ -2661,9 +2697,8 @@
     items.push(...groupItems, ...tail);
     const model = { symbol, items, tooltip: menuText(`\u4EE3\u7406 \xB7 ${statusLine(input)}`) };
     if (running && input.preferences.showSpeed) {
-      if (reading) model.title = `\u2193${shortRate(reading.download)}
-\u2191${shortRate(reading.upload)}`;
-      else if (input.rate) model.title = compactRate(input.rate);
+      const shown = input.titleRate ?? (reading ? { upload: reading.upload, download: reading.download } : input.rate ? { upload: input.rate.up, download: input.rate.down } : null);
+      if (shown) model.title = speedTitle(shown);
     }
     return model;
   }
@@ -3347,6 +3382,7 @@
   // extensions/proxy/src/core.ts
   var INSTALL_SCRIPT_ID = "install";
   var SUBSCRIPTION_USER_AGENT = "sing-box 1.14.4 (Jarvis)";
+  var portReleaseMs = 500;
   var readyTimeoutMs = 3e4;
   var requestTimeoutSeconds = 10;
   var allCapabilities = [
@@ -3619,7 +3655,7 @@
         kernel,
         tun: {
           granted: granted.includes(tunnelCapability),
-          wanted: wantsTunnel(selection, preferences),
+          wanted: wantsTunnel(preferences),
           active: kernel === "tunnel",
           helper: tunnel?.helper.state ?? null,
           matchesInstalled: tunnel?.kernel.matchesInstalled ?? false,
@@ -3701,7 +3737,7 @@
       if (!granted.includes(requiredCapability)) return { ok: false, message: "\u8FD8\u6CA1\u6709\u6388\u6743\u300C\u4EE3\u7406\u300D\u5728\u540E\u53F0\u8FD0\u884C sing-box" };
       const preferences = await this.preferences(context.preferences);
       const selection = await this.selection();
-      const kernel = wantsTunnel(selection, preferences) ? "tunnel" : "daemon";
+      const kernel = wantsTunnel(preferences) ? "tunnel" : "daemon";
       if (kernel === "tunnel" && !granted.includes(tunnelCapability)) {
         return { ok: false, message: "\u8FD8\u6CA1\u6709\u6388\u6743\u589E\u5F3A\u6A21\u5F0F\uFF08TUN\uFF09\uFF1A\u6253\u5F00\u300C\u4EE3\u7406\u300D\u70B9\u6388\u6743\uFF0C\u6216\u5728\u83DC\u5355\u91CC\u5173\u6389\u589E\u5F3A\u6A21\u5F0F" };
       }
@@ -3731,7 +3767,7 @@
         let fallback = false;
         const rules = await this.ruleInputs(preferences);
         try {
-          await this.startKernel(kernel, nodes, preferences, selection, secret, chinaRules, rules);
+          await this.startKernelReleasingOwnPorts(kernel, nodes, preferences, selection, secret, chinaRules, rules);
         } catch (error) {
           if (error.blocked) throw error;
           if (!(chinaRules && !rules.surge && isRuleSetFailure(errorLines(error).join("\n")))) throw error;
@@ -3795,6 +3831,39 @@
         groupSelection: selection.groups
       };
       return buildConfig(options);
+    }
+    /**
+     * 起内核；撞上「端口被占着」时先停掉自己的两个内核、等半秒再起一次（W-4）。
+     *
+     * 仓库主人：「Jarvis 自己的端口释放和占用，我理解应该可以自行处理」。占着 7890 / 19090 的多半是 Jarvis 自己：
+     * 另一种模式的内核还没退完、上一个实例留下的 sing-box（宿主在 `daemon.start` 前也会收同目录的遗留进程）。
+     * 第二次还冲突才是真的被别的程序占着，照常报出来。
+     */
+    async startKernelReleasingOwnPorts(kernel, nodes, preferences, selection, secret, chinaRules, rules) {
+      try {
+        await this.startKernel(kernel, nodes, preferences, selection, secret, chinaRules, rules);
+      } catch (error) {
+        if (error.blocked || !isPortConflict(errorLines(error))) throw error;
+        jarvis.log.info("\u7AEF\u53E3\u88AB\u5360\u7740\uFF1A\u5148\u505C\u6389\u81EA\u5DF1\u7684\u5185\u6838\u518D\u8D77\u4E00\u6B21");
+        await this.stopOwnKernels();
+        await sleep(portReleaseMs);
+        await this.startKernel(kernel, nodes, preferences, selection, secret, chinaRules, rules);
+      }
+    }
+    /** 停自己的两个内核（哪一个在跑都停得掉；没在跑是空操作）。 */
+    async stopOwnKernels() {
+      try {
+        await jarvis.daemon.stop(DAEMON_ID);
+      } catch (error) {
+        jarvis.log.warn("\u5E38\u9A7B\u5185\u6838\u6CA1\u80FD\u505C\u4E0B", errorMessage2(error));
+      }
+      if ((await this.granted()).includes(tunnelCapability)) {
+        try {
+          await jarvis.tunnel.stop();
+        } catch (error) {
+          jarvis.log.warn("\u589E\u5F3A\u6A21\u5F0F\u6CA1\u80FD\u505C\u4E0B", errorMessage2(error));
+        }
+      }
     }
     /**
      * 起内核并等它就绪。远程规则集在 sing-box 的启动阶段下载（宿主只等 1–1.5 秒），所以「起来了」之后还要等 Clash API 开始答话；
@@ -3947,7 +4016,7 @@
       if (!control || !kernel) return { ok: true, message: "" };
       const preferences = await this.preferences();
       const selection = await this.selection();
-      const wanted = wantsTunnel(selection, preferences) ? "tunnel" : "daemon";
+      const wanted = wantsTunnel(preferences) ? "tunnel" : "daemon";
       if (control.mixedPort !== preferences.mixedPort || control.controlPort !== preferences.controlPort || wanted !== kernel) return this.restart();
       this.setBusy("\u6B63\u5728\u91CD\u65B0\u8F7D\u5165");
       try {
@@ -4036,17 +4105,45 @@
       }
     }
     /**
-     * 开 / 关增强模式：记下来（以后开启都按它，直到偏好「开启时用增强模式」再被改）；开着就换一个内核重开——
+     * 开 / 关增强模式：写偏好 `tun`（W-6：菜单、工具箱、`/proxy tun` 与设置页同一份真源），开着就换一个内核重开——
      * 两个内核都要监听同一个本地端口，不能同时跑。第一次打开时宿主会弹管理员密码框装网络助手。
+     * 写之前先记一笔 `tunSwitch`：宿主把这次变更也通知给后台会话，它据此认出是自己人在换，不再换一次。
      * @param on 开还是关。
      */
     async setTun(on) {
-      const selection = await this.selection();
-      await write(storageKeys.selection, { ...selection, tun: on });
+      await write(storageKeys.tunSwitch, { on, at: Date.now() });
+      try {
+        await jarvis.preferences.set("tun", on);
+      } catch (error) {
+        return { ok: false, message: `\u6CA1\u80FD\u6539\u300C\u589E\u5F3A\u6A21\u5F0F\u300D\uFF1A${errorMessage2(error)}` };
+      }
+      return this.applyTun(on);
+    }
+    /**
+     * 按偏好 `tun` 换内核：开着且内核与它不符时重开；没开着什么都不做（下次开启按它）。设置页改了这一项走这里（后台会话）。
+     * @param on 偏好此刻的值。
+     * @returns 结果。
+     */
+    async applyTun(on) {
       const kernel = await this.activeKernel();
       if (!kernel) return { ok: true, message: on ? "\u4E0B\u6B21\u5F00\u542F\u4EE3\u7406\u65F6\u7528\u589E\u5F3A\u6A21\u5F0F" : "\u4E0B\u6B21\u5F00\u542F\u4EE3\u7406\u65F6\u7528\u7CFB\u7EDF\u4EE3\u7406\u6A21\u5F0F" };
       if (kernel === "tunnel" === on) return { ok: true, message: "" };
       return this.restart();
+    }
+    /**
+     * 上一版把菜单里拨的增强模式记在 `selection.tun`：读到布尔值就写进偏好再清掉，之后只看偏好（W-6）。
+     * 写不进去（旧宿主没有 `preferences.set`）时留着不动，下次再试。
+     */
+    async migrateTunSelection() {
+      const selection = await this.selection();
+      if (selection.tun === null) return;
+      try {
+        await write(storageKeys.tunSwitch, { on: selection.tun, at: Date.now() });
+        await jarvis.preferences.set("tun", selection.tun);
+        await write(storageKeys.selection, { ...selection, tun: null });
+      } catch (error) {
+        jarvis.log.warn("\u589E\u5F3A\u6A21\u5F0F\u7684\u65E7\u5F00\u5173\u6CA1\u80FD\u642C\u8FDB\u504F\u597D", errorMessage2(error));
+      }
     }
     /**
      * 开 / 关系统代理（不改偏好：偏好只决定「开启代理时要不要顺手设」）。
@@ -4424,7 +4521,8 @@
           pageRules: snapshot.pageRules,
           recent: extra.recent ?? [],
           reading: extra.reading ?? null,
-          history: extra.history ?? null
+          history: extra.history ?? null,
+          titleRate: extra.titleRate ?? null
         })
       );
     } catch (error) {
@@ -4460,6 +4558,11 @@
       this.orbShown = false;
       this.refreshing = null;
       this.refreshAgain = false;
+      /** 菜单栏两行此刻写的那一份（W-2）；还没攒满第一段为 `null`。 */
+      this.titleRate = null;
+      /** 这一段里攒下的有效速率：凑满 `speedInterval` 个点取平均，换一次标题。 */
+      this.titleWindow = { upload: 0, download: 0, count: 0 };
+      this.unwatchPreferences = null;
     }
     extras() {
       return {
@@ -4468,6 +4571,7 @@
         busy: this.core.busy,
         reading: this.reading,
         history: this.history,
+        titleRate: this.titleRate,
         page: this.page,
         recent: this.meter.recent(Date.now(), 12)
       };
@@ -4479,6 +4583,8 @@
     async start(context) {
       this.context = context;
       this.observe(context.granted);
+      if (!this.unwatchPreferences) this.unwatchPreferences = jarvis.preferences.onChange((changes) => void this.onPreferencesChanged(changes));
+      await this.core.migrateTunSelection();
       await this.refresh();
       const snapshot = this.lastSnapshot;
       if (snapshot && snapshot.preferences.autoStart && !this.autoStarted && (snapshot.phase === "stopped" || snapshot.phase === "failed")) {
@@ -4612,6 +4718,27 @@
       await this.refresh();
       void this.speedLoop();
     }
+    /**
+     * 偏好变了（设置页、或某个会话经 `preferences.set` 写的）：菜单与读数按新偏好重推。
+     * 「增强模式」被设置页改了、代理开着、内核与它不符 → 在这里换内核（W-6：设置页与工具箱同一份真源，改哪边都当场生效）。
+     * 自己人写的那一次（`tunSwitch` 30 秒内、值相同）由写的那一方换，这里不再换一次。后台会话常驻，换内核只在这一处。
+     * @param changes 变了的几项。
+     */
+    async onPreferencesChanged(changes) {
+      if (this.context) this.context = { ...this.context, preferences: { ...this.context.preferences, ...changes } };
+      if ("speedInterval" in changes) this.titleWindow = { upload: 0, download: 0, count: 0 };
+      if (typeof changes.tun === "boolean") {
+        let echo = false;
+        try {
+          echo = isTunSwitchEcho(await jarvis.storage.get(storageKeys.tunSwitch), changes.tun, Date.now());
+        } catch {
+          echo = false;
+        }
+        if (!echo) await this.report(await this.core.applyTun(changes.tun), false);
+      }
+      await this.refresh();
+      void this.speedLoop();
+    }
     /** 菜单里的动作只在失败（或订阅更新这种要交代结果的）时发横幅：成功的开关菜单图标自己就说明了。 */
     async report(result, always) {
       if (!result.ok || always && result.message) await this.notify(result.ok ? "\u4EE3\u7406" : "\u4EE3\u7406\u6CA1\u80FD\u5B8C\u6210", result.message);
@@ -4670,6 +4797,8 @@
       this.reading = null;
       this.lastSample = null;
       this.history = { upload: [], download: [] };
+      this.titleRate = null;
+      this.titleWindow = { upload: 0, download: 0, count: 0 };
     }
     /** 重读状态、重推菜单。同一时刻只有一次在跑，期间再要求的合并成跑完后的一次。 */
     async refresh() {
@@ -4748,6 +4877,25 @@
       }
     }
     /**
+     * 攒一个点进这一段；凑满 `speedInterval` 个就取平均、换标题（W-2）。间隔 1 秒时每个点都换，与上一版相同。
+     * @param effective 这一秒的有效速率。
+     */
+    accumulateTitle(effective) {
+      const interval = this.lastSnapshot?.preferences.speedInterval ?? 1;
+      this.titleWindow = {
+        upload: this.titleWindow.upload + effective.upload,
+        download: this.titleWindow.download + effective.download,
+        count: this.titleWindow.count + 1
+      };
+      const next = titleAverage(this.titleWindow, interval);
+      if (next) {
+        this.titleRate = next;
+        this.titleWindow = { upload: 0, download: 0, count: 0 };
+      } else if (!this.titleRate) {
+        this.titleRate = { upload: effective.upload, download: effective.download };
+      }
+    }
+    /**
      * 流量：开着时每秒读一次连接快照——喂给成败统计（拿到回包的判成功）、算有效速率，推悬浮球与菜单（两行速率、曲线）。
      * 条件不成立（关了）就退出循环并撤掉悬浮球那一层。
      */
@@ -4769,6 +4917,7 @@
           if (effective) {
             this.history.upload = [...this.history.upload, effective.upload].slice(-historyLength);
             this.history.download = [...this.history.download, effective.download].slice(-historyLength);
+            this.accumulateTitle(effective);
           }
           this.reading = this.meter.reading(now);
           await this.pushOrb(this.reading);
@@ -4857,6 +5006,18 @@
           value: running ? tunActive : snapshot.tun.wanted,
           disabled: busy !== null || !snapshot.tun.granted || snapshot.phase === "notInstalled",
           onChange: (on) => void session2.setTun(on)
+        })
+      );
+    }
+    if (running && (session2.history.download.length > 1 || session2.history.upload.length > 1)) {
+      children.push(
+        ui.chart({
+          key: "traffic-chart",
+          series: [
+            { tone: "download", values: session2.history.download },
+            { tone: "upload", values: session2.history.upload }
+          ],
+          label: "\u6700\u8FD1\u4E00\u5206\u949F\u7684\u6709\u6548\u6D41\u91CF\uFF1A\u9752\u8272\u4E0B\u884C\u3001\u6A59\u8272\u4E0A\u884C"
         })
       );
     }
@@ -4984,7 +5145,7 @@
             })
           );
         }
-        const wantedKernel = wantsTunnel(snapshot.selection, snapshot.preferences) ? "tunnel" : "daemon";
+        const wantedKernel = wantsTunnel(snapshot.preferences) ? "tunnel" : "daemon";
         const restart = restartReasons(snapshot.control, snapshot.preferences, wantedKernel);
         const reload = reloadReasons(snapshot.control, snapshot.preferences, nodesDigest(snapshot.nodes), snapshot.rulesDigest);
         if (restart.length > 0) {
@@ -5018,7 +5179,7 @@
   }
   function tunNotes(session2, snapshot) {
     if (snapshot.phase === "notGranted" || snapshot.phase === "notInstalled") return [];
-    const wanted = wantsTunnel(snapshot.selection, snapshot.preferences);
+    const wanted = wantsTunnel(snapshot.preferences);
     if (!wanted || snapshot.kernel === "tunnel") return [];
     if (!snapshot.tun.granted) {
       return [
@@ -5487,6 +5648,7 @@
   var surgeProfilesDirectory = "~/Library/Application Support/Surge/Profiles";
   var maximumLogLines = 500;
   var installWaitMs = 10 * 60 * 1e3;
+  var chartPoints = 60;
   var Session = class {
     constructor() {
       this.core = new ProxyCore(() => jarvis.ui.update());
@@ -5507,6 +5669,8 @@
       /** 这一页自己的成败统计（「连接」页的失败列表、状态段的读数）。 */
       this.meter = new TrafficMeter();
       this.reading = null;
+      /** 状态段那块曲线：这一页开着以来最近 60 秒的有效速率（旧的在前，jarvis-mac `specs/20261028-130540-proxy-walkthrough-fixes` W-3）。页面关掉就丢。 */
+      this.history = { upload: [], download: [] };
       /** 「规则」页里读到的当前页面；没读过为 `null`。 */
       this.currentPage = null;
       this.sample = null;
@@ -5525,6 +5689,7 @@
       this.surface = context.surface;
       this.generation += 1;
       const generation = this.generation;
+      await this.core.migrateTunSelection();
       await this.refresh();
       this.observe();
       if (!this.unwatch) this.unwatch = jarvis.preferences.onChange((changes) => void this.onPreferencesChanged(changes));
@@ -5542,20 +5707,15 @@
       this.sample = null;
       this.rate = null;
       this.reading = null;
+      this.history = { upload: [], download: [] };
       this.meter.reset();
     }
     /**
-     * 偏好变了：「开启时用增强模式」被改过，就让它重新说了算（丢掉菜单里拨过的那一次）；「规则集地址」变了就去拉一遍。
+     * 偏好变了：重读、重画；「规则集地址」变了就去拉一遍。
+     * 「增强模式」被设置页改了时换内核的是后台会话（它常驻、只有它一处换，见 `Background.onPreferencesChanged`），这里只跟着重画。
      * @param changes 变了的几项。
      */
     async onPreferencesChanged(changes) {
-      if ("tun" in changes) {
-        try {
-          const selection = normalizeSelection(await jarvis.storage.get(storageKeys.selection));
-          await jarvis.storage.set(storageKeys.selection, { ...selection, tun: null });
-        } catch {
-        }
-      }
       if ("ruleSets" in changes && this.snapshot?.granted.includes("network.https")) {
         const result = await this.core.updateRuleSets();
         if (result.message) this.message = result;
@@ -5572,6 +5732,7 @@
           this.rate = null;
           this.connections = null;
           this.reading = null;
+          this.history = { upload: [], download: [] };
           this.meter.reset();
         }
         if (this.installingSince !== null && (snapshot.phase !== "notInstalled" || Date.now() - this.installingSince > installWaitMs)) {
@@ -5634,7 +5795,13 @@
             this.rate = trafficRate(this.sample, sample) ?? this.rate;
             this.sample = sample;
             this.connections = snapshot;
-            this.meter.ingestSnapshot(snapshot, now);
+            const effective = this.meter.ingestSnapshot(snapshot, now);
+            if (effective) {
+              this.history = {
+                upload: [...this.history.upload, effective.upload].slice(-chartPoints),
+                download: [...this.history.download, effective.download].slice(-chartPoints)
+              };
+            }
             this.reading = this.meter.reading(now);
             jarvis.ui.update();
           }
