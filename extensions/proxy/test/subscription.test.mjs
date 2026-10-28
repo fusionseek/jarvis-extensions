@@ -1,5 +1,5 @@
 /**
- * 订阅解析：三种外形、六种分享链接（含 ss 的两种写法）、base64 的各种变体、认不出的行与重名。
+ * 订阅解析：三种外形、七种分享链接（含 ss 的两种写法）、base64 的各种变体、认不出的行与重名。
  * 样本全是合成的（见 support.mjs）。
  */
 import test from "node:test";
@@ -139,7 +139,7 @@ test("percentDecode：连续的 %XX 按 UTF-8 解，坏的序列原样保留", (
   assert.equal(percentDecode("a+b"), "a+b", "+ 不当空格");
 });
 
-test("sing-box JSON：只留六种代理出站，策略组与内建出站静静丢掉，其余逐条说明", () => {
+test("sing-box JSON：只留七种代理出站，策略组与内建出站静静丢掉，其余逐条说明", () => {
   const document = {
     log: { level: "warn" },
     outbounds: [
@@ -453,6 +453,87 @@ test("tuic：v5 的 uuid:password、拥塞控制、ALPN 缺省 h3、disable_sni"
   assert.match(reason("tuic://token-only@q.example.com:443"), /TUIC v5/);
   assert.match(reason("tuic://not-a-uuid:pw@q.example.com:443"), /不是合法的 UUID/);
   assert.match(reason(`tuic://${UUID}:pw@q.example.com:443?congestion_control=brutal`), /拥塞控制：brutal/);
+});
+
+// MARK: - AnyTLS
+
+test("anytls：官方写法（端口省略为 443、IP 写的 SNI 与 insecure、IPv6），v2rayN 的 REALITY / 指纹 / ALPN", () => {
+  const official = node("anytls://letmein@example.com/?sni=real.example.com");
+  assert.equal(official.protocol, "anytls");
+  assert.equal(official.name, "example.com:443", "官方 URI：端口省略即 443");
+  assert.deepEqual(official.outbound, {
+    type: "anytls",
+    server: "example.com",
+    server_port: 443,
+    password: "letmein",
+    tls: { enabled: true, server_name: "real.example.com" },
+  });
+  assert.deepEqual(node("anytls://letmein@example.com/?sni=127.0.0.1&insecure=1").outbound.tls, {
+    enabled: true,
+    server_name: "127.0.0.1",
+    insecure: true,
+  });
+  const ipv6 = node(`anytls://${UUID}@[2409:8a71:6a00:1953::615]:8964/?insecure=1#%E9%A6%99%E6%B8%AF%20AnyTLS`);
+  assert.deepEqual([ipv6.name, ipv6.server, ipv6.port], ["香港 AnyTLS", "2409:8a71:6a00:1953::615", 8964]);
+  assert.equal(ipv6.outbound.password, UUID, "密码长得像 UUID 也只是密码");
+  assert.equal(node("anytls://p%40ss@a.example.com:443").outbound.password, "p@ss");
+
+  const reality = node(`anytls://pw@r.example.com:443?security=reality&sni=www.example.org&pbk=${REALITY_PUBLIC_KEY}&sid=${REALITY_SHORT_ID}&fp=safari&type=tcp#reality`);
+  assert.deepEqual(reality.outbound.tls, {
+    enabled: true,
+    server_name: "www.example.org",
+    utls: { enabled: true, fingerprint: "safari" },
+    reality: { enabled: true, public_key: REALITY_PUBLIC_KEY, short_id: REALITY_SHORT_ID },
+  });
+  assert.deepEqual(node("anytls://pw@a.example.com:443?security=tls&peer=s.example.com&alpn=h2,http/1.1&fp=chrome").outbound.tls, {
+    enabled: true,
+    server_name: "s.example.com",
+    alpn: ["h2", "http/1.1"],
+    utls: { enabled: true, fingerprint: "chrome" },
+  });
+});
+
+test("anytls 认不出的：没有密码、不加密、带传输层、REALITY 公钥不合法、端口不合法", () => {
+  assert.match(reason("anytls://@a.example.com:443"), /缺少密码/);
+  assert.match(reason("anytls://a.example.com:443?sni=a.example.com"), /缺少密码/);
+  assert.match(reason("anytls://pw@a.example.com:443?security=none"), /必须走 TLS/);
+  assert.match(reason("anytls://pw@a.example.com:443?type=ws&path=%2F"), /没有传输层选项（type=ws）/);
+  assert.match(reason("anytls://pw@a.example.com:443?security=reality&pbk=short"), /公钥/);
+  assert.match(reason("anytls://pw@a.example.com:70000"), /端口不合法/);
+});
+
+test("sing-box JSON 里的 anytls：开了 TLS 的原样成为节点（会话池参数留着），没开的跳过", () => {
+  const document = {
+    outbounds: [
+      {
+        type: "anytls",
+        tag: "AnyTLS 01",
+        server: "a.example.com",
+        server_port: 443,
+        password: "pw",
+        idle_session_check_interval: "30s",
+        min_idle_session: 1,
+        tls: { enabled: true, server_name: "a.example.com" },
+      },
+      { type: "anytls", tag: "no-tls", server: "a.example.com", server_port: 443, password: "pw" },
+      { type: "anytls", tag: "tls-off", server: "a.example.com", server_port: 443, password: "pw", tls: { enabled: false } },
+    ],
+  };
+  const result = parseSubscription(JSON.stringify(document));
+  assert.deepEqual(
+    result.nodes.map((n) => [n.name, n.protocol]),
+    [["AnyTLS 01", "anytls"]],
+  );
+  assert.deepEqual(result.nodes[0].outbound, {
+    type: "anytls",
+    server: "a.example.com",
+    server_port: 443,
+    password: "pw",
+    idle_session_check_interval: "30s",
+    min_idle_session: 1,
+    tls: { enabled: true, server_name: "a.example.com" },
+  });
+  assert.deepEqual(result.skipped.map((s) => s.reason), ["AnyTLS 必须开 TLS", "AnyTLS 必须开 TLS"]);
 });
 
 // MARK: - 认不出的行与名字

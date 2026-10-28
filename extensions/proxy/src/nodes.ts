@@ -11,11 +11,11 @@
  * 纯数据，不碰宿主：单测直接喂。
  */
 
-/** 本期认的六种协议（P-9）：也是 sing-box 出站的 `type`。 */
-export type ProxyProtocol = "shadowsocks" | "vmess" | "vless" | "trojan" | "hysteria2" | "tuic";
+/** 本期认的七种协议（P-9；AnyTLS 见 `20261028-173712-proxy-anytls-protocol`）：也是 sing-box 出站的 `type`。 */
+export type ProxyProtocol = "shadowsocks" | "vmess" | "vless" | "trojan" | "hysteria2" | "tuic" | "anytls";
 
 /** 全部协议，按界面上列出的顺序。 */
-export const proxyProtocols: readonly ProxyProtocol[] = ["shadowsocks", "vmess", "vless", "trojan", "hysteria2", "tuic"];
+export const proxyProtocols: readonly ProxyProtocol[] = ["shadowsocks", "vmess", "vless", "trojan", "hysteria2", "tuic", "anytls"];
 
 /** 一个节点。 */
 export interface ProxyNode {

@@ -839,7 +839,7 @@
   }
 
   // extensions/proxy/src/nodes.ts
-  var proxyProtocols = ["shadowsocks", "vmess", "vless", "trojan", "hysteria2", "tuic"];
+  var proxyProtocols = ["shadowsocks", "vmess", "vless", "trojan", "hysteria2", "tuic", "anytls"];
   var SELECTOR_TAG = "\u8282\u70B9\u9009\u62E9";
   var URLTEST_TAG = "\u81EA\u52A8\u9009\u62E9";
   var DIRECT_TAG = "direct";
@@ -2330,7 +2330,8 @@
     vless: "VLESS",
     trojan: "Trojan",
     hysteria2: "Hysteria2",
-    tuic: "TUIC"
+    tuic: "TUIC",
+    anytls: "AnyTLS"
   };
   var requiredCapability = "process.daemon";
   function phaseOf(input) {
@@ -2794,6 +2795,7 @@
       port = typeof first === "string" ? parsePortNumber(first.split(/[:-]/)[0]) ?? 0 : 0;
     }
     if (port === 0) return fail("\u51FA\u7AD9\u6CA1\u6709\u5408\u6CD5\u7684 server_port");
+    if (type === "anytls" && !(isRecord2(item.tls) && item.tls.enabled === true)) return fail("AnyTLS \u5FC5\u987B\u5F00 TLS");
     const outbound = JSON.parse(JSON.stringify(item));
     const tag = typeof outbound.tag === "string" ? outbound.tag.trim() : "";
     delete outbound.tag;
@@ -2821,6 +2823,8 @@
           return parseHysteria2(line);
         case "tuic":
           return parseTUIC(line);
+        case "anytls":
+          return parseAnyTLS(line);
         case "ssr":
           return fail("sing-box \u4E0D\u652F\u6301 ShadowsocksR");
         case "hysteria":
@@ -3207,6 +3211,17 @@
     if (flag(parts.params, "disable_sni", "disable-sni")) tls.disable_sni = true;
     outbound.tls = tls;
     return finishNode("tuic", parts, outbound);
+  }
+  function parseAnyTLS(line) {
+    const parts = splitLink(line);
+    const password = parts.userinfo === null ? "" : percentDecode(parts.userinfo);
+    if (password.length === 0) return fail("anytls \u94FE\u63A5\u7F3A\u5C11\u5BC6\u7801");
+    const network = (param(parts.params, "type", "network") || "tcp").toLowerCase();
+    if (network !== "tcp" && network !== "raw") return fail(`AnyTLS \u6CA1\u6709\u4F20\u8F93\u5C42\u9009\u9879\uFF08type=${network}\uFF09`);
+    const security = streamSecurity(parts.params, "tls");
+    if (!security.ok) return security;
+    if (!security.tls) return fail("AnyTLS \u5FC5\u987B\u8D70 TLS\uFF08security=none \u4E0D\u8BA4\uFF09");
+    return finishNode("anytls", { host: parts.host, port: parts.port || "443", name: parts.name }, { password, tls: security.tls });
   }
   var utlsFingerprints = /* @__PURE__ */ new Set(["chrome", "firefox", "edge", "safari", "360", "qq", "ios", "android", "random", "randomized"]);
   function buildTLS(input) {

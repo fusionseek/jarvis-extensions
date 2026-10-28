@@ -1,9 +1,9 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-28T07:28:48.527Z",
+  "generatedAt": "2026-10-28T09:40:11.843Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "181b5b9cd5d5deecb1811f6efda3bf223375c39c"
+    "commit": "e30edab17414ab53dd57c779383095ab3b24b888"
   },
   "extensions": [
     {
@@ -842,7 +842,7 @@
         "version": "1.0.1",
         "name": "代理",
         "symbol": "network",
-        "description": "用你自己装的 sing-box 跑你的订阅：菜单栏随手开关、切节点与策略组，系统代理或增强模式（TUN）接管整机网络；能导入 Surge 配置的规则，给正在看的网页一键加规则，悬浮球上看有效流量与成败。认 SS、VMess、VLESS（含 REALITY）、Trojan、Hysteria2、TUIC 与 sing-box JSON。",
+        "description": "用你自己装的 sing-box 跑你的订阅：菜单栏随手开关、切节点与策略组，系统代理或增强模式（TUN）接管整机网络；能导入 Surge 配置的规则，给正在看的网页一键加规则，悬浮球上看有效流量与成败。认 SS、VMess、VLESS（含 REALITY）、Trojan、Hysteria2、TUIC、AnyTLS 与 sing-box JSON。",
         "author": {
           "name": "fusionseek",
           "github": "fusionseek"
@@ -1187,10 +1187,10 @@
       "path": "extensions/proxy",
       "bundle": {
         "path": "extensions/proxy/dist/extension.js",
-        "sha256": "1c52d8ce2c31d6b0dd854e76e64d77a486977657c5bd8dce583c9bd24383eaec",
-        "byteCount": 281264
+        "sha256": "576a898d7d93bb2585e9fb5644055c377c4c76f48606aace32aba3f74cde6e39",
+        "byteCount": 282290
       },
-      "updatedAt": "2026-10-28T13:50:29+08:00"
+      "updatedAt": "2026-10-28T15:49:26+08:00"
     },
     {
       "manifest": {

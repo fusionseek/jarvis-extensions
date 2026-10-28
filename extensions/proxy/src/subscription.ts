@@ -3,7 +3,7 @@
  *
  * 认三种外形：整段 base64（标准与 URL-safe、有无补位、中间夹换行）包着逐行的分享链接；逐行明文的分享链接；
  * sing-box 自己的 `{ "outbounds": [...] }`。分享链接认 `ss`（SIP002 与旧式）、`vmess`（v2rayN 的 base64 JSON）、
- * `vless`、`trojan`、`hysteria2` / `hy2`、`tuic`。Clash YAML 不在本期。
+ * `vless`、`trojan`、`hysteria2` / `hy2`、`tuic`、`anytls`。Clash YAML 不在本期。
  *
  * 两条原则：
  *
@@ -145,7 +145,7 @@ function clampLine(line: string): string {
 const nonNodeOutboundTypes = new Set(["selector", "urltest", "direct", "block", "dns"]);
 
 /**
- * 解析 sing-box 配置 / 订阅（`{ "outbounds": [...] }`）。只留本期认的六种代理出站。
+ * 解析 sing-box 配置 / 订阅（`{ "outbounds": [...] }`）。只留本期认的七种代理出站。
  * @param body 以 `{` 开头的正文。
  * @returns 解析结果，外形恒为 `sing-box`。
  */
@@ -200,6 +200,8 @@ function singBoxOutboundNode(item: unknown): ShareLinkResult | null {
     port = typeof first === "string" ? parsePortNumber(first.split(/[:-]/)[0]) ?? 0 : 0;
   }
   if (port === 0) return fail("出站没有合法的 server_port");
+  // sing-box：「TLS required」。AnyTLS 就是跑在 TLS 里的协议，没开 TLS 的出站会让整份配置起不来。
+  if (type === "anytls" && !(isRecord(item.tls) && item.tls.enabled === true)) return fail("AnyTLS 必须开 TLS");
 
   const outbound = JSON.parse(JSON.stringify(item)) as Record<string, unknown>;
   const tag = typeof outbound.tag === "string" ? outbound.tag.trim() : "";
@@ -237,6 +239,8 @@ export function parseShareLink(line: string): ShareLinkResult {
         return parseHysteria2(line);
       case "tuic":
         return parseTUIC(line);
+      case "anytls":
+        return parseAnyTLS(line);
       case "ssr":
         return fail("sing-box 不支持 ShadowsocksR");
       case "hysteria":
@@ -831,6 +835,30 @@ function parseTUIC(line: string): ShareLinkResult {
   if (flag(parts.params, "disable_sni", "disable-sni")) tls.disable_sni = true;
   outbound.tls = tls;
   return finishNode("tuic", parts, outbound);
+}
+
+// MARK: AnyTLS
+
+/**
+ * `anytls://password@host[:port]/?sni=&insecure=1#name`（anytls-go `docs/uri_scheme.md`，仿 Hysteria2：端口省略即 443）。
+ *
+ * 官方只有 `sni` 与 `insecure` 两个参数；v2rayN 这类客户端会照 VLESS 的样子多写 `security=tls|reality`、`pbk`、`sid`、`fp`、`alpn`、`type=tcp`，
+ * 所以 TLS 一组直接走 {@link streamSecurity}（没写 `security` 按 `tls` 算）。两样东西 sing-box 做不到、只能不认：
+ * 不加密（「TLS required」）与传输层（anytls 出站没有 `transport` 字段——硬塞进去整份配置起不来，悄悄丢掉又会连到不是机场那个意思的地方）。
+ * 密码为空时 sing-box 不拦，但服务端按密码认证，这样的节点永远连不上。
+ * @param line 链接。
+ * @returns 节点或原因。
+ */
+function parseAnyTLS(line: string): ShareLinkResult {
+  const parts = splitLink(line);
+  const password = parts.userinfo === null ? "" : percentDecode(parts.userinfo);
+  if (password.length === 0) return fail("anytls 链接缺少密码");
+  const network = (param(parts.params, "type", "network") || "tcp").toLowerCase();
+  if (network !== "tcp" && network !== "raw") return fail(`AnyTLS 没有传输层选项（type=${network}）`);
+  const security = streamSecurity(parts.params, "tls");
+  if (!security.ok) return security;
+  if (!security.tls) return fail("AnyTLS 必须走 TLS（security=none 不认）");
+  return finishNode("anytls", { host: parts.host, port: parts.port || "443", name: parts.name }, { password, tls: security.tls });
 }
 
 // MARK: - TLS

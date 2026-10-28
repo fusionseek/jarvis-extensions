@@ -54,6 +54,8 @@ const everyProtocol = parseSubscription(
     "hysteria2://pw@h.example.com:8443?sni=h.example.com&obfs=salamander&obfs-password=x#hy2",
     "hy2://pw@h.example.com:443,20000-30000#hy2-hopping",
     `tuic://${UUID}:pw@q.example.com:443?congestion_control=bbr&udp_relay_mode=native&sni=q.example.com#tuic`,
+    "anytls://pw@a.example.com/?sni=a.example.com#anytls",
+    `anytls://pw@r.example.com:443?security=reality&sni=www.example.org&pbk=${REALITY_PUBLIC_KEY}&fp=chrome#anytls-reality`,
   ].join("\n"),
 );
 
@@ -200,7 +202,7 @@ for (const chinaRules of [false, true]) {
     { skip: existsSync(SING_BOX) ? false : `本机没有 ${SING_BOX}（brew install sing-box）` },
     () => {
       assert.equal(everyProtocol.skipped.length, 0, JSON.stringify(everyProtocol.skipped));
-      assert.equal(everyProtocol.nodes.length, 15);
+      assert.equal(everyProtocol.nodes.length, 17);
       const nodes = [...jmsNodes, ...everyProtocol.nodes];
       const { status, output } = singBoxCheck(buildConfig(options({ nodes, chinaRules, selected: jmsNodes[1].name })));
       assert.equal(status, 0, output);

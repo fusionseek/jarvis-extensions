@@ -115,7 +115,8 @@ Surge 的增强模式或别的 VPN 开着时它不会启动，会写明是谁占
 ## 它怎么做的
 
 - **订阅**：认 `ss://`（SIP002 与旧式整段 base64）、`vmess://`（v2rayN 的 base64 JSON）、`vless://`（含 `security=reality`、`flow=xtls-rprx-vision`、ws / gRPC / HTTP / HTTPUpgrade）、
-  `trojan://`、`hysteria2://` / `hy2://`（含端口跳跃与 salamander 混淆）、`tuic://`（v5），以及 sing-box 自己的 `{ "outbounds": [...] }`。
+  `trojan://`、`hysteria2://` / `hy2://`（含端口跳跃与 salamander 混淆）、`tuic://`（v5）、`anytls://`（官方的 `sni` / `insecure`，也认 v2rayN 写的 REALITY 与指纹），
+  以及 sing-box 自己的 `{ "outbounds": [...] }`。
   认不出的行逐条记下原因（订阅页能看到），不中断整份；sing-box 会拒绝的写法（REALITY 公钥不对、UUID 不合法、不支持的加密……）在解析时就挡下，
   因为一个坏节点就会让整份配置起不来。两条订阅里重名的节点依次加「 2」「 3」。一条订阅拉失败时保留它上一次的节点。
 - **配置**：`mixed` 入站（`127.0.0.1:‹本地端口›`）；每个节点一个出站；「节点选择」（自动选择 + 全部节点，手动切换时断开旧连接）、「自动选择」（按延迟）、导入的策略组；
@@ -140,5 +141,6 @@ Surge 的增强模式或别的 VPN 开着时它不会启动，会写明是谁占
   （Jarvis 照样还原系统代理，页面开着时照样显示「起不来」那一屏）；「启动 Jarvis 时自动开启」也靠菜单栏图标起来的那一刻。
 - **订阅更新会重新载入内核**：节点真的变了且代理开着时，自动更新会让 sing-box 原进程重载一次（SIGHUP），系统代理不动；正在走的连接会断一下（sing-box 重载时会重建出站）。端口改过、换了内核（增强模式开 / 关）时只能重开。
 - **REALITY 连不上**：多半是 sing-box 太旧。「起不来」那一屏会给「在终端中更新 sing-box」。
+- **AnyTLS 要 sing-box 1.12 及以上**，且只认走 TLS、不带传输层（`type=ws` 一类）的节点——sing-box 的 AnyTLS 出站两样都做不到，这类节点会写明原因跳过。
 - **Hysteria2 的 `pinSHA256` 不映射**：官方是整张证书的 SHA-256，sing-box 的是公钥的，二者不等价。
 - **控制口 secret 用 `Math.random` 生成**：JavaScriptCore 里没有保证可用的 `crypto.getRandomValues`。控制口只听 127.0.0.1，secret 挡的是同机别的程序顺手调它。

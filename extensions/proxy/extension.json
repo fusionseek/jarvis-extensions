@@ -4,7 +4,7 @@
   "version": "1.0.1",
   "name": "代理",
   "symbol": "network",
-  "description": "用你自己装的 sing-box 跑你的订阅：菜单栏随手开关、切节点与策略组，系统代理或增强模式（TUN）接管整机网络；能导入 Surge 配置的规则，给正在看的网页一键加规则，悬浮球上看有效流量与成败。认 SS、VMess、VLESS（含 REALITY）、Trojan、Hysteria2、TUIC 与 sing-box JSON。",
+  "description": "用你自己装的 sing-box 跑你的订阅：菜单栏随手开关、切节点与策略组，系统代理或增强模式（TUN）接管整机网络；能导入 Surge 配置的规则，给正在看的网页一键加规则，悬浮球上看有效流量与成败。认 SS、VMess、VLESS（含 REALITY）、Trojan、Hysteria2、TUIC、AnyTLS 与 sing-box JSON。",
   "author": {
     "name": "fusionseek",
     "github": "fusionseek"

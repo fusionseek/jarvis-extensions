@@ -171,6 +171,7 @@ export const protocolTitles: Readonly<Record<ProxyProtocol, string>> = {
   trojan: "Trojan",
   hysteria2: "Hysteria2",
   tuic: "TUIC",
+  anytls: "AnyTLS",
 };
 
 // MARK: - 处在哪一步
