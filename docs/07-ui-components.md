@@ -158,6 +158,27 @@ ui.scroll({
 判据（`design-system.md`「面板内容模式」）：段间 14、段内 10；一屏放得完就不滚；
 装不下的正解是滚动或分阶段，不是放大面板。
 
+## 菜单栏（SDK 2.9）：不是第四面
+
+入驻了菜单栏域（`contributes.menuBar`）的扩展在系统菜单栏上有自己的一枚图标。它**不吃节点树**：
+`render()` 不画到这里，扩展经 `jarvis.menuBar.update(model)` 推一份菜单模型，宿主用 AppKit 原生的 `NSStatusItem` + `NSMenu` 画——
+键盘、VoiceOver、深浅色、点开的样子都是系统的，与别的应用的菜单栏图标一模一样。为什么不让节点树画进菜单：
+系统菜单是一列条目，不是一块画布；在里面放一块自绘的面板，会得到一个既不像菜单、也不像 Jarvis 面板的东西。
+
+| 模型 | 宿主画成 | 规则 |
+| --- | --- | --- |
+| `symbol` | 状态栏图标（SF Symbol，跟系统深浅色走） | 省略或画不出时退回 manifest `contributes.menuBar.symbol` |
+| `title` | 图标右侧的短字 | ≤ 16 字（速率这类读数）；省略 = 只有图标。别放长句：菜单栏是所有应用共用的一条窄带 |
+| `tooltip` | 悬停提示 | ≤ 80 字 |
+| `{ kind: "item", id, title, subtitle?, symbol?, checked?, enabled? }` | 一行 `NSMenuItem` | `checked` 画系统的勾；`enabled: false` 灰掉、点不了；`subtitle` 是标题下的灰字。点了发 `select`，带回 `id` |
+| `{ kind: "separator" }` | 分隔线 | 不带任何别的字段 |
+| `{ kind: "header", title }` | 灰色段标题 | 不可点 |
+| `{ kind: "submenu", title, symbol?, enabled?, items }` | 子菜单 | 至多两层 |
+| （宿主追加） | 分隔线、「打开「名」」「「名」的设置」 | 扩展改不掉：用户必须总能从这枚图标回到 Jarvis 管它的地方 |
+
+整份 ≤ 300 项（含子菜单里的）、文字 ≤ 80 字；超出的部分宿主丢掉并记警告。图标位置由用户 ⌘ 拖动排，系统记住。
+颜色同样不由扩展定：状态用符号换（开着 `network`、关着 `network.slash`、出错 `exclamationmark.triangle`），不用色。
+
 ## Gotchas
 
 - `image` 只画宿主颁发的句柄（截图、剪贴板里的图、拖进来的图），给用户核对"截到的是哪一块"，不是相册；

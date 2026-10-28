@@ -17,8 +17,28 @@
  *
  * Android 操作域（SDK 2.4）另有一台假手机 `fakeAndroid()`：它按宿主的规则答 `android.*`（1…8 个包、设备要 ready），
  * 记下每一次调用与同时在途的 `appDetails` 个数，并能挂住、能让下一次失败——「一次一批」「换设备丢掉旧结果」靠它断言。
+ *
+ * 菜单栏域（SDK 2.9）由替身自己接住：`menuBar.update` 不用给桩，收下的模型攒在 `menuBarModels`；`menuBarEvent()` 发 `start` / `open` / `select`。
+ * 常驻进程与系统代理另有 `fakeDaemons()`：按宿主的规则答 `daemon.*` 与 `systemProxy.*`，`output()` / `crash()` 往订阅者推事件，
+ * 进程没了就照宿主兜底把系统代理还原——「内核死了、横幅一条、系统代理已还原」靠它断言。
  */
-import type { CommitRequest, HostEvent, InvokeRequest, InvokeResult, SerializedNode, ServiceCall } from "./bridge.js";
+import type {
+  CommitRequest,
+  DaemonEvent,
+  DaemonRequest,
+  DaemonResponse,
+  DaemonStatus,
+  HostEvent,
+  InvokeRequest,
+  InvokeResult,
+  MenuBarActionItem,
+  MenuBarItem,
+  MenuBarModel,
+  SerializedNode,
+  ServiceCall,
+  SystemProxyBlocker,
+  SystemProxyStatus,
+} from "./bridge.js";
 import type { AndroidApp, AndroidAppDetail, AndroidAppScope, AndroidDevice, AndroidTool, JarvisErrorShape } from "./capabilities.js";
 import { maximumAndroidAppDetailsPerCall } from "./capabilities.js";
 import type { ServicePoint } from "./manifest.js";
@@ -59,6 +79,23 @@ export interface TestHost {
   logs: { level: string; message: string; data: unknown }[];
   /** 最新一棵树；还没提交过为 `undefined`。 */
   readonly latest: SerializedNode | undefined;
+  /**
+   * SDK 2.9：每一份被收下的 `jarvis.menuBar.update` 模型，按先后。替身默认收下一切（宿主的 250 ms 合并与上限它不演）；
+   * 要演「没入驻菜单栏域」就给 `menuBar.update` 一个抛 `surface.unavailable` 的桩，被拒的模型不进这里。
+   */
+  menuBarModels: MenuBarModel[];
+  /** 最新一份菜单栏模型：宿主只缓存、只画这一份。还没推过为 `undefined`。 */
+  readonly latestMenuBar: MenuBarModel | undefined;
+  /** 在最新一份菜单栏模型里按 id 找一项可点的条目（含子菜单里的）；没有为 `undefined`。 */
+  menuItem(id: string): MenuBarActionItem | undefined;
+  /**
+   * SDK 2.9：发一次 `menuBar` 事件并等落定。`select` 要带 `itemId`，且这一项必须在最新一份模型里、用户点得到
+   * （它与它所在的子菜单都没有 `enabled: false`）——否则抛错：用户点不到的东西，测试也不该点到。
+   */
+  menuBarEvent(
+    event: "start" | "open" | "select",
+    options?: { itemId?: string; granted?: string[]; preferences?: Record<string, unknown> },
+  ): Promise<void>;
   /** 给 SDK 发一个宿主事件。 */
   dispatch(event: HostEvent): void;
   /** 往一个订阅 token 上推一次事件。 */
@@ -94,6 +131,18 @@ function isErrorShape(value: unknown): value is JarvisErrorShape {
   return typeof value === "object" && value !== null && "code" in value && "message" in value;
 }
 
+/** 在一列菜单项里按 id 找可点的条目。`reachable` 为假时找到也算点不到（它或它所在的子菜单被禁用了）。 */
+function findMenuItem(items: MenuBarItem[], id: string, reachable = true): { item: MenuBarActionItem; reachable: boolean } | undefined {
+  for (const item of items) {
+    if (item.kind === "item" && item.id === id) return { item, reachable: reachable && item.enabled !== false };
+    if (item.kind === "submenu") {
+      const hit = findMenuItem(item.items, id, reachable && item.enabled !== false);
+      if (hit) return hit;
+    }
+  }
+  return undefined;
+}
+
 function walk(node: SerializedNode, visit: (node: SerializedNode) => boolean): SerializedNode | undefined {
   if (visit(node)) return node;
   for (const child of node.children ?? []) {
@@ -107,12 +156,17 @@ function walk(node: SerializedNode, visit: (node: SerializedNode) => boolean): S
 export function createTestHost(options: TestHostOptions = {}): TestHost {
   const commits: SerializedNode[] = [];
   const surfaces: string[] = [];
+  const menuBarModels: MenuBarModel[] = [];
   const invocations: InvokeRequest[] = [];
   const logs: { level: string; message: string; data: unknown }[] = [];
   let inflight: Promise<unknown>[] = [];
   let callCounter = 1;
   const serviceWaiters = new Map<number, { resolve: (outcome: ServiceOutcome) => void; progress: unknown[] }>();
-  const asyncStubs = options.async ?? {};
+  // 替身自己接住的隐式能力：给了同名的桩就用桩（演拒绝）。
+  const asyncStubs: Record<string, AsyncStub> = {
+    "menuBar.update": () => null,
+    ...(options.async ?? {}),
+  };
   const syncStubs: Record<string, SyncStub> = {
     "host.info": () => options.hostInfo ?? { version: "0.0.0-test", channel: "development" },
     "host.environment": () =>
@@ -136,6 +190,30 @@ export function createTestHost(options: TestHostOptions = {}): TestHost {
     },
     get latestSurface() {
       return surfaces[surfaces.length - 1];
+    },
+    menuBarModels,
+    get latestMenuBar() {
+      return menuBarModels[menuBarModels.length - 1];
+    },
+    menuItem(id) {
+      const latest = menuBarModels[menuBarModels.length - 1];
+      return latest ? findMenuItem(latest.items, id)?.item : undefined;
+    },
+    async menuBarEvent(event, eventOptions = {}) {
+      const granted = eventOptions.granted ?? [];
+      const preferences = eventOptions.preferences ?? {};
+      if (event === "select") {
+        const itemId = eventOptions.itemId;
+        if (itemId === undefined) throw new Error("menuBarEvent(\"select\") 要带 itemId。");
+        const latest = menuBarModels[menuBarModels.length - 1];
+        const hit = latest ? findMenuItem(latest.items, itemId) : undefined;
+        if (!hit) throw new Error(`最新一份菜单栏模型里没有「${itemId}」这一项。`);
+        if (!hit.reachable) throw new Error(`菜单项「${itemId}」被禁用了（它或它所在的子菜单 enabled: false），用户点不到。`);
+        dispatchToRuntime({ type: "menuBar", menuBar: { event, itemId, granted, preferences } });
+      } else {
+        dispatchToRuntime({ type: "menuBar", menuBar: { event, granted, preferences } });
+      }
+      await host.settle();
     },
     get nextCallId() {
       return callCounter;
@@ -219,7 +297,10 @@ export function createTestHost(options: TestHostOptions = {}): TestHost {
       const run = (async (): Promise<InvokeResult> => {
         if (!stub) return { ok: false, error: { code: "capability.unknown", message: `测试替身没有桩：${key}` } };
         try {
-          return { ok: true, value: await stub(request.params, host) };
+          const value = await stub(request.params, host);
+          // 宿主只画收下了的那份模型：被拒的不进 menuBarModels。
+          if (key === "menuBar.update") menuBarModels.push(request.params as MenuBarModel);
+          return { ok: true, value };
         } catch (error) {
           if (isErrorShape(error)) return { ok: false, error };
           return { ok: false, error: { code: "host.failure", message: error instanceof Error ? error.message : String(error) } };
@@ -414,6 +495,359 @@ export function fakeAndroid(options: { devices?: FakeAndroidDevice[] } = {}): Fa
     },
     get maxDetailsInFlight() {
       return maxInFlight;
+    },
+  };
+  return fake;
+}
+
+// ---------------------------------------------------------------------------
+// 常驻进程与系统代理的替身（SDK 2.9）
+// ---------------------------------------------------------------------------
+
+/** 替身那一侧的一个常驻进程（manifest `process.daemons[]` 的一项）。 */
+export interface FakeDaemonDeclaration {
+  /** manifest `process.daemons[].id`。 */
+  id: string;
+  /**
+   * 宿主此刻定位到的可执行文件路径；**空串 = 没装**（`status` 答空串、`start` 以 `host.failure` 拒绝）。
+   * 省略 = `/opt/homebrew/bin/<id>`。可以在测试之间改（演「在终端里装好了」）。
+   */
+  located?: string;
+  /** manifest 声明了 `config`：`start` 必须带配置正文，没声明却带了同样拒绝。 */
+  config?: boolean;
+}
+
+/** `fakeDaemons()` 认的方法（线缆上的 `namespace.method`）。 */
+export type FakeDaemonMethod =
+  | "daemon.start"
+  | "daemon.stop"
+  | "daemon.status"
+  | "daemon.logs"
+  | "daemon.request"
+  | "daemon.observe"
+  | "daemon.unsubscribe"
+  | "systemProxy.status"
+  | "systemProxy.enable"
+  | "systemProxy.disable";
+
+/** `fakeDaemons()` 收到的一次调用。 */
+export interface FakeDaemonCall {
+  method: FakeDaemonMethod;
+  params: unknown;
+}
+
+/** 常驻进程与系统代理的替身。字段都可以在测试之间改，下一次调用读到的就是改过的。 */
+export interface FakeDaemons {
+  /** 声明过的常驻进程。 */
+  daemons: FakeDaemonDeclaration[];
+  /** 交给 `createTestHost({ async })` 的桩：`daemon.*` 七个与 `systemProxy.*` 三个。 */
+  readonly stubs: Record<string, AsyncStub>;
+  /** 每一次调用（含被拒的），按先后。 */
+  readonly calls: FakeDaemonCall[];
+  /** 每个 id 最近一次**起来了的** `start` 交来的配置正文（没带为 `undefined`）：断言生成的配置就看它。 */
+  readonly configs: Record<string, string | undefined>;
+  /** 每一次放行到控制口的 `daemon.request`（被拒的不在这里）。 */
+  readonly requests: DaemonRequest[];
+  /** 控制口的应答。省略时一律 `404`、空正文。 */
+  respond: (request: DaemonRequest) => DaemonResponse | Promise<DaemonResponse>;
+  /** 一个常驻进程此刻的状态（与 `daemon.status` 不带 `executable` 时答的一样）。 */
+  status(id: string): DaemonStatus;
+  /** 它此刻有几个订阅者。 */
+  observers(id: string): number;
+  /** 进程打了几行输出：记进日志（至多 500 行），推给订阅者一条 `output`。 */
+  output(id: string, lines: string[]): void;
+  /**
+   * 进程自己死了（`kill -9`、配置热加载失败）：状态 `exited`，推给订阅者一条 `expected: false` 的 `exit`（带最后 20 行），
+   * 这个扩展再没有在跑的常驻进程时，照宿主兜底把它接管着的系统代理还原。
+   */
+  crash(id: string, exit?: { exitCode?: number; signal?: number; lines?: string[] }): void;
+  /** 下一次（只一次）调用这个方法时以 `error` 拒绝：演「1 秒内就退出了」这种启动失败。 */
+  failNext(method: FakeDaemonMethod, error: JarvisErrorShape): void;
+  /** 系统代理此刻的状态（与 `systemProxy.status` 答的一样）。 */
+  readonly systemProxy: SystemProxyStatus;
+  /** 让系统代理被别的工具拦着（Surge 增强模式）；`null` 撤掉。拦着时 `enable` 不写、返回带 `blocker` 的状态。 */
+  blockSystemProxy(blocker: SystemProxyBlocker | null): void;
+  /** 让另一个扩展接管着系统代理（`enable` 以 `host.failure` 拒绝并写明是谁）；`null` 放手。 */
+  claimSystemProxy(otherName: string | null): void;
+}
+
+/** 替身里一个常驻进程的运行状态。 */
+interface FakeDaemonRun {
+  state: DaemonStatus["state"];
+  pid?: number;
+  startedAt?: number;
+  exitCode?: number;
+  signal?: number;
+  controlPort?: number;
+  executable?: string;
+  logs: string[];
+}
+
+const daemonRequestMethods = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+const daemonRequestHeaders = ["Authorization", "Content-Type", "Accept"];
+/** 与 bridge schema `$defs.daemonRequest.path` 同一条：以 / 开头，不含 //、反斜杠、# 与空白。 */
+const daemonRequestPath = /^(?!.*\/\/)\/[^\s#\\]*$/;
+const maximumDaemonLogLines = 500;
+const daemonExitTailLines = 20;
+
+/**
+ * 装一套常驻进程与系统代理的替身。规则照宿主（`docs/06-capabilities.md`「常驻进程」「系统代理」，jarvis-mac
+ * `specs/20261028-091917-proxy-extension-menubar-daemon` P-3 / P-4 / P-6）：
+ *
+ * - `daemon.*`：没声明的 id → `capability.undeclared`；`start` 已在跑 → `host.failure`；没装（`located` 为空串、也没给路径）→ `host.failure`；
+ *   `config` 该带没带、不该带带了，控制口不在 1024–65535 → `invalid.argument`；
+ * - `daemon.request`：没在跑、启动时没报控制口 → `host.failure`；方法、路径、请求头、超时不合规矩 → `invalid.argument`；放行的交给 `respond`；
+ * - `daemon.stop`：幂等；在跑的停下并推一条 `expected: true` 的 `exit`；
+ * - `systemProxy.enable`：端口越界、例外超过 64 条或带空白 → `invalid.argument`；这个扩展没有在跑的常驻进程、别的扩展接管着 → `host.failure`；
+ *   被拦着时什么都不写，返回带 `blocker` 的状态；
+ * - 兜底还原：这个扩展的常驻进程全部停下或死掉时，它接管着的系统代理回到没人接管。
+ *
+ * 它不起任何进程、不碰这台机器的系统代理。
+ *
+ * @param options.daemons 声明过的常驻进程；省略为一个都没有。
+ * @returns 替身：把 `stubs` 摊进 `createTestHost({ async })`。
+ */
+export function fakeDaemons(options: { daemons?: FakeDaemonDeclaration[] } = {}): FakeDaemons {
+  const calls: FakeDaemonCall[] = [];
+  const configs: Record<string, string | undefined> = {};
+  const requests: DaemonRequest[] = [];
+  const failures = new Map<FakeDaemonMethod, JarvisErrorShape>();
+  const runs = new Map<string, FakeDaemonRun>();
+  /** token → 订阅的是哪一个进程。 */
+  const observers = new Map<string, string>();
+  let attached: TestHost | null = null;
+  let nextPid = 4242;
+  const proxy: { owner: SystemProxyStatus["owner"]; port?: number; otherName?: string; blocker?: SystemProxyBlocker } = { owner: "none" };
+
+  const invalid = (message: string): JarvisErrorShape => ({ code: "invalid.argument", message });
+  const failure = (message: string): JarvisErrorShape => ({ code: "host.failure", message });
+  const record = (method: FakeDaemonMethod, params: unknown) => {
+    calls.push({ method, params });
+    const pending = failures.get(method);
+    if (pending) {
+      failures.delete(method);
+      throw pending;
+    }
+  };
+  const declaration = (id: unknown): FakeDaemonDeclaration => {
+    const found = fake.daemons.find((candidate) => candidate.id === id);
+    if (!found) throw { code: "capability.undeclared", message: `manifest 没有声明常驻进程「${String(id)}」` } satisfies JarvisErrorShape;
+    return found;
+  };
+  const located = (decl: FakeDaemonDeclaration) => decl.located ?? `/opt/homebrew/bin/${decl.id}`;
+  const run = (id: string): FakeDaemonRun => {
+    let current = runs.get(id);
+    if (!current) {
+      current = { state: "stopped", logs: [] };
+      runs.set(id, current);
+    }
+    return current;
+  };
+  const statusOf = (decl: FakeDaemonDeclaration, executable?: string): DaemonStatus => {
+    const current = run(decl.id);
+    const status: DaemonStatus = {
+      id: decl.id,
+      state: current.state,
+      executable: current.state === "running" ? (current.executable ?? "") : (executable ?? located(decl)),
+    };
+    if (current.pid !== undefined) status.pid = current.pid;
+    if (current.startedAt !== undefined) status.startedAt = current.startedAt;
+    if (current.exitCode !== undefined) status.exitCode = current.exitCode;
+    if (current.signal !== undefined) status.signal = current.signal;
+    if (current.controlPort !== undefined) status.controlPort = current.controlPort;
+    return status;
+  };
+  const appendLogs = (current: FakeDaemonRun, lines: string[]) => {
+    current.logs.push(...lines);
+    if (current.logs.length > maximumDaemonLogLines) current.logs.splice(0, current.logs.length - maximumDaemonLogLines);
+  };
+  const push = (id: string, event: DaemonEvent) => {
+    if (!attached) return;
+    for (const [token, observed] of observers) if (observed === id) attached.emit(token, event);
+  };
+  const proxyStatus = (): SystemProxyStatus => {
+    const status: SystemProxyStatus = { owner: proxy.owner, effective: proxy.owner === "self" && !proxy.blocker };
+    if (proxy.owner === "self" && proxy.port !== undefined) status.port = proxy.port;
+    if (proxy.owner === "other" && proxy.otherName !== undefined) status.otherName = proxy.otherName;
+    if (proxy.blocker) {
+      status.current = proxy.blocker.address;
+      status.blocker = { ...proxy.blocker };
+    } else if (proxy.owner === "self" && proxy.port !== undefined) {
+      status.current = `127.0.0.1:${proxy.port}`;
+    }
+    return status;
+  };
+  /** 宿主兜底：主人的常驻进程全部停下或死掉，系统代理还原。 */
+  const restoreIfOrphaned = () => {
+    if (proxy.owner !== "self") return;
+    if ([...runs.values()].some((current) => current.state === "running")) return;
+    proxy.owner = "none";
+    delete proxy.port;
+  };
+  const isPort = (value: unknown) => Number.isInteger(value) && (value as number) >= 1024 && (value as number) <= 65535;
+  /** 换到一个新状态：清掉上一段的运行期字段与退出方式；停下或死掉时把这一次的退出方式留给 status 读。 */
+  const settleExit = (current: FakeDaemonRun, exit: { exitCode?: number; signal?: number }, state: DaemonStatus["state"]) => {
+    current.state = state;
+    delete current.pid;
+    delete current.startedAt;
+    delete current.controlPort;
+    delete current.executable;
+    delete current.exitCode;
+    delete current.signal;
+    if (exit.exitCode !== undefined) current.exitCode = exit.exitCode;
+    if (exit.signal !== undefined) current.signal = exit.signal;
+  };
+
+  const stubs: Record<string, AsyncStub> = {
+    "daemon.start": async (params) => {
+      record("daemon.start", params);
+      const { id, config, executable, controlPort } = (params ?? {}) as { id?: unknown; config?: unknown; executable?: unknown; controlPort?: unknown };
+      const decl = declaration(id);
+      const current = run(decl.id);
+      if (current.state === "running") throw failure(`常驻进程「${decl.id}」已经在运行，先 stop`);
+      if (decl.config && typeof config !== "string") throw invalid(`常驻进程「${decl.id}」声明了 config，start 必须带配置正文`);
+      if (!decl.config && config !== undefined) throw invalid(`常驻进程「${decl.id}」没有声明 config，不收配置正文`);
+      if (controlPort !== undefined && !isPort(controlPort)) throw invalid("controlPort 必须是 1024–65535 的整数");
+      if (executable !== undefined && (typeof executable !== "string" || executable === "")) throw invalid("executable 必须是非空路径");
+      const path = (executable as string | undefined) ?? located(decl);
+      if (path === "") throw failure(`找不到常驻进程「${decl.id}」的可执行文件`);
+      settleExit(current, {}, "running");
+      current.pid = nextPid++;
+      current.startedAt = Date.now();
+      current.executable = path;
+      if (controlPort !== undefined) current.controlPort = controlPort as number;
+      current.logs = [];
+      configs[decl.id] = config as string | undefined;
+      return statusOf(decl);
+    },
+    "daemon.stop": async (params) => {
+      record("daemon.stop", params);
+      const decl = declaration((params as { id?: unknown } | undefined)?.id);
+      const current = run(decl.id);
+      if (current.state === "running") {
+        settleExit(current, { exitCode: 0 }, "stopped");
+        push(decl.id, { kind: "exit", expected: true, exitCode: 0, lines: current.logs.slice(-daemonExitTailLines) });
+        restoreIfOrphaned();
+      }
+      return statusOf(decl);
+    },
+    "daemon.status": async (params) => {
+      record("daemon.status", params);
+      const { id, executable } = (params ?? {}) as { id?: unknown; executable?: unknown };
+      return statusOf(declaration(id), typeof executable === "string" ? executable : undefined);
+    },
+    "daemon.logs": async (params) => {
+      record("daemon.logs", params);
+      return [...run(declaration((params as { id?: unknown } | undefined)?.id).id).logs];
+    },
+    "daemon.request": async (params) => {
+      record("daemon.request", params);
+      const request = (params ?? {}) as DaemonRequest;
+      const decl = declaration(request.id);
+      if (!daemonRequestMethods.includes(request.method)) throw invalid(`不认识的方法：${String(request.method)}`);
+      if (typeof request.path !== "string" || !daemonRequestPath.test(request.path)) throw invalid(`路径不合规矩：${String(request.path)}`);
+      for (const name of Object.keys(request.headers ?? {})) {
+        if (!daemonRequestHeaders.includes(name)) throw invalid(`请求头「${name}」不放行：只认 ${daemonRequestHeaders.join(" / ")}`);
+      }
+      if (request.timeout !== undefined && (!Number.isInteger(request.timeout) || request.timeout < 1 || request.timeout > 30)) {
+        throw invalid("timeout 是 1–30 秒的整数");
+      }
+      const current = run(decl.id);
+      if (current.state !== "running") throw failure(`常驻进程「${decl.id}」没有在运行`);
+      if (current.controlPort === undefined) throw failure(`常驻进程「${decl.id}」启动时没有报控制口`);
+      requests.push(request);
+      return fake.respond(request);
+    },
+    "daemon.observe": async (params, host) => {
+      record("daemon.observe", params);
+      const { id, token } = (params ?? {}) as { id?: unknown; token?: unknown };
+      const decl = declaration(id);
+      if (typeof token !== "string" || token === "") throw invalid("token 不能为空");
+      attached = host;
+      observers.set(token, decl.id);
+      return null;
+    },
+    "daemon.unsubscribe": async (params) => {
+      record("daemon.unsubscribe", params);
+      const { token } = (params ?? {}) as { token?: unknown };
+      if (typeof token === "string") observers.delete(token);
+      return null;
+    },
+    "systemProxy.status": async (params) => {
+      record("systemProxy.status", params);
+      return proxyStatus();
+    },
+    "systemProxy.enable": async (params) => {
+      record("systemProxy.enable", params);
+      const { port, bypass } = (params ?? {}) as { port?: unknown; bypass?: unknown };
+      if (!isPort(port)) throw invalid("port 必须是 1024–65535 的整数");
+      if (bypass !== undefined && (!Array.isArray(bypass) || bypass.length > 64 || bypass.some((entry) => typeof entry !== "string" || !/^\S+$/.test(entry)))) {
+        throw invalid("bypass 至多 64 条、每条不带空白");
+      }
+      if (![...runs.values()].some((current) => current.state === "running")) {
+        throw failure("这个扩展没有在运行的常驻进程：系统代理指着一个没人监听的端口，等于整机断网");
+      }
+      if (proxy.owner === "other") throw failure(`系统代理已由「${proxy.otherName ?? "另一个扩展"}」接管`);
+      if (proxy.blocker) return proxyStatus();
+      proxy.owner = "self";
+      proxy.port = port as number;
+      return proxyStatus();
+    },
+    "systemProxy.disable": async (params) => {
+      record("systemProxy.disable", params);
+      if (proxy.owner === "self") {
+        proxy.owner = "none";
+        delete proxy.port;
+      }
+      return proxyStatus();
+    },
+  };
+
+  const fake: FakeDaemons = {
+    daemons: options.daemons ?? [],
+    stubs,
+    calls,
+    configs,
+    requests,
+    respond: () => ({ status: 404, headers: {}, text: "" }),
+    status(id) {
+      return statusOf(declaration(id));
+    },
+    observers(id) {
+      return [...observers.values()].filter((observed) => observed === id).length;
+    },
+    output(id, lines) {
+      const current = run(declaration(id).id);
+      appendLogs(current, lines);
+      push(id, { kind: "output", lines: [...lines] });
+    },
+    crash(id, exit = {}) {
+      const current = run(declaration(id).id);
+      if (exit.lines) appendLogs(current, exit.lines);
+      const how = exit.signal !== undefined ? { signal: exit.signal, ...(exit.exitCode !== undefined ? { exitCode: exit.exitCode } : {}) } : { exitCode: exit.exitCode ?? 1 };
+      settleExit(current, how, "exited");
+      push(id, { kind: "exit", expected: false, ...how, lines: current.logs.slice(-daemonExitTailLines) });
+      restoreIfOrphaned();
+    },
+    failNext(method, error) {
+      failures.set(method, error);
+    },
+    get systemProxy() {
+      return proxyStatus();
+    },
+    blockSystemProxy(blocker) {
+      if (blocker) proxy.blocker = { ...blocker };
+      else delete proxy.blocker;
+    },
+    claimSystemProxy(otherName) {
+      if (otherName === null) {
+        if (proxy.owner === "other") proxy.owner = "none";
+        delete proxy.otherName;
+        return;
+      }
+      proxy.owner = "other";
+      proxy.otherName = otherName;
+      delete proxy.port;
     },
   };
   return fake;

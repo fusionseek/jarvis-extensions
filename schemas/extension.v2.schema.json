@@ -146,7 +146,7 @@
     },
     "capabilityID": {
       "type": "string",
-      "description": "能力目录见 docs/06-capabilities.md。只列宿主真的做得到的；隐式能力（panel.* / storage.* / preferences.* / text.* / time.* / color.* / window.open / service.* / host.* / log）不在这里声明。git.* 三项是 Git 操作域：声明任一项都要入驻 Git 域（contributes.git），git.hosting.write 还要逐字写出 git.mutations。android.* 两项是 Android 操作域：宿主经自己的 adb 跑它写死的那几条命令（列设备、列应用、读应用名与图标），扩展只给设备序列号与包名、不给参数；android.tools.open 把一个包名交给内置的「APK 扫描」「数据导出」。apps.read 读这台 Mac 装了哪些应用（名字、Bundle ID、位置、分类、最近打开 / 添加时刻）：宿主自己扫三处应用目录，扩展不给路径；打开、删除应用由用户在 Jarvis 全局搜索里点，扩展做不了。",
+      "description": "能力目录见 docs/06-capabilities.md。只列宿主真的做得到的；隐式能力（panel.* / storage.* / preferences.* / text.* / time.* / color.* / window.open / service.* / host.* / log）不在这里声明。git.* 三项是 Git 操作域：声明任一项都要入驻 Git 域（contributes.git），git.hosting.write 还要逐字写出 git.mutations。android.* 两项是 Android 操作域：宿主经自己的 adb 跑它写死的那几条命令（列设备、列应用、读应用名与图标），扩展只给设备序列号与包名、不给参数；android.tools.open 把一个包名交给内置的「APK 扫描」「数据导出」。apps.read 读这台 Mac 装了哪些应用（名字、Bundle ID、位置、分类、最近打开 / 添加时刻）：宿主自己扫三处应用目录，扩展不给路径；打开、删除应用由用户在 Jarvis 全局搜索里点，扩展做不了。 process.daemon 是常驻进程（manifest process.daemons 逐字声明可执行文件与一组参数；宿主托管它的生死、只放行发往它自己控制口的本机请求），system.proxy 把系统代理指向本机 127.0.0.1 的一个端口（要求这个扩展此刻有一个在跑的常驻进程；进程没了宿主自动还原）——jarvis-mac specs/20261028-091917-proxy-extension-menubar-daemon。",
       "enum": [
         "clipboard.read",
         "clipboard.write",
@@ -164,6 +164,8 @@
         "process.run",
         "files.read",
         "terminal.run",
+        "process.daemon",
+        "system.proxy",
         "git.repository.read",
         "git.hosting.read",
         "git.hosting.write",
@@ -193,10 +195,7 @@
     },
     "network": {
       "type": "object",
-      "description": "声明了 network.https 时必填：允许访问的主机白名单。宿主只放行这几个主机上的 HTTPS 请求，且只认完全相等。",
-      "required": [
-        "hosts"
-      ],
+      "description": "声明了 network.https 时必填：允许访问的主机。hosts 是写死的白名单；preferenceHosts 点名本扩展的 urlList 偏好——用户在设置里亲手填的地址，它们的主机在请求那一刻放行（订阅地址这类作者写 manifest 时不知道在哪的地址）。两者至少一项。宿主只放行 HTTPS，且只认完全相等的主机名。",
       "properties": {
         "hosts": {
           "type": "array",
@@ -208,13 +207,37 @@
             "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$",
             "maxLength": 253
           }
+        },
+        "preferenceHosts": {
+          "type": "array",
+          "description": "本扩展声明的 urlList 偏好的 key（1–4 个）。设置页的控件由宿主画，值只可能来自用户亲手输入；页面里的输入框扩展自己就能填，宿主分不出是谁写的，所以不认。",
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-zA-Z0-9]*$",
+            "maxLength": 32
+          }
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "hosts"
+          ]
+        },
+        {
+          "required": [
+            "preferenceHosts"
+          ]
+        }
+      ]
     },
     "process": {
       "type": "object",
-      "description": "受限执行（指令域）。executables 配 process.run，terminal 配 terminal.run。宿主只放行这里逐字写出的可执行文件、参数组合与脚本。",
+      "description": "受限执行。executables 配 process.run，terminal 配 terminal.run，daemons 配 process.daemon。宿主只放行这里逐字写出的可执行文件、参数组合与脚本。",
       "minProperties": 1,
       "properties": {
         "executables": {
@@ -232,6 +255,15 @@
           "maxItems": 4,
           "items": {
             "$ref": "#/$defs/terminalScript"
+          }
+        },
+        "daemons": {
+          "type": "array",
+          "description": "常驻进程（SDK 2.9），至多 2 个。",
+          "minItems": 1,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/daemon"
           }
         }
       },
@@ -348,7 +380,7 @@
     },
     "contributes": {
       "type": "object",
-      "description": "扩展入驻的域。至少要有工具箱、窗口、指令、服务之一——只有设置的扩展没有入口；Git 域也不是入口，它只决定扩展在 Git 里出现在哪、碰得到哪些托管服务。",
+      "description": "扩展入驻的域。至少要有工具箱、窗口、指令、服务、菜单栏之一——只有设置的扩展没有入口；Git 域也不是入口，它只决定扩展在 Git 里出现在哪、碰得到哪些托管服务。",
       "anyOf": [
         {
           "required": [
@@ -369,6 +401,11 @@
           "required": [
             "services"
           ]
+        },
+        {
+          "required": [
+            "menuBar"
+          ]
         }
       ],
       "properties": {
@@ -377,6 +414,9 @@
         },
         "window": {
           "$ref": "#/$defs/window"
+        },
+        "menuBar": {
+          "$ref": "#/$defs/menuBar"
         },
         "commands": {
           "type": "array",
@@ -658,7 +698,8 @@
             "select",
             "multiselect",
             "secret",
-            "directory"
+            "directory",
+            "urlList"
           ]
         },
         "title": {
@@ -838,6 +879,27 @@
                   "const": "directory"
                 }
               }
+            },
+            {
+              "type": "object",
+              "description": "一列地址（SDK 2.9）：每条必须是带主机名的 https:// 地址，至多 maxItems 条（默认 10）。secret 省略 = true：整列进 Keychain（订阅地址里的 token 就是密码），只能经 preferences.get 单独读。被 network.preferenceHosts 点名时，这些地址的主机放行给 net.fetch。没有默认值。",
+              "properties": {
+                "type": {
+                  "const": "urlList"
+                },
+                "maxItems": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 20
+                },
+                "secret": {
+                  "type": "boolean"
+                },
+                "placeholder": {
+                  "type": "string",
+                  "maxLength": 40
+                }
+              }
             }
           ]
         }
@@ -858,6 +920,77 @@
         "notifications": {
           "type": "boolean",
           "description": "弹系统横幅。为 true 时必须声明 notifications.post。"
+        }
+      },
+      "additionalProperties": false
+    },
+    "daemon": {
+      "type": "object",
+      "description": "一个常驻进程：生死归宿主（停止只在扩展 stop、停用 / 卸载 / 更新、Jarvis 退出时），不归任何 JS 会话。以用户身份运行、不经 shell、stdin 接空设备。",
+      "required": [
+        "id",
+        "executable",
+        "arguments"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,31}$"
+        },
+        "executable": {
+          "type": "string",
+          "description": "可执行文件名（不带路径），定位规则与 process.executables[].name 相同。",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+        },
+        "arguments": {
+          "type": "array",
+          "description": "一组固定参数，逐字。只认两个占位符且必须独占一个参数：{config}（宿主写下的配置文件绝对路径）、{workdir}（这个常驻进程的工作目录）；至少用其中一个——宿主靠它在崩溃后认出自己留下的孤儿进程。运行时扩展一个参数都传不进来。",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[^\\s;&|`$<>]+$"
+          }
+        },
+        "config": {
+          "type": "object",
+          "description": "声明了它，daemon.start 就必须带配置正文（≤ 4 MiB），宿主写到 {workdir}/<fileName>（0600），停止后删掉。",
+          "required": [
+            "fileName"
+          ],
+          "properties": {
+            "fileName": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "menuBar": {
+      "type": "object",
+      "description": "菜单栏域（SDK 2.9）：系统菜单栏上属于这个扩展的一枚图标与它的菜单。宿主用 NSStatusItem + NSMenu 画，扩展经 jarvis.menuBar.update 推一份声明式模型；代码跑在后台会话。宿主在菜单末尾固定追加「打开」「设置」两项。用户可以在 设置 · 扩展 里关掉它。",
+      "required": [
+        "title",
+        "symbol"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "设置页与 VoiceOver 里这枚图标的名字。",
+          "minLength": 1,
+          "maxLength": 20
+        },
+        "symbol": {
+          "type": "string",
+          "description": "还没收到模型时的图标（SF Symbol）。",
+          "pattern": "^[A-Za-z0-9.-]+$",
+          "minLength": 1,
+          "maxLength": 64
         }
       },
       "additionalProperties": false

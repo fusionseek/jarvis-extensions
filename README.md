@@ -12,6 +12,7 @@ Jarvis 的开放平台：这个仓库就是**扩展商店**。Jarvis 工具箱�
 | 设置 | `contributes.settings` | 设置 › 扩展 里它那块面板，控件由宿主画 |
 | 服务 | `contributes.services` | 没有界面；扩展一个内置能力（`junkClean.engine`：设置 › 清理 里多一个清理引擎；`project.engine`：Jarvis「项目」的数据来源） |
 | Git | `contributes.git` | 不是入口；Git 设置对应托管服务下它的「关联」区段，Git 操作域的能力（`git.*`）只给入驻了它的扩展 |
+| 菜单栏（SDK 2.9） | `contributes.menuBar` | 系统菜单栏上它自己的一枚图标与菜单（宿主用原生 `NSMenu` 画，扩展推声明式模型） |
 | Inbox（通道） | `inbox` | 一条 Inbox 消息 / 一条系统横幅 |
 
 ```text
@@ -38,10 +39,10 @@ npm run verify && npm run registry
 ```
 
 `extension.json` 必填：`manifestVersion: 2`、`id`、`version`、`name`、`symbol`、`description`、`author`、`main`、
-`sdk`（`^2.0.0`）、`minimumJarvisVersion`、`capabilities`、`contributes`（至少入驻工具箱、窗口、指令、服务之一）、
-`inbox`（`false` 也要写出来）。要跑命令或读文件的扩展，再逐字声明 `process` / `files`。
+`sdk`（`^2.0.0`）、`minimumJarvisVersion`、`capabilities`、`contributes`（至少入驻工具箱、窗口、指令、服务、菜单栏之一）、
+`inbox`（`false` 也要写出来）。要跑命令、常驻运行或读文件的扩展，再逐字声明 `process` / `files`。
 
-代码按域交实现：`defineExtension({ toolbox, window, popover, commands, services })`。参考实现：
+代码按域交实现：`defineExtension({ toolbox, window, popover, commands, services, menuBar })`。参考实现：
 [`extensions/http-status`](extensions/http-status)（工具箱 + 窗口 + 弹窗 + 设置）、
 [`extensions/mole-clean`](extensions/mole-clean)（服务扩展 + 受限执行）、
 [`extensions/android-apps`](extensions/android-apps)（工具箱 + Android 操作域：经宿主的 adb 列手机应用，交给内置工具）、

@@ -20,7 +20,7 @@ v2 的目录**只列宿主真的做得到的**：声明得到、调不到的能�
 
 | 属性 | 值 |
 | --- | --- |
-| `sdk.version` | SDK 版本，`2.4.0` |
+| `sdk.version` | SDK 版本，`2.9.0` |
 | `host.version` / `host.channel` | 宿主版本（`CFBundleShortVersionString`）、`release` / `development` |
 | `environment` | `reduceMotion` / `reduceTransparency` / `increaseContrast` / `locale`。界面上的适配由宿主做；这里给出来是让扩展自己的逻辑也能让步 |
 
@@ -82,6 +82,21 @@ manifest `contributes.settings.preferences` 与各服务 `preferences` 里声明
 | --- | --- | --- |
 | `openExtensionSettings()` | 隐式 | 打开设置窗口（偏好、授权、快捷键都在 设置 › 扩展 里）。扩展页面里**不许再画一份设置** |
 | `openURL(url)` | `system.openURL` | 只放行 https |
+
+#### `jarvis.menuBar`（菜单栏域，SDK 2.9）
+
+`update(model)`：推一份菜单栏模型——图标（`symbol`，省略 = manifest 的）、图标右侧的短字（`title` ≤ 16 字）、`tooltip`、菜单项 `items`
+（`item` / `separator` / `header` / `submenu`，形状见 [07](07-ui-components.md#菜单栏sdk-29不是第四面)）。不要点头：它只改这个扩展自己那枚图标；
+但只对入驻了菜单栏域（`contributes.menuBar`）的扩展放行，别的一律 `surface.unavailable`。
+
+| 规则 | 值 | 为什么 |
+| --- | --- | --- |
+| 合并 | 宿主按 250 ms 合并，只画最后一份 | 挡的是「每帧推一次速率」；菜单栏不是动画画布 |
+| 缓存 | 宿主记着最后一份：后台会话空闲被收掉之后图标与菜单照旧在，点开 / 点选时宿主把会话唤醒再发事件 | 图标不能因为扩展的 JS 闲下来就消失或变回默认 |
+| 上限 | 整份 ≤ 300 项（含子菜单里的）、子菜单至多两层、文字 ≤ 80 字；超出的部分宿主丢掉并记警告，不整份拒绝 | 一份超了一项的模型不该让整个菜单变空 |
+| 固定项 | 菜单末尾宿主追加分隔线、「打开「名」」「「名」的设置」，扩展改不掉 | 菜单栏图标是扩展唯一常驻在屏幕上的东西，用户必须总能从它回到 Jarvis 管它的地方 |
+
+事件（`start` / `open` / `select`）落到 `defineExtension({ menuBar })` 的回调，跑在后台会话，见 [12](12-developer-guide.md)。
 
 #### `jarvis.log`
 
@@ -176,6 +191,9 @@ v1 的卡片动作与 `dismiss` 已删除（[11](11-inbox.md)）。
 - 只走 HTTPS；主机必须与 manifest `network.hosts` 里的某一个**完全相等**（后缀匹配会把 `evil-x.googleapis.com.attacker.tld` 放过去）；
 - 方法只认 GET / POST / PUT / DELETE；不带 cookie、不带 Jarvis 的任何凭据；宿主追加 `X-Jarvis-Extension: <id>/<version>`；
 - 响应 ≤ 5 MB、30 秒超时；每分钟 ≤ 60 次。
+- SDK 2.9：manifest `network.preferenceHosts` 点名的 `urlList` 偏好里、用户**此刻**填着的地址，主机一并放行（请求那一刻现读：用户删掉一条，下一次请求就拦）。
+  同样只走 HTTPS、完全相等比较、重定向落点照样核对。为什么认偏好而不认页面里的输入框：偏好的控件是宿主画的，值只可能来自用户亲手输入；
+  页面里的输入框扩展自己就能填，宿主分不出是谁写的。
 
 ### 受限执行（指令域，SDK 2）
 
@@ -218,6 +236,82 @@ SDK 2.7 的三个选项（给格式化工具这一类「读一份文本、吐一
 `run(scriptId)`：打开用户选定的终端，执行 manifest `process.terminal` 里那个 id 的脚本——**扩展只能点名，不能传内容**。
 宿主在正文前补 `#!/bin/sh` 与「执行完删掉自己」那一行，写到属主独占的临时目录再交给终端打开；打开即返回，不等它跑完。
 每分钟 ≤ 6 次。装完之后的事（工具在不在了）由扩展自己再 `locate` 一次。
+
+### 常驻进程与系统代理（SDK 2.9）
+
+扩展沙盒故意不给的两件事——**常驻**、**改系统网络**——由宿主补成通用能力：宿主不认识 sing-box、不认识任何代理协议，
+`process.daemon` 不知道它跑的是什么，`system.proxy` 只认「本机的某个端口」（jarvis-mac `specs/20261028-091917-proxy-extension-menubar-daemon` P-1、P-3、P-4、P-6）。
+两项都是**高风险**。
+
+#### `process.daemon` — 常驻运行命令
+
+跑 manifest `process.daemons` 里逐字声明的那条命令（[03](03-manifest.md)）。与 `process.run` 的差别在生死：`process.run` 跟会话走，
+后台会话闲 60 秒被收、进程随之中断；常驻进程**归宿主**，停止只在扩展自己 `stop`、扩展停用 / 卸载 / 更新、Jarvis 退出时。
+
+| 方法 | 说明 |
+| --- | --- |
+| `daemon.start({ id, config?, executable?, controlPort? })` | 定位 → 写配置（`{workdir}/<fileName>`，0600，≤ 4 MiB）→ 起进程 → 等 1 秒：这期间退出算启动失败（`host.failure`，`detail` 里带它输出的最后 20 行——配置错了由工具自己报）；否则返回 `running` 的状态。已在运行时拒绝（先 `stop`）。`executable` 是用户填的路径（文件名必须等于声明的名字），省略 = 宿主定位；`controlPort` 是它会监听的本机控制口 |
+| `daemon.stop(id)` | SIGTERM，3 秒不退 SIGKILL；返回状态。没在跑时照常兑现 |
+| `daemon.status(id, executable?)` | `{ id, state: stopped / running / exited, pid?, startedAt?, exitCode?, signal?, controlPort?, executable }`。`executable` 是此刻定位到的路径（运行中 = 正在跑的那一份），**找不到为空串**——扩展据此画「没装」那一屏，因此不必为了问一句「装没装」另外申请 `process.run` |
+| `daemon.logs(id)` | 最近 500 行输出（stdout 与 stderr 合流，每行 ≤ 2 KB） |
+| `daemon.observe(id, listener) → Unsubscribe` | 订阅：`{ kind: "output", lines }`（100 ms 合批）与 `{ kind: "exit", exitCode?, signal?, expected, lines }`（最后 20 行）。线缆上是 `daemon.observe` / `daemon.unsubscribe`，参数 `{ id, token }`，事件是带这个 token 的 `subscription` |
+| `daemon.request({ id, method, path, headers?, body?, timeout? })` | 见下「本机控制口」 |
+
+| 规则 | 值 | 为什么 |
+| --- | --- | --- |
+| 运行环境 | 以用户身份运行（不提权）、不经 shell、stdin 接空设备、补 PATH、`NO_COLOR=1`，工作目录 = `{workdir}` | 与 `process.run` 同一套；**进程继承 Jarvis 的全部系统权限**（含完全磁盘访问）——这正是它高风险的原因 |
+| 工作目录 | `<Application Support>/Jarvis/extension-runtime/<扩展 id>/<daemon id>/`（0700）；卸载扩展时整个删掉 | 里面是外部工具自己的状态（缓存、规则集），不是 Jarvis 的结构化持久化：Jarvis 不读、不索引它 |
+| 意外退出 | 事件发给订阅者，`expected: false`；**宿主不自动重启** | 重试、横幅、关系统代理是产品决定，归扩展；系统代理另有宿主兜底 |
+| 退出 Jarvis | 同步收：全部 SIGTERM，合计至多等 2 秒，剩下的 SIGKILL | 不留一个占着端口、没人管的进程 |
+| 孤儿 | Jarvis 崩溃留下的那一个，下次启动时宿主按参数里的 `extension-runtime/` 路径认出来 SIGTERM | 不靠 pid 文件：pid 会被复用，参数里的路径不会撞 |
+| 后台会话 | 有 `running` 的常驻进程时，这个扩展的后台会话**不因空闲被收**；全部停下后回到「闲 60 秒收」 | 退出事件与菜单栏点选要有人接 |
+| 订阅 | 跟着会话走：前台页面与后台会话各订各的 | 两个 JSContext 不共享内存；状态在宿主手里，两边各自 `status` 读同一份 |
+| 测试进程 | 一律拒绝 | 与 `process.run` 同一位 |
+
+#### 本机控制口：`daemon.request`
+
+扩展要和自己的常驻进程说话（sing-box 的 Clash API：切节点、测延迟、读连接与流量），而 `net.fetch` 只放行 HTTPS 与白名单主机，连不到 `127.0.0.1`。
+因此控制口单开一条路，归 `process.daemon` 这一项能力（不另设）：它只通向扩展自己声明、自己起的那个进程。
+
+| 规则 | 值 | 为什么 |
+| --- | --- | --- |
+| 发往哪 | 只发 `http://127.0.0.1:<start 时报的 controlPort><path>`，只在这个进程 `running` 时放行 | 别的端口、别的主机拼不出来 |
+| `path` | 以 `/` 开头，不含 `//`、`\`、`#`、空白与协议头，≤ 2048 字；查询串照常带 | 一条路径改不了主机 |
+| 方法与头 | `GET` / `POST` / `PUT` / `PATCH` / `DELETE`；请求头只放行 `Authorization`、`Content-Type`、`Accept` | 控制 API 用得到的就这几样 |
+| 体积与超时 | 请求体 ≤ 1 MiB、响应 ≤ 5 MiB（形状同 `net.fetch`，非 UTF-8 的 `text` 为空串）；超时默认 10 秒、至多 30 秒 | 测一次延迟要几秒 |
+| 代理 | 走一个**不经任何代理**的会话 | 系统代理此刻可能正指着这个进程自己 |
+| 流式 | 不做（WebSocket / chunked 长连接都不做） | 流量速率由扩展每秒读一次快照算差值 |
+
+#### `system.proxy` — 修改系统代理
+
+| 方法 | 说明 |
+| --- | --- |
+| `systemProxy.status()` | `{ owner: self / other / none, port?, effective, current?, otherName?, blocker? }`。`effective` = 有效系统代理此刻就是这个扩展写的那个端口；`current` 是有效系统代理的一句话（`127.0.0.1:6152`） |
+| `systemProxy.enable({ port, socks?, bypass? })` | 把系统代理指向 `127.0.0.1:<port>`；`socks` 省略 = 连 SOCKS 一起设；`bypass`（≤ 64 条）追加进例外列表。被别的工具拦着时**不写**，返回带 `blocker` 的状态 |
+| `systemProxy.disable()` | 还原接管前的设置 |
+
+| 规则 | 值 | 为什么 |
+| --- | --- | --- |
+| 只能指向本机 | 主机写死 `127.0.0.1`；`port` 1024–65535；**这个扩展此刻必须有一个 `running` 的常驻进程** | 系统代理指着一个没人监听的端口，等于整机断网 |
+| 写哪些服务 | 每个**启用的、有网卡的**网络服务设 HTTP / HTTPS（与 SOCKS）；没有网卡的服务跳过 | 那是 VPN / 代理工具自己注册的服务，往别人的服务里写代理是越界 |
+| 例外列表 | 原有的 + 必加的（`127.0.0.1`、`::1`、`localhost`、`*.local`、`169.254/16`）+ 扩展给的 | 本机与局域网不能被绕到代理上 |
+| 还原 | 接管前每个服务原来的设置存进宿主的库；还原时**只还原此刻仍指着这个端口的服务** | 别人在期间改过的不动 |
+| 被拦着 | 主服务的代理来自动态状态（Surge 增强模式、其他 VPN 的虚拟网卡）时 `enable` 什么都不写，`blocker.message` 原样给用户 | 写了也不生效，还会让用户以为生效了 |
+| 一个主人 | 另一个扩展已经接管时 `enable` 报错写明是谁 | 两个扩展轮流改系统代理，还原的时候谁都还原不对 |
+| 宿主兜底 | 主人的常驻进程全部停止或意外退出、主人停用 / 卸载 / 更新、Jarvis 退出、Jarvis 启动时发现上次崩溃留下的备份——宿主自己还原，扩展不需要也不能阻止 | 最坏的情况是用户的整台机器断网，而扩展的 JS 那时候可能根本没在跑 |
+| 怎么写 | 宿主经系统自带的 `/usr/sbin/networksetup` 写、经 SystemConfiguration 读 | 非 root 进程直接写网络设置要每次输管理员密码 |
+
+```ts
+const status = await jarvis.daemon.status("sing-box", preferences.singBoxPath || undefined);
+if (status.executable === "") return showInstallScreen(); // 「在终端中安装」→ jarvis.terminal.run("install")
+jarvis.daemon.observe("sing-box", (event) => {
+  if (event.kind === "exit" && !event.expected) void jarvis.notifications.post({ title: "内核退出了", body: event.lines.at(-1) ?? "" });
+});
+await jarvis.daemon.start({ id: "sing-box", config: JSON.stringify(config), controlPort: 19090 });
+const proxy = await jarvis.systemProxy.enable({ port: 7890 });
+if (proxy.blocker) showNote(proxy.blocker.message);               // 被 Surge 这类工具拦着：原样告诉用户
+const delay = await jarvis.daemon.request({ id: "sing-box", method: "GET", path: "/proxies/auto/delay?url=…&timeout=5000", headers: { Authorization: `Bearer ${secret}` } });
+```
 
 ### Git 操作域（SDK 2.1）
 
@@ -363,6 +457,9 @@ const { exitCode } = await handle.result;
 - `git.mutations` 按**顶层字段名**放行：一份文档里放几个变更（别名区分）可以，每一个都要声明。
 - `android.appDetails` 别一进页面就把整张表问一遍：几百个包 × 每个几秒 = 用户盯着一张空表等几分钟。只读画出来的行。
 - `android.openTool` 只交包名：内置工具用它自己选着的那台设备，连着多台手机时让用户到那边确认。
+- `daemon.observe` 是这个会话的订阅：在页面里订的，页面关了就没了。要在内核死掉时发横幅，在后台会话里（菜单栏的 `start`）订。
+- `systemProxy.enable` 被拦着时**不拒绝**：先看返回值里有没有 `blocker`，别只看有没有抛错。
+- `daemon.request` 不经代理、只到 `127.0.0.1`：拿它去访问外网是走不通的，联网用 `net.fetch`。
 
 ## Related Links
 
@@ -370,3 +467,4 @@ const { exitCode } = await handle.result;
 - [10 · 设置域与服务扩展点](10-settings.md)（服务没有页面，它的东西画在哪）
 - [`sdk/src/capabilities.ts`](../sdk/src/capabilities.ts)、`jarvis-mac/Sources/Jarvis/App/Extensions/ExtensionCapabilityHost.swift`、
   `jarvis-mac/Sources/Jarvis/Domain/GitHosting/GitHostingGraphQL.swift`（查询 / 变更的认定与放行）
+- `jarvis-mac/specs/20261028-091917-proxy-extension-menubar-daemon/spec.md`（菜单栏域、常驻进程、本机控制口、按用户填的地址联网、系统代理）

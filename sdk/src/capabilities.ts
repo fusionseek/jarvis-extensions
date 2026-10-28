@@ -10,6 +10,16 @@
  */
 import type { CapabilityID } from "./manifest.js";
 import type { FileHandle } from "./ui.js";
+import type {
+  DaemonEvent,
+  DaemonRequest,
+  DaemonResponse,
+  DaemonStartRequest,
+  DaemonStatus,
+  MenuBarModel,
+  SystemProxyEnableRequest,
+  SystemProxyStatus,
+} from "./bridge.js";
 
 /** 结构化错误码。 */
 export type JarvisErrorCode =
@@ -141,6 +151,20 @@ export interface PermissionsAPI {
   request(ids: CapabilityID[]): Promise<GrantResult>;
   /** 打开系统设置的对应隐私面板并上「把 Jarvis 拖进列表」那扇浮窗。 */
   openSystemSettings(kind: SystemPermissionKind): Promise<void>;
+}
+
+/**
+ * 菜单栏域（SDK 2.9）。隐式能力——不要点头：它只改这个扩展自己那枚图标；但只对入驻了菜单栏域（manifest `contributes.menuBar`）的扩展放行，
+ * 别的一律 `surface.unavailable`。
+ */
+export interface MenuBarAPI {
+  /**
+   * 推一份菜单栏模型（`menuBar.update`）。宿主缓存最后一份、按 250 ms 合并只画最后一份；后台会话被收掉之后图标与菜单照旧在。
+   *
+   * @param model 图标、短字、悬停提示与菜单项。超出上限（≤ 300 项、子菜单至多两层）的部分宿主丢掉并记警告，不整份拒绝。
+   * @returns 宿主收下即兑现（不等画完）。
+   */
+  update(model: MenuBarModel): Promise<void>;
 }
 
 /** 日志级别。 */
@@ -358,6 +382,7 @@ export interface NetAPI {
   /**
    * `network.https`。只放行 manifest `network.hosts` 里的主机（完全相等）、只走 HTTPS、30 秒超时；
    * 没有 cookie、没有重定向到白名单之外的主机。宿主追加一个 `X-Jarvis-Extension: <id>/<version>`。
+   * SDK 2.9 起还放行 `network.preferenceHosts` 点名的 `urlList` 偏好里、用户此刻填着的地址的主机（请求那一刻现读）。
    */
   fetch(url: string, init?: { method?: "GET" | "POST" | "PUT" | "DELETE"; headers?: Record<string, string>; body?: string }): Promise<NetResponse>;
 }
@@ -461,6 +486,101 @@ export interface FilesAPI {
 export interface TerminalAPI {
   /** `terminal.run`。打开一个终端，逐字执行 manifest `process.terminal` 里那段 id 的脚本。打开即返回，不等它跑完。 */
   run(scriptId: string): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// 常驻进程与系统代理（SDK 2.9，jarvis-mac `specs/20261028-091917-proxy-extension-menubar-daemon` P-3 / P-4 / P-6）
+// ---------------------------------------------------------------------------
+
+/**
+ * 常驻进程（`process.daemon`）。跑的是 manifest `process.daemons` 里逐字声明的那条命令：扩展能决定的只有配置文件的内容与何时起停。
+ *
+ * 与 `process.run` 不同，**生死归宿主**：后台会话闲下来被收、页面关掉，进程照样跑；停止只在扩展自己 `stop`、扩展停用 / 卸载 / 更新、
+ * Jarvis 退出时（退出时同步收：全部 SIGTERM，合计至多等 2 秒，剩下的 SIGKILL）。Jarvis 崩溃留下的那一个，下次启动时宿主按参数认出来收掉。
+ * 有在跑的常驻进程时，这个扩展的后台会话不因空闲被收——退出事件与菜单栏点选要有人接。
+ *
+ * 以用户身份运行（不提权）、不经 shell、stdin 接空设备、补 PATH、`NO_COLOR=1`，工作目录是它自己的 `{workdir}`。
+ * **进程继承 Jarvis 的全部系统权限**（含完全磁盘访问），与 `process.run` 一样高风险。测试进程里一律拒绝。
+ */
+export interface DaemonAPI {
+  /**
+   * 起一个常驻进程。宿主等 1 秒：这期间退出算启动失败，以 `host.failure` 拒绝，`detail` 里带它输出的最后 20 行；
+   * 已经在跑时同样拒绝（先 `stop`）；声明了 `config` 却没带配置正文 → `invalid.argument`；没声明的 id → `capability.undeclared`。
+   *
+   * @param request id、配置正文、用户填的路径（可省）、控制口（可省）。
+   * @returns `running` 的状态。
+   */
+  start(request: DaemonStartRequest): Promise<DaemonStatus>;
+  /**
+   * 停掉它：SIGTERM，3 秒不退 SIGKILL。没在跑时照样兑现（幂等）。订阅者收到一条 `expected: true` 的 `exit`。
+   *
+   * @param id manifest `process.daemons[].id`。
+   * @returns 停下之后的状态。
+   */
+  stop(id: string): Promise<DaemonStatus>;
+  /**
+   * 此刻的状态。`executable` 是此刻定位到的路径（运行中 = 正在跑的那一份），找不到为空串——据此画「没装」那一屏。
+   *
+   * @param id manifest `process.daemons[].id`。
+   * @param executable 用户在偏好里填的路径；省略 = 宿主自动定位。给了就按它答，坏了就报空，不悄悄回落到自动探测。
+   * @returns 状态。
+   */
+  status(id: string, executable?: string): Promise<DaemonStatus>;
+  /**
+   * 最近 500 行输出（stdout 与 stderr 合流，每行 ≤ 2 KB，旧的在前）。窗口里的「日志」先读它补齐，再 `observe` 接着往下记。
+   *
+   * @param id manifest `process.daemons[].id`。
+   * @returns 输出行。
+   */
+  logs(id: string): Promise<string[]>;
+  /**
+   * 经本机控制口与它说话（P-4）：发往 `http://127.0.0.1:<start 时报的 controlPort><path>`，只在它 `running` 时放行，**不经任何代理**。
+   * 没报控制口、没在跑 → `host.failure`；路径 / 方法 / 请求头不合规矩 → `invalid.argument`。不做流式：要速率就每秒读一次快照算差值。
+   *
+   * @param request 方法、路径、三个可用的请求头、请求体、超时。
+   * @returns 与 `net.fetch` 同一形状的响应。
+   */
+  request(request: DaemonRequest): Promise<DaemonResponse>;
+  /**
+   * 订阅它的输出与退出（`daemon.observe` / `daemon.unsubscribe`，token 由 SDK 生成）。输出 100 ms 合批推一次；退出推一条 `exit`。
+   * 订阅跟着**这个会话**走：前台页面与后台会话各订各的，会话没了订阅也就没了。宿主拒绝订阅（没授权、没声明）时不抛，记一条 warn。
+   *
+   * @param id manifest `process.daemons[].id`。
+   * @param listener 每来一条调一次。
+   * @returns 取消订阅。
+   */
+  observe(id: string, listener: (event: DaemonEvent) => void): Unsubscribe;
+}
+
+/**
+ * 系统代理（`system.proxy`）。只能指向本机：主机写死 `127.0.0.1`，且这个扩展此刻必须有一个 `running` 的常驻进程。
+ *
+ * 宿主对每个启用的、有网卡的网络服务设 HTTP / HTTPS（与 SOCKS）代理；没有网卡的服务（VPN / 代理工具自己注册的那种）不碰——往别人的服务里写代理是越界。
+ * 接管前每个服务原来的设置存进宿主的库，还原时只还原**此刻仍指着这个端口**的服务（别人在期间改过的不动）。
+ * 同一时刻只有一个主人。宿主兜底的还原时机（扩展不需要也不能阻止）：主人的常驻进程全部停止或意外退出、主人停用 / 卸载 / 更新、Jarvis 退出、
+ * Jarvis 启动时发现上次崩溃留下的备份。
+ */
+export interface SystemProxyAPI {
+  /**
+   * 此刻的系统代理：谁接管着、是否真的生效、有效的是什么、有没有被别的工具拦着。
+   *
+   * @returns 状态。
+   */
+  status(): Promise<SystemProxyStatus>;
+  /**
+   * 把系统代理指向 `127.0.0.1:<port>`。没有在跑的常驻进程、另一个扩展已经接管着 → `host.failure`（`message` 写明是谁）；
+   * 端口越界 → `invalid.argument`。被别的工具拦着时**不写、不拒绝**：返回的状态带 `blocker`，把它的 `message` 原样给用户。
+   *
+   * @param request 端口、要不要连 SOCKS 一起设（省略 = 要）、追加的例外。
+   * @returns 接管之后（或被拦着时）的状态。
+   */
+  enable(request: SystemProxyEnableRequest): Promise<SystemProxyStatus>;
+  /**
+   * 还原接管前的设置。不是主人时是空操作。
+   *
+   * @returns 还原之后的状态。
+   */
+  disable(): Promise<SystemProxyStatus>;
 }
 
 // ---------------------------------------------------------------------------
@@ -718,6 +838,8 @@ export interface Jarvis {
   readonly preferences: PreferencesAPI;
   readonly permissions: PermissionsAPI;
   readonly log: LogAPI;
+  /** SDK 2.9。 */
+  readonly menuBar: MenuBarAPI;
   readonly text: TextToolsAPI;
   readonly clipboard: ClipboardAPI;
   readonly quickTransfer: QuickTransferAPI;
@@ -730,6 +852,10 @@ export interface Jarvis {
   readonly process: ProcessAPI;
   readonly files: FilesAPI;
   readonly terminal: TerminalAPI;
+  /** SDK 2.9。 */
+  readonly daemon: DaemonAPI;
+  /** SDK 2.9。 */
+  readonly systemProxy: SystemProxyAPI;
   readonly git: GitAPI;
   readonly android: AndroidAPI;
   readonly apps: AppsAPI;

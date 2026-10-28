@@ -41,6 +41,31 @@ const MAX_BUNDLE_BYTES = 512 * 1024;
 const REPORTING_CAPABILITIES = ["notifications.post", "clipboard.write", "inbox.post"];
 /** Git 操作域的能力：声明任一项都要入驻 Git 域——没入驻的扩展碰不到 Git。 */
 const GIT_CAPABILITIES = ["git.repository.read", "git.hosting.read", "git.hosting.write"];
+/**
+ * 常驻进程参数里认的两个占位符（jarvis-mac specs/20261028-091917-proxy-extension-menubar-daemon P-3）。
+ * 只认这两个、且必须独占一个参数：宿主按整参数替换，`--config={config}` 这种半截写法替换不了，也就跑不出声明里念给用户听的那条命令。
+ */
+const DAEMON_PLACEHOLDERS = ["{config}", "{workdir}"];
+/**
+ * 不能当常驻进程的解释器（与宿主 `ExtensionDaemonDeclaration.interpreters` 同一份）：扩展决定配置正文，
+ * 而这些程序会把一个文件当程序跑——`sh {config}` 等于让扩展执行任意脚本。带版本号的写法（python3.12）一并拦下。
+ */
+const DAEMON_INTERPRETERS = new Set([
+  "sh", "bash", "zsh", "dash", "ksh", "csh", "tcsh", "fish", "env", "xargs", "nohup", "sudo", "osascript", "open",
+  "python", "python2", "python3", "perl", "ruby", "node", "deno", "bun", "php", "lua", "luajit", "tclsh", "wish",
+  "awk", "gawk", "swift", "java", "jshell", "pwsh", "powershell", "Rscript", "julia", "expect",
+]);
+
+/**
+ * 一个可执行文件名是不是解释器。
+ * @param {string} name 不带路径的文件名。
+ * @returns {boolean}
+ */
+function isInterpreter(name) {
+  if (DAEMON_INTERPRETERS.has(name)) return true;
+  const base = name.split(/[.-]/)[0];
+  return DAEMON_INTERPRETERS.has(base) || DAEMON_INTERPRETERS.has(base.replace(/\d+$/, ""));
+}
 
 let Ajv;
 let addFormats;
@@ -122,8 +147,9 @@ export function checkExtension(dir) {
   const has = (id) => ids.includes(id);
 
   // ── 能力 ⇔ 声明对象 ──────────────────────────────────────────────────
+  // network 里 hosts 与 preferenceHosts 至少一项由 schema 管；这里管它与能力成对。
   if (has("network.https") !== Boolean(manifest.network)) {
-    problem(dir, "network.https 能力与 network.hosts 必须同时出现或同时缺席");
+    problem(dir, "network.https 能力与 network（hosts / preferenceHosts）必须同时出现或同时缺席");
   }
   const executables = manifest.process?.executables ?? [];
   const scripts = manifest.process?.terminal ?? [];
@@ -146,6 +172,40 @@ export function checkExtension(dir) {
   if (dupScripts.length) problem(dir, `process.terminal 里重复的 id：${dupScripts.join("、")}`);
   for (const path of manifest.files?.read ?? []) {
     if (path.split("/").includes("..")) problem(dir, `files.read 路径「${path}」里不能有 ..`);
+  }
+
+  // ── 常驻进程与系统代理（SDK 2.9，jarvis-mac specs/20261028-091917-proxy-extension-menubar-daemon P-3 / P-6 / P-8）──
+  const daemons = manifest.process?.daemons ?? [];
+  if (has("process.daemon") !== daemons.length > 0) {
+    problem(dir, "process.daemon 能力与 process.daemons 必须同时出现或同时缺席");
+  }
+  // 系统代理只能指向这个扩展自己在跑的常驻进程：没有常驻进程可起的扩展，申请到了也永远打不开它。
+  if (has("system.proxy") && !has("process.daemon")) {
+    problem(dir, "声明了 system.proxy 就要声明 process.daemon：系统代理只能指向这个扩展自己在跑的常驻进程");
+  }
+  const dupDaemons = duplicates(daemons.map((d) => d.id));
+  if (dupDaemons.length) problem(dir, `process.daemons 里重复的 id：${dupDaemons.join("、")}`);
+  for (const daemon of daemons) {
+    const args = daemon.arguments;
+    if (isInterpreter(daemon.executable)) {
+      problem(dir, `常驻进程「${daemon.id}」的可执行文件 ${daemon.executable} 是解释器：配置正文会变成任意脚本`);
+    }
+    for (const arg of args) {
+      if ((arg.includes("{") || arg.includes("}")) && !DAEMON_PLACEHOLDERS.includes(arg)) {
+        problem(dir, `常驻进程「${daemon.id}」的参数「${arg}」：占位符只认 ${DAEMON_PLACEHOLDERS.join(" / ")}，且必须独占一个参数`);
+      }
+    }
+    // 宿主崩溃后靠参数里的工作目录路径认出自己留下的孤儿进程；一个占位符都没有的命令认不出来，会一直占着端口。
+    if (!args.some((arg) => DAEMON_PLACEHOLDERS.includes(arg))) {
+      problem(dir, `常驻进程「${daemon.id}」的参数里至少要有一个 ${DAEMON_PLACEHOLDERS.join(" 或 ")}：宿主靠它认出崩溃后留下的孤儿进程`);
+    }
+    const usesConfig = args.includes("{config}");
+    if (usesConfig && !daemon.config) {
+      problem(dir, `常驻进程「${daemon.id}」用了 {config} 却没有声明 config.fileName：宿主不知道把配置写成哪个文件`);
+    }
+    if (!usesConfig && daemon.config) {
+      problem(dir, `常驻进程「${daemon.id}」声明了 config 却没有在参数里用 {config}：写下的配置文件没有人读`);
+    }
   }
 
   // ── Git 操作域（与宿主 ExtensionManifest.checkGit 同一份）──────────────
@@ -212,6 +272,17 @@ export function checkExtension(dir) {
   if (dupKeys.length) problem(dir, `偏好的 key 重复（设置与服务共用一个命名空间）：${dupKeys.join("、")}`);
   checkPreferences(dir, contributes.settings?.preferences ?? [], "preference");
   for (const service of services) checkPreferences(dir, service.preferences ?? [], `服务「${service.id}」的 preference`);
+
+  // network.preferenceHosts 只能点名本扩展的 urlList 偏好：那种控件由宿主画、值只可能来自用户亲手输入；
+  // 点名别的类型（text 输入框扩展读得到、也就分不清是不是用户填的）或不存在的 key，放行范围就说不清了。
+  const preferenceTypes = new Map(
+    [...(contributes.settings?.preferences ?? []), ...services.flatMap((s) => s.preferences ?? [])].map((p) => [p.key, p.type]),
+  );
+  for (const key of manifest.network?.preferenceHosts ?? []) {
+    const type = preferenceTypes.get(key);
+    if (type === undefined) problem(dir, `network.preferenceHosts 里的「${key}」不是本扩展声明的偏好`);
+    else if (type !== "urlList") problem(dir, `network.preferenceHosts 里的「${key}」是 ${type} 偏好：只能点名 urlList 偏好`);
+  }
 
   // ── 提示级：keywords 里重复名字 / 说明里的词 ────────────────────────
   for (const [domain, entry] of [["toolbox", contributes.toolbox], ["window", contributes.window]]) {

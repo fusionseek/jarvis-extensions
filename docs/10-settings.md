@@ -36,7 +36,8 @@ v1 的「开发者模式 · 从本地目录加载」已删除：v2 只从商店�
 | --- | --- | --- |
 | 头行 | 图标井 + 名 + 版本 + 状态徽标 + 启用开关 | 与集成行（Codex / Claude）同构 |
 | 第二行 | 描述 · 作者 · 「查看源码」 | 用户要知道这是谁写的 |
-| 入驻 | 「入驻：工具箱 · 窗口 · 指令 /http · 设置」；有服务的另写一句「「深度清理（Mole）」的开关与设置在 设置 · 清理」（项目引擎写「设置 · Git」） | 在这里找不到服务的开关，是因为它在「清理」里——说出来，用户就不会以为丢了 |
+| 入驻 | 「入驻：工具箱 · 窗口 · 指令 /http · 菜单栏 · 设置」；有服务的另写一句「「深度清理（Mole）」的开关与设置在 设置 · 清理」（项目引擎写「设置 · Git」） | 在这里找不到服务的开关，是因为它在「清理」里——说出来，用户就不会以为丢了 |
+| 在菜单栏显示（SDK 2.9） | 入驻了菜单栏域的扩展多一颗玻璃开关，默认开；关掉 = 拿掉图标、不发 `start` | 菜单栏是所有应用共用的一条窄带，用户得能不要它而不必停用整个扩展。它是宿主替这个扩展记的一个值（扩展偏好表的宿主命名空间 `<id>#host`，键 `menuBar.visible`），扩展读不到也改不了 |
 | 全局快捷键 | **只列真的注册上了的**，脚注「按了没反应多半是别的应用占着同一组键」 | 跨应用撞键探测不到；没注册上的不列，列表本身就是诊断 |
 | 指令冲突 | 撞了内置词或别的扩展、因而没加载的 `/` 指令，逐条用 `alert` 色写出来 | 不写出来，用户只会觉得「装了却没有这条指令」 |
 | 授权 | 声明的每一项一行：符号 + 名 + 档位 + 「还没问过」（若是）+ 玻璃开关 | 拨动即生效，前台与后台会话都收到 `permissionsChanged`（[05](05-permissions.md)） |
@@ -205,6 +206,7 @@ Issue Type / 子 Issue / blocked by 的读写）全在引擎扩展里。先例�
 | `multiselect` | 一列复选框 | 每点一下写一次 |
 | `secret` | 遮罩输入 + 「已保存」徽标 + 「清除」 | 回车保存；只写不读，设置页从不回显；存钥匙串（service `ai.fusionseek.jarvis.extension-secret`、account `<扩展 id>.<key>`），不进 SQLite、不进日志 |
 | `directory` | 缩写路径 +「选择…」 | 走 `NSOpenPanel`，只能选目录；存为字符串 |
+| `urlList`（SDK 2.9） | 一行一条 + 删除 + 「添加一行」，至多 `maxItems` 行（省略 = 10，上限 20） | 宿主逐条校验：每条必须是带主机名的 `https://` 地址，填错的那一行标红、不存；`secret` 省略 = `true`：整列进钥匙串，设置页按 `secret` 的方式遮罩，`all()` 与 `onChange` 里都没有它。存的是字符串数组 |
 
 写入之后宿主立刻告诉此刻活着的前台与后台会话：`preferencesChanged` 事件，SDK 里是 `jarvis.preferences.onChange`。
 默认值来自 manifest；库里没有那一项时读默认。**用户改过的值在扩展更新后保留**；manifest 里删掉的 key 留着不读，
@@ -220,6 +222,15 @@ await jarvis.system.openExtensionSettings();                 // 页面里一颗�
 ```
 
 `jarvis.preferences` 只读：扩展想改自己的偏好，只能引导用户去设置页。
+
+`urlList`（SDK 2.9）读回来是字符串数组；它没有默认值，没填过时按空处理。它存在的理由是联网：manifest `network.preferenceHosts` 点名它之后，
+用户在这里填的地址的主机就放行给 `net.fetch`（[06](06-capabilities.md)「`network.https`」）。只认这种偏好，是因为它的控件由宿主画、
+值只可能来自用户亲手输入——页面里的输入框扩展自己就能填，宿主分不出是谁写的。订阅地址里的 token 就是密码，所以默认进钥匙串。
+
+```ts
+const subscriptions = (await jarvis.preferences.get<string[] | undefined>("subscriptions")) ?? []; // 默认 secret：只能 get 单独读
+for (const url of subscriptions) await jarvis.net.fetch(url);                   // 主机在请求那一刻按此刻的值放行
+```
 
 ## Usage
 
@@ -237,7 +248,8 @@ await jarvis.system.openExtensionSettings();                 // 页面里一颗�
 
 - 服务的偏好**不**出现在设置 › 扩展：去它扩展的那个内置区段找。
 - `number` 越界是夹取不是拒绝；需要更严的范围就把 `minimum` / `maximum` 写严。
-- `secret` 没有默认值、`all()` 里没有它：只能 `get(key)` 单独读。
+- `secret` 没有默认值、`all()` 里没有它：只能 `get(key)` 单独读。`urlList` 默认同理（`secret: false` 才进 `all()`）。
+- `network.preferenceHosts` 只认 `urlList`：点名一个 `text` 偏好，校验脚本与宿主都拒。
 - 设置 › 扩展 的快捷键行只列注册上了的；这一版不能改键。
 
 ## Related Links
@@ -249,3 +261,4 @@ await jarvis.system.openExtensionSettings();                 // 页面里一颗�
   `App/JunkCleanEngineRegistry.swift`
 - `jarvis-mac/Sources/Jarvis/App/Projects/ProjectEngineRegistry.swift`、`ProjectEngineClient.swift`、
   `Domain/Extensions/ExtensionProjectEngineContract.swift`（项目引擎的注册、调用与载荷解码）
+- `jarvis-mac/specs/20261028-091917-proxy-extension-menubar-daemon/spec.md` P-2（「在菜单栏显示」）、P-5（`urlList` 与 `network.preferenceHosts`）

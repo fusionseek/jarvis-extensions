@@ -45,12 +45,13 @@
 | 能力 | 宿主那一句 |
 | --- | --- |
 | `screenshot.capture` | 会看到你的屏幕 |
-| `network.https` | 会访问：translate.googleapis.com, … |
+| `network.https` | 会访问：translate.googleapis.com, …；声明了 `network.preferenceHosts` 的再加「以及你在「‹偏好标题›」里填的地址所在的主机」 |
 | `quickTransfer.control` | 会对局域网开一个端口 |
 | `hotkeys.register` | 会注册全局快捷键 ⌥⌘T · ⌥⌘O |
 | `process.run` | 会运行：mo clean、mo --version。**运行起来的命令拥有 Jarvis 的全部系统权限（含完全磁盘访问）** |
 | `files.read` | 会读取：~/Library/Logs/mole/operations.log |
 | `terminal.run` | 会在终端里执行：安装 Mole（脚本写在扩展的 manifest 里，执行过程在终端里看得见） |
+| `process.daemon` | 会在后台常驻运行：sing-box run -c ‹配置文件› -D ‹工作目录›（manifest `process.daemons` 逐字列出） |
 | `git.hosting.read` | 会用你在 Git 服务里填的 token 读取数据；token 本身不交给扩展 |
 | `git.hosting.write` | 会以你的身份修改：updateProjectV2ItemFieldValue、closeIssue、…（manifest `git.mutations` 逐字列出） |
 | `android.apps.read` | 会经 adb 读连着的手机上装了哪些应用；读应用名与图标时把安装包临时拉到本机，读完即删 |
@@ -96,10 +97,14 @@ try {
 | --- | --- | --- |
 | 低 | `system.openURL`、`ocr.recognize`、`speech.speak`、`android.tools.open` | 用户看得见后果，或只处理扩展已经拿到的东西 |
 | 中 | `clipboard.read`、`clipboard.write`、`notifications.post`、`inbox.post`、`quickTransfer.status`、`hotkeys.register`、`git.repository.read`、`git.hosting.read`、`android.apps.read`、`apps.read` | 读或写用户自己的数据但不出本机；或占一组全局按键；或经宿主**只读**用户已经接上的 Git 服务；或经宿主的 adb **只读**用户连着的手机；或**只读**这台 Mac 装了哪些应用 |
-| 高 | `screenshot.capture`、`network.https`、`quickTransfer.control`、`quickTransfer.send`、`process.run`、`files.read`、`terminal.run`、`git.hosting.write` | 看得见屏幕、出得了本机、开得了端口、跑得了命令、读得了文件、以用户的身份改远端数据 |
+| 高 | `screenshot.capture`、`network.https`、`quickTransfer.control`、`quickTransfer.send`、`process.run`、`files.read`、`terminal.run`、`process.daemon`、`system.proxy`、`git.hosting.write` | 看得见屏幕、出得了本机、开得了端口、跑得了命令、读得了文件、以用户的身份改远端数据、改整台机器的网络出口 |
 
 **受限执行为什么是高风险**：被允许 `process.run` 的扩展，跑出来的进程继承 Jarvis 的全部系统权限——
 用户给 Jarvis 的完全磁盘访问，那个进程也有。声明对象逐字列在授权屏上，就是为了让用户知道自己允许的到底是哪一条命令。
+
+**常驻进程与系统代理为什么是高**（SDK 2.9）：常驻进程与 `process.run` 一样继承 Jarvis 的全部系统权限，而且一直跑着、不跟任何页面走；
+系统代理一旦接管，浏览器与大部分应用的流量都先经过这个扩展起的那个进程。宿主能硬拦的（只指向本机、要有自己在跑的进程、一个主人、进程没了自动还原）都拦了，
+拦不了的是「那个进程拿到流量之后做什么」——那取决于它跑的是哪个工具、配置写了什么，只有授权屏上那一句与审核守得住。
 
 **Git 操作域为什么读是中、写是高**：读与写走的是同一把 token（用户在 设置 · Git · Git 服务 里填的），
 但 token **从不交给扩展**——扩展交一份 GraphQL，宿主替它执行、把结果交回去。读只放行查询，碰到的是用户本来就看得到的东西；

@@ -10,7 +10,8 @@
  * 宿主侧过一遍能力闸门。
  *
  * 同一个扩展最多有两个会话：**前台会话**（有界面：工具箱页面、原地弹窗、窗口标签）与**后台会话**
- * （没有界面：服务扩展点、静默命令）。两个会话互相看不见对方的内存，共享的只有宿主那边的存储与偏好。
+ * （没有界面：服务扩展点、静默命令、菜单栏事件）。两个会话互相看不见对方的内存，共享的只有宿主那边的存储与偏好；
+ * 常驻进程与系统代理的状态在宿主手里，两边各自 `status` 读同一份。
  */
 import type { UINode } from "./ui.js";
 import type { JarvisErrorShape } from "./capabilities.js";
@@ -119,6 +120,213 @@ export interface ServiceCall {
   params: { preferences: Record<string, unknown>; granted: string[]; actionId?: string; request?: ProjectEngineRequest | CodeFormatRequest | CodeHighlightRequest };
 }
 
+// ---------------------------------------------------------------------------
+// 菜单栏域（SDK 2.9）：bridge schema 的 `$defs.sfSymbol` / `menuBarItemID` / `menuBarItem` / `menuBarModel` / `menuBarEvent`。
+// 语义见 jarvis-mac `specs/20261028-091917-proxy-extension-menubar-daemon` P-2。
+// ---------------------------------------------------------------------------
+
+/**
+ * 菜单栏里一项可点的条目。宿主画成一行系统菜单项：`checked` 画系统的勾，`enabled: false` 灰掉且点不了。
+ *
+ * `id`（`^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$`）由扩展自己定，用户点了它，`select` 事件原样带回。
+ * 允许 `:` 与 `.`，是为了让 `mode:rule`、`node:<名字>` 这种「类别:值」直接当 id 用——回调里拆开就知道点的是哪一类，不用另记一张表。
+ */
+export interface MenuBarActionItem {
+  kind: "item";
+  id: string;
+  /** 1–80 字。 */
+  title: string;
+  /** ≤ 80 字。画在标题下面的灰字（延迟、状态这类读数）。 */
+  subtitle?: string;
+  /** SF Symbol（`^[a-z0-9]+(\.[a-z0-9]+)*$`）。 */
+  symbol?: string;
+  /** 画系统的勾。省略 = 不勾。 */
+  checked?: boolean;
+  /** 省略 = 可点。 */
+  enabled?: boolean;
+}
+
+/** 分隔线。不带任何别的字段——带了 schema 就拒：一条分隔线上没有地方放标题。 */
+export interface MenuBarSeparator {
+  kind: "separator";
+}
+
+/** 灰色段标题（系统菜单的 section header）：不可点，只说下面几项是什么。 */
+export interface MenuBarHeader {
+  kind: "header";
+  /** 1–80 字。 */
+  title: string;
+}
+
+/** 子菜单。至多嵌两层；更深的、以及整份模型超过 300 项的部分，宿主丢掉并记一条警告（schema 数不了递归总数）。 */
+export interface MenuBarSubmenu {
+  kind: "submenu";
+  /** 1–80 字。 */
+  title: string;
+  symbol?: string;
+  /** 省略 = 可展开。 */
+  enabled?: boolean;
+  items: MenuBarItem[];
+}
+
+/** 菜单里的一项：可点的条目、分隔线、段标题或子菜单。 */
+export type MenuBarItem = MenuBarActionItem | MenuBarSeparator | MenuBarHeader | MenuBarSubmenu;
+
+/**
+ * `jarvis.menuBar.update` 的入参：这个扩展那枚菜单栏图标与它的菜单。
+ *
+ * 宿主**缓存最后一份**：后台会话空闲被收掉之后图标与菜单照旧在，点开 / 点选时宿主把会话唤醒再发事件。
+ * 宿主按 250 ms 合并，只画最后一份——挡的是「每帧推一次速率」。菜单末尾宿主固定追加分隔线、「打开「名」」与「「名」的设置」，
+ * 扩展改不掉：菜单栏图标是扩展唯一常驻在屏幕上的东西，用户必须总能从它回到 Jarvis 管它的地方。
+ */
+export interface MenuBarModel {
+  /** 图标（SF Symbol）。省略 = manifest `contributes.menuBar.symbol`；宿主画不出时同样退回它。 */
+  symbol?: string;
+  /** 图标右侧的短字（≤ 16 字，速率之类）。省略 = 只有图标。 */
+  title?: string;
+  /** 悬停提示，≤ 80 字。 */
+  tooltip?: string;
+  /** ≤ 300 项（含子菜单里的）。 */
+  items: MenuBarItem[];
+}
+
+/**
+ * 宿主 → 后台会话的 `menuBar` 事件（线缆形状）。SDK 把它拆成 `defineExtension({ menuBar })` 的三个回调。
+ *
+ * - `start`：应用启动、扩展启用 / 更新、用户在设置里重新打开「在菜单栏显示」时各一次——推第一份模型、做「启动时恢复」；
+ * - `open`：用户点开菜单的那一刻（`menuWillOpen`）——可以趁机刷新读数，菜单开着时宿主照样就地更新条目；
+ * - `select`：用户点了一项，`itemId` 是扩展自己给的 id。
+ */
+export type MenuBarEvent =
+  | { event: "start" | "open"; granted: string[]; preferences: Record<string, unknown> }
+  | { event: "select"; itemId: string; granted: string[]; preferences: Record<string, unknown> };
+
+// ---------------------------------------------------------------------------
+// 常驻进程（SDK 2.9）：`$defs.daemonID` / `controlPort` / `daemonStartRequest` / `daemonStatus` / `daemonEvent` /
+// `daemonRequest` / `daemonResponse`。语义见同一 spec P-3、P-4。
+// ---------------------------------------------------------------------------
+
+/**
+ * `jarvis.daemon.start` 的入参。
+ *
+ * 宿主依次：定位可执行文件 → 写配置 → 起进程 → 等 1 秒。这 1 秒里进程退了算启动失败（错误里带它输出的最后 20 行——
+ * 配置错了由工具自己报，扩展不用另跑一遍检查）；否则返回 `running` 的状态。已经在跑时报错：先 `stop`。
+ */
+export interface DaemonStartRequest {
+  /** manifest `process.daemons[].id`（`^[a-z][a-z0-9-]{0,31}$`）。 */
+  id: string;
+  /** 配置文件正文（≤ 4 MiB，按字节由宿主数）。manifest 声明了 `config` 时必填，宿主写到 `{workdir}/<fileName>`（0600），停止后删掉。 */
+  config?: string;
+  /** 用户填的可执行文件路径（≤ 1024 字），文件名必须等于声明的名字；省略 = 宿主自动定位。 */
+  executable?: string;
+  /** 这个进程会监听的本机控制口（1024–65535）。之后 `daemon.request` 只发往 `127.0.0.1:<它>`；不报就没有控制口可用。 */
+  controlPort?: number;
+}
+
+/** 常驻进程此刻在哪一步：`stopped` 没起过或已停；`running` 在跑；`exited` 意外退出了（`exitCode` / `signal` 是怎么退的）。 */
+export type DaemonState = "stopped" | "running" | "exited";
+
+/** `daemon.start` / `stop` / `status` 的返回。 */
+export interface DaemonStatus {
+  id: string;
+  state: DaemonState;
+  /** `running` 时必有。 */
+  pid?: number;
+  /** `running` 时必有，Unix 毫秒。 */
+  startedAt?: number;
+  exitCode?: number;
+  /** 被信号终止时的信号值（≥ 1）。 */
+  signal?: number;
+  controlPort?: number;
+  /**
+   * 此刻定位到的可执行文件路径（运行中 = 正在跑的那一份），**找不到为空串**。
+   * 扩展据此画「没装」那一屏——因此不需要为了问一句「装没装」另外申请 `process.run`。
+   */
+  executable: string;
+}
+
+/**
+ * `daemon.observe` 推来的一条。
+ *
+ * - `output`：100 ms 合批的新输出行（stdout 与 stderr 合流，每行 ≤ 2 KB）；
+ * - `exit`：进程退了。`expected` 为真是 `stop` / 停用 / 退出应用收的；为假是它自己死的——**宿主不自动重启**，重试、横幅、关系统代理由扩展决定
+ *   （系统代理宿主另有兜底：主人的常驻进程没了就还原）。`lines` 是最后 20 行输出。
+ */
+export type DaemonEvent =
+  | { kind: "output"; lines: string[] }
+  | { kind: "exit"; lines: string[]; expected: boolean; exitCode?: number; signal?: number };
+
+/** `daemon.request` 认的方法。 */
+export type DaemonRequestMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+/**
+ * `jarvis.daemon.request` 的入参：发往 `http://127.0.0.1:<controlPort><path>`，只在这个常驻进程 `running` 时放行，**不经任何代理**
+ * （系统代理此刻可能正指着这个进程自己）。
+ *
+ * `network.https` 只放行 HTTPS 与白名单主机，连不到 `127.0.0.1`——控制口因此单开一条路，且只通向扩展自己声明、自己起的那个进程。
+ */
+export interface DaemonRequest {
+  id: string;
+  method: DaemonRequestMethod;
+  /** 以 `/` 开头，不含 `//`、反斜杠、`#` 与空白（≤ 2048 字）：只能是这个控制口上的一条路径，拼不出别的主机。查询串照常带。 */
+  path: string;
+  /** 只放行这三个头。 */
+  headers?: { Authorization?: string; "Content-Type"?: string; Accept?: string };
+  /** ≤ 1 MiB（按字节由宿主数）。 */
+  body?: string;
+  /** 秒，1–30，默认 10（测一次延迟要几秒）。 */
+  timeout?: number;
+}
+
+/** `daemon.request` 的返回，与 `net.fetch` 同一形状：非 UTF-8 的响应 `text` 为空串；响应 ≤ 5 MiB。 */
+export interface DaemonResponse {
+  status: number;
+  headers: Record<string, string>;
+  text: string;
+}
+
+// ---------------------------------------------------------------------------
+// 系统代理（SDK 2.9）：`$defs.systemProxyEnableRequest` / `systemProxyStatus`。语义见同一 spec P-6。
+// ---------------------------------------------------------------------------
+
+/**
+ * `jarvis.systemProxy.enable` 的入参。主机由宿主写死 `127.0.0.1`；调用时这个扩展必须有一个 `running` 的常驻进程——
+ * 系统代理指着一个没人监听的端口，等于整机断网。
+ */
+export interface SystemProxyEnableRequest {
+  /** 1024–65535。 */
+  port: number;
+  /** 连 SOCKS 一起设。省略 = `true`。 */
+  socks?: boolean;
+  /** 追加进例外列表（排在原有的与宿主必加的 `127.0.0.1`、`::1`、`localhost`、`*.local`、`169.254/16` 之后），≤ 64 条、不带空白。 */
+  bypass?: string[];
+}
+
+/**
+ * 主服务的代理由别的工具在动态状态里给出（Surge 增强模式、其他 VPN 的虚拟网卡）：写了也不生效，所以 `enable` 什么都不写。
+ * `message` 是一句可以原样给用户看的话。
+ */
+export interface SystemProxyBlocker {
+  serviceName: string;
+  address: string;
+  message: string;
+}
+
+/**
+ * `systemProxy.status` / `enable` / `disable` 的返回。
+ *
+ * `owner`：`self` 是这个扩展接管着（带 `port`）、`other` 是另一个扩展（带 `otherName`——同一时刻只有一个主人）、`none` 是没人。
+ * `effective`：有效系统代理此刻就是这个扩展写的那个端口（被别的工具盖住时为假）。`current`：有效系统代理的一句话（`127.0.0.1:6152`），没有为省略。
+ */
+export interface SystemProxyStatus {
+  owner: "self" | "other" | "none";
+  port?: number;
+  effective: boolean;
+  current?: string;
+  otherName?: string;
+  blocker?: SystemProxyBlocker;
+}
+
 /** 宿主 → SDK 的事件。 */
 export type HostEvent =
   | { type: "activate"; context: ActivationContext }
@@ -130,7 +338,9 @@ export type HostEvent =
   | { type: "serviceCancel"; callId: number }
   | { type: "preferencesChanged"; changes: Record<string, unknown> }
   | { type: "permissionsChanged"; granted: string[] }
-  | { type: "subscription"; token: string; payload: unknown };
+  | { type: "subscription"; token: string; payload: unknown }
+  /** SDK 2.9：菜单栏域的事件，只发给后台会话。 */
+  | { type: "menuBar"; menuBar: MenuBarEvent };
 
 /** 宿主注入的全局对象。 */
 export interface HostBridge {

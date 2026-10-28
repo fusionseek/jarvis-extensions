@@ -5,7 +5,8 @@
 这一篇不再是分期方案，而是**宿主已经做了什么**的记录：v2 的域模型、受限执行、服务扩展点与清理引擎可插拔，
 在 `jarvis-mac` 的 Speckit feature `specs/20261011-193606-extension-domains-service-engines/` 里落地；
 Git 域、Git 操作域与项目引擎（SDK 2.1）在 `specs/20261015-123126-github-project-management/` 里落地，见文末「第二轮」；
-Android 操作域与行首图标（SDK 2.4）在 `specs/20261017-170440-issue-derive-app-scan/` 里落地，见「第三轮」。
+Android 操作域与行首图标（SDK 2.4）在 `specs/20261017-170440-issue-derive-app-scan/` 里落地，见「第三轮」；
+菜单栏域、常驻进程、按用户填的地址联网与系统代理（SDK 2.9）在 `specs/20261028-091917-proxy-extension-menubar-daemon/` 里落地，见「第七轮」。
 扩展作者读它，是为了知道每一条规则在宿主哪一个类型里被执行；宿主开发者读它，是为了改动时知道牵动哪几处。
 
 文件名保留 `14-host-integration-plan.md`：其余文档、PR 模板与 jarvis-mac 的引用都指向这个名字，改名只会多出一批死链。
@@ -261,6 +262,48 @@ GitHub Projects v2 的全部专属知识做成扩展 [`github-project`](../exten
 | SDK 2.8 | 本仓 `sdk/src/`：`CodeHighlightEngine` / `CodeSyntaxKind` / `CodeLanguageID`（`services.ts`，`CodeFormatLanguageID` 留作别名）、分派（`index.ts`）；只追加 |
 | 扩展 | [`extensions/code-highlight`](../extensions/code-highlight)「代码高亮」：服务 `code.highlight`，`capabilities: []` |
 
+### 第七轮：菜单栏域、常驻进程、按用户填的地址联网、系统代理（spec `20261028-091917-proxy-extension-menubar-daemon`）
+
+仓库主人要一个独立的代理（成熟后不再用 Surge），**做在扩展里**，内核用 sing-box（独立进程、不链接 libbox）；又要「一个通知栏域，这个是之前缺失的一部分」。
+扩展沙盒故意不给的三件事——常驻、改系统网络、root——由宿主补**通用**能力，扩展 [`proxy`](../extensions/proxy) 做产品（订阅解析、配置生成、规则、三处界面）。
+宿主不认识 sing-box、不认识 Clash API、不认识任何代理协议。root 本期不给：TUN 是下一期的宿主能力，不是「让常驻进程以 root 跑」。
+
+| # | 决策 | 一句话 |
+| --- | --- | --- |
+| P-1 | 分层 | 宿主给通用能力，扩展做产品；每一项能力在 manifest 里逐字声明、在授权屏上念给用户听，闸门六步不变 |
+| P-2 | 新域 `contributes.menuBar` | `{ title, symbol }`，入口域；每个扩展**自己的**一枚 `NSStatusItem` + `NSMenu`；`jarvis.menuBar.update` 隐式、250 ms 合并、宿主缓存最后一份；事件 `start` / `open` / `select` 进后台会话；末尾固定「打开」「设置」两项；设置 · 扩展「在菜单栏显示」（`<id>#host` 的 `menuBar.visible`） |
+| P-3 | 新能力 `process.daemon`（高） | manifest `process.daemons`（≤ 2）：一组参数逐字、只认 `{config}` / `{workdir}`；生死归宿主（`stop`、停用 / 卸载 / 更新、退出应用）；启动清扫孤儿；意外退出不自动重启 |
+| P-4 | 本机控制口 `daemon.request` | 只发往自己 running 的那个进程报的端口、只发 `127.0.0.1`、不经代理；路径 / 方法 / 三个请求头 / 体积 / 超时有界；归 `process.daemon` |
+| P-5 | 按用户填的地址联网 | 偏好类型 `urlList`（默认进钥匙串）；`network.preferenceHosts` 点名它，主机在请求那一刻现读放行；`network.hosts` 改为可选 |
+| P-6 | 新能力 `system.proxy`（高） | 只指向 `127.0.0.1`、必须有自己 running 的常驻进程、一个主人；经 `networksetup` 写、SystemConfiguration 读；被别的工具拦着时不写、返回 `blocker`；宿主兜底还原（进程没了、停用卸载更新、退出、崩溃后启动） |
+| P-7 | 后台会话常驻 | 有 running 的常驻进程时后台会话不因空闲被收；菜单栏事件、常驻进程事件都能唤醒它 |
+| P-8 | 契约与 SDK 2.9 | manifest、bridge 都是 v2 的**加法**：老扩展不声明新字段就不受影响；SDK 内联进每个扩展的产物，全部扩展随之升补丁版本 |
+| P-10 | 主库 v33 `system_proxy_backups` | 接管前每个网络服务原来的代理设置；每服务至多一行、还原成功即删 |
+
+宿主侧的类型与文件按那边 `plan.md` 列出；与最终提交不一致时以那边的 `validation.md` 为准。
+
+| 类型 | 文件（相对 `jarvis-mac/Sources/Jarvis/`） | 管什么 |
+| --- | --- | --- |
+| `ExtensionCapabilityID`（+2）、`ExtensionDaemonDeclaration`、`ExtensionMenuBarContribution`、`ExtensionDomain.menuBar` | `Domain/Extensions/ExtensionManifest.swift` | 能力与档位、`process.daemons`、菜单栏域、偏好 `urlList`、`network.preferenceHosts` |
+| `ExtensionManifestValidation` | `Domain/Extensions/ExtensionManifestValidation.swift` | 与 `scripts/validate.mjs` 同一份的跨字段规则（下表「产物 · 校验」） |
+| `ExtensionCapabilityMap` | `Domain/Extensions/ExtensionCapabilityMap.swift` | `daemon.*` → `process.daemon`、`systemProxy.*` → `system.proxy`；`menuBar.update` 隐式；限频 |
+| `ExtensionMenuBarModel` | `Domain/Extensions/ExtensionMenuBarModel.swift` | 模型解码与上限、宿主固定项、事件形状 |
+| `ExtensionDaemonPolicy` | `Domain/Extensions/ExtensionDaemonPolicy.swift` | 占位符展开、控制口请求校验、孤儿判定（参数串 + 根路径 → 是不是我们的） |
+| `ExtensionNetworkScope` | `Domain/Extensions/ExtensionNetworkScope.swift` | 放行主机 = 声明 ∪ `urlList` 此刻的值里的主机；`urlList` 值校验 |
+| `SystemProxyPlan` | `Domain/SystemProxy/SystemProxyPlan.swift` | 服务模型、接管 / 还原计划、拦截判定、`networksetup` 命令计划 |
+| `ExtensionDaemonRunner` | `Infrastructure/Extensions/ExtensionDaemonRunner.swift` | 起停、输出合流、按参数枚举孤儿 |
+| `SystemProxyBackend`、`SystemProxyStore` | `Infrastructure/SystemProxy/` | SC 读、`networksetup` 写、内存后端（测试）；`system_proxy_backups` |
+| `ExtensionDaemonCenter`、`SystemProxyCenter`、`ExtensionMenuBarCenter` | `App/Extensions/`、`App/SystemProxy/` | 常驻进程登记与订阅、退出事件；系统代理的主人与兜底还原；每扩展一枚状态栏图标与事件分派 |
+| `ExtensionPreferenceControls`、`ExtensionSettingsSection` | `UI/` | `urlList` 控件、「在菜单栏显示」开关、域列表 |
+
+| 产物 | 位置 |
+| --- | --- |
+| manifest | 本仓 `schemas/extension.v2.schema.json`：能力 +2（`process.daemon`、`system.proxy`）、`process.daemons`、`network.preferenceHosts`（`hosts` 可选，两者至少一项）、偏好 `urlList`、`contributes.menuBar`（入口域） |
+| 线缆 | `jarvis-mac/contracts/schemas/extensions/bridge.v2.schema.json`：`hostEvent.type` + `menuBar`；`$defs.sfSymbol` / `menuBarItemID` / `menuBarItem` / `menuBarModel` / `menuBarEvent` / `daemonID` / `controlPort` / `daemonStartRequest` / `daemonStatus` / `daemonEvent` / `daemonRequest` / `daemonResponse` / `systemProxyEnableRequest` / `systemProxyStatus`；样例 `contracts/fixtures/extensions/bridge/{menu-bar-*,daemon-*,system-proxy-*,bridge.event.menu-bar-*}.json` |
+| 校验 | 本仓 `scripts/validate.mjs`：`process.daemon` ⇔ `process.daemons`；`system.proxy` ⇒ `process.daemon`；常驻进程 id 不重、占位符独占一个参数且只认两个、至少一个、`{config}` ⇔ `config`；`network.preferenceHosts` 只点名本扩展的 `urlList` |
+| SDK 2.9 | 本仓 `sdk/src/`：`MenuBarModel` / `MenuBarItem` / `MenuBarEvent`、`DaemonStartRequest` / `DaemonStatus` / `DaemonEvent` / `DaemonRequest` / `DaemonResponse`、`SystemProxyEnableRequest` / `SystemProxyStatus`（`bridge.ts`）；`jarvis.menuBar` / `jarvis.daemon` / `jarvis.systemProxy`（`capabilities.ts`、`index.ts`，`daemon.observe` 经订阅带 `{ id, token }`）；`defineExtension({ menuBar: { start, open, select } })` 与 `menuBar` 事件分派（`index.ts`）；能力与档位、`DaemonDeclaration`、`NetworkDeclaration`、`MenuBarContribution`、偏好 `urlList`（`manifest.ts`）；替身 `menuBarModels` / `menuBarEvent()` / `menuItem()` 与 `fakeDaemons()`（`testing.ts`）；只追加 |
+| 扩展 | [`extensions/proxy`](../extensions/proxy)「代理」：工具箱、窗口、菜单栏、指令、设置；`process.daemon`、`system.proxy`、`network.https`（`preferenceHosts`）、`terminal.run`（`brew install sing-box`）等 |
+
 ## Usage
 
 - 扩展作者：遇到一条规则想知道"是谁在拦"，按上表找到类型名，在 `jarvis-mac` 里读它的文档注释——每条规则都写了为什么。
@@ -278,5 +321,6 @@ GitHub Projects v2 的全部专属知识做成扩展 [`github-project`](../exten
 - `jarvis-mac/specs/20261011-193606-extension-domains-service-engines/`（`spec.md`、`plan.md`、`tasks.md`、`validation.md`）
 - `jarvis-mac/specs/20261015-123126-github-project-management/`（第二轮：Git 域、Git 操作域、项目引擎；`research.md` 是 GitHub GraphQL 的实测）
 - `jarvis-mac/specs/20261017-170440-issue-derive-app-scan/`（第三轮：Android 操作域、`row.image`）
+- `jarvis-mac/specs/20261028-091917-proxy-extension-menubar-daemon/`（第七轮：菜单栏域、常驻进程、本机控制口、按用户填的地址联网、系统代理、主库 v33）
 - `jarvis-mac/docs/foundation/extensions.md`、`docs/foundation/junk-clean.md`
 - [02 · 框架层级设计](02-architecture.md)、[05 · 能力授权模型](05-permissions.md)、[10 · 设置域与服务扩展点](10-settings.md)

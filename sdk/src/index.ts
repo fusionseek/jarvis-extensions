@@ -14,15 +14,16 @@
  * | 设置 | `contributes.settings` | —（宿主画控件，扩展读 `jarvis.preferences`） |
  * | 服务 | `contributes.services` | `services` |
  * | Git | `contributes.git` | —（宿主在 Git 里画入口；扩展经 `jarvis.git` 读写托管服务） |
+ * | 菜单栏（SDK 2.9） | `contributes.menuBar` | `menuBar`（后台会话里的 `start` / `open` / `select`；模型经 `jarvis.menuBar.update` 推） |
  *
  * 能力按命名空间挂在 `jarvis` 上；Android 操作域（`jarvis.android`，SDK 2.4）不是域、不入驻任何东西，只是两项能力；
- * 本机应用（`jarvis.apps`，SDK 2.5）同样只是一项能力 `apps.read`。
+ * 本机应用（`jarvis.apps`，SDK 2.5）同样只是一项能力 `apps.read`；常驻进程（`jarvis.daemon`）与系统代理（`jarvis.systemProxy`，SDK 2.9）也是。
  *
  * 悬浮球不是可入驻的域。
  */
 import type { EnvironmentInfo, HostInfo, Jarvis, ProcessHandle, ProcessResult, ProcessRunOptions, Unsubscribe } from "./capabilities.js";
 import { JarvisError } from "./capabilities.js";
-import type { ActivationContext, CommandContext, HostEvent, InvokeResult, HostBridge, CommandSummary, ServiceCall, Surface } from "./bridge.js";
+import type { ActivationContext, CommandContext, HostEvent, InvokeResult, HostBridge, CommandSummary, MenuBarEvent, ServiceCall, Surface } from "./bridge.js";
 import { bridgeProtocolVersion, countNodes, serialize } from "./bridge.js";
 import type { CancelSignal, CodeFormatEngine, CodeFormatRequest, CodeHighlightEngine, CodeHighlightRequest, ServiceContext, ServiceImplementation, JunkCleanEngine, LauncherAppsEngine, ProjectEngine, ProjectEngineRequest } from "./services.js";
 import type { UINode } from "./ui.js";
@@ -39,15 +40,32 @@ export type {
   CommandContext,
   CommandSummary,
   CommandTrigger,
+  DaemonEvent,
+  DaemonRequest,
+  DaemonRequestMethod,
+  DaemonResponse,
+  DaemonStartRequest,
+  DaemonState,
+  DaemonStatus,
   HostEvent,
+  MenuBarActionItem,
+  MenuBarEvent,
+  MenuBarHeader,
+  MenuBarItem,
+  MenuBarModel,
+  MenuBarSeparator,
+  MenuBarSubmenu,
   SerializedNode,
   ServiceCall,
   Surface,
+  SystemProxyBlocker,
+  SystemProxyEnableRequest,
+  SystemProxyStatus,
 } from "./bridge.js";
 export { bridgeProtocolVersion } from "./bridge.js";
 
 /** SDK 版本。主版本必须与宿主运行时一致。 */
-export const sdkVersion = "2.8.0";
+export const sdkVersion = "2.9.0";
 
 /** 一面的实现：工具箱页面、原地弹窗或窗口标签。 */
 export interface PageDefinition {
@@ -61,6 +79,33 @@ export interface PageDefinition {
 
 /** 一条命令的处理函数。`/` 指令带来的参数在 `context.argument`。 */
 export type CommandHandler = (context: CommandContext) => void | Promise<void>;
+
+/**
+ * 菜单栏回调拿到的东西（SDK 2.9）：与命令一样，此刻的授权与偏好随事件一起来，不必先 `await` 一次宿主。
+ * 菜单栏的代码跑在后台会话，那里没有 `activate`，这是它唯一一处现成的授权与偏好。
+ */
+export interface MenuBarContext {
+  /** 此刻已授予的能力。 */
+  granted: string[];
+  /** 此刻的偏好。进钥匙串的不在里面（`secret`，以及 `secret` 没关掉的 `urlList`），要用就 `jarvis.preferences.get(key)` 单独读。 */
+  preferences: Record<string, unknown>;
+}
+
+/**
+ * 菜单栏域（SDK 2.9，manifest `contributes.menuBar`）：宿主发来的三种事件。都跑在**后台会话**；回调里改了状态，
+ * 自己调 `jarvis.menuBar.update(model)` 推新的模型——宿主不会替扩展重画菜单，它只缓存最后一份。
+ */
+export interface MenuBarDefinition {
+  /**
+   * 应用启动、扩展启用 / 更新、用户在设置里重新打开「在菜单栏显示」时各一次。推第一份模型、做「启动时恢复」这类事；
+   * 还没推之前宿主画 manifest 的 `symbol` 与一行「正在加载」。
+   */
+  start?(context: MenuBarContext): void | Promise<void>;
+  /** 用户点开菜单的那一刻。可以趁机刷新读数（例如节点延迟）；菜单开着时宿主照样就地更新条目。 */
+  open?(context: MenuBarContext): void | Promise<void>;
+  /** 用户点了一项。`itemId` 是扩展自己在模型里给的 id；宿主固定追加的「打开」「设置」两项不走这里。 */
+  select(context: MenuBarContext, itemId: string): void | Promise<void>;
+}
 
 /** 按域交出的实现。 */
 export interface ExtensionDefinition {
@@ -77,6 +122,8 @@ export interface ExtensionDefinition {
   commands?: Record<string, CommandHandler>;
   /** 服务域：manifest `contributes.services[]` 里每个服务的实现，按服务 id 对上。 */
   services?: Record<string, ServiceImplementation>;
+  /** 菜单栏域（SDK 2.9）：manifest `contributes.menuBar` 那枚图标的事件。 */
+  menuBar?: MenuBarDefinition;
 }
 
 type Pending = { resolve: (value: unknown) => void; reject: (error: JarvisError) => void };
@@ -201,17 +248,24 @@ class Runtime {
   /**
    * 订阅宿主事件。宿主拒绝订阅（没授权、没这个能力）时**不抛到扩展里**：一条被拒的订阅只是收不到事件，
    * 让它变成未处理的 rejection 会把整个上下文拖垮。拒绝记一条 warn 日志。
+   *
+   * `params`（SDK 2.9）是订阅的对象——`daemon.observe` 要说订的是哪一个常驻进程（`{ id }`）。它同时随订阅与退订上线缆，
+   * 宿主据此找到那一个进程的订阅者表，不必反查 token 属于谁；不给时线缆上只有 `{ token }`，与 2.8 一字不差。
    */
-  subscribe(namespace: string, method: string, listener: (payload: unknown) => void): Unsubscribe {
+  subscribe(namespace: string, method: string, listener: (payload: unknown) => void, params: Record<string, unknown> = {}): Unsubscribe {
     const token = this.token(namespace, method);
     this.listen(token, listener);
-    this.invoke(namespace, method, { token }).catch((error: unknown) => {
+    this.invoke(namespace, method, { ...params, token }).catch((error: unknown) => {
       this.forget(token);
       this.log("warn", `订阅 ${namespace}.${method} 被宿主拒绝`, error instanceof Error ? error.message : String(error));
     });
+    let active = true;
     return () => {
+      // 退订只发一次：同一个 Unsubscribe 被调两次，第二次不该再让宿主去找一条已经没了的订阅。
+      if (!active) return;
+      active = false;
       this.forget(token);
-      this.invoke(namespace, "unsubscribe", { token }).catch(() => undefined);
+      this.invoke(namespace, "unsubscribe", { ...params, token }).catch(() => undefined);
     };
   }
 
@@ -381,6 +435,42 @@ class Runtime {
     );
   }
 
+  /**
+   * 菜单栏事件落到 `defineExtension({ menuBar })` 的回调。与命令同一种收尾：回调抛错只记 error 日志——
+   * 一次点选失败不该把后台会话拖垮，菜单还要接着用。
+   */
+  private handleMenuBar(event: MenuBarEvent): void {
+    const handlers = this.definition?.menuBar;
+    if (!handlers) {
+      this.log("error", "manifest 入驻了菜单栏域，但 defineExtension 里没有 menuBar 的实现。", undefined);
+      return;
+    }
+    const context: MenuBarContext = { granted: event.granted, preferences: event.preferences };
+    let work: void | Promise<void>;
+    try {
+      switch (event.event) {
+        case "start":
+          work = handlers.start?.(context);
+          break;
+        case "open":
+          work = handlers.open?.(context);
+          break;
+        case "select":
+          work = handlers.select(context, event.itemId);
+          break;
+        default:
+          // 未知的事件名（宿主比 SDK 新）照「未知 type 忽略」那条规矩处理。
+          return;
+      }
+    } catch (error) {
+      work = Promise.reject(error);
+    }
+    void Promise.resolve(work).then(
+      () => this.requestUpdate(),
+      (error: unknown) => this.log("error", `菜单栏的 ${event.event} 抛出了异常`, error instanceof Error ? error.message : String(error)),
+    );
+  }
+
   private dispatch(json: string): void {
     const event = JSON.parse(json) as HostEvent;
     const definition = this.definition;
@@ -439,6 +529,10 @@ class Runtime {
         this.subscriptions.get(event.token)?.(event.payload);
         return;
       }
+      case "menuBar": {
+        this.handleMenuBar(event.menuBar);
+        return;
+      }
       case "preferencesChanged":
       case "permissionsChanged": {
         this.requestUpdate();
@@ -485,6 +579,9 @@ const call = {
   android: namespaced("android"),
   apps: namespaced("apps"),
   system: namespaced("system"),
+  menuBar: namespaced("menuBar"),
+  daemon: namespaced("daemon"),
+  systemProxy: namespaced("systemProxy"),
 };
 
 const sync = {
@@ -579,6 +676,10 @@ export const jarvis: Jarvis = {
     warn: (message, data) => runtime.log("warn", message, data),
     error: (message, data) => runtime.log("error", message, data),
   },
+  // 菜单栏域（SDK 2.9）：模型原样就是线缆上的 params，校验与上限在宿主。
+  menuBar: {
+    update: (model) => call.menuBar("update", model),
+  },
   text: {
     base64: {
       encode: (text, options) => sync.text("base64.encode", { text, ...options }),
@@ -633,6 +734,21 @@ export const jarvis: Jarvis = {
   },
   terminal: {
     run: (scriptId) => call.terminal("run", { id: scriptId }),
+  },
+  // 常驻进程（SDK 2.9）：入参原样上线缆，占位符展开、控制口校验都在宿主。
+  daemon: {
+    start: (request) => call.daemon("start", request),
+    stop: (id) => call.daemon("stop", { id }),
+    status: (id, executable) => call.daemon("status", executable === undefined ? { id } : { id, executable }),
+    logs: (id) => call.daemon("logs", { id }),
+    request: (request) => call.daemon("request", request),
+    observe: (id, listener) => runtime.subscribe("daemon", "observe", listener as (payload: unknown) => void, { id }),
+  },
+  // 系统代理（SDK 2.9）：主机由宿主写死 127.0.0.1，扩展只给端口与例外。
+  systemProxy: {
+    status: () => call.systemProxy("status"),
+    enable: (request) => call.systemProxy("enable", request),
+    disable: () => call.systemProxy("disable"),
   },
   git: {
     repositories: () => call.git("repositories"),

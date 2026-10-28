@@ -33,7 +33,7 @@ extensions/<id>/
 ├── extension.json      manifest v2
 ├── package.json        名字（jarvis-ext-<id>）、版本（与 manifest 同步）、构建脚本
 ├── tsconfig.json
-├── src/index.ts        入口：defineExtension({ toolbox, window, popover, commands, services })
+├── src/index.ts        入口：defineExtension({ toolbox, window, popover, commands, services, menuBar })
 ├── test/*.test.mjs     node --test（建议）
 ├── dist/extension.js   构建产物（提交进仓库）
 └── README.md           给用户看的：它入驻哪里、要哪些授权、会跑什么命令
@@ -47,15 +47,18 @@ extensions/<id>/
 必填：`manifestVersion: 2`、`id`、`version`、`name`、`symbol`、`description`、`author`、`main`、`sdk`（`^2.0.0`）、
 `minimumJarvisVersion`、`capabilities`、`contributes`、`inbox`。
 
-1. **选域**（`contributes` 至少入驻工具箱、窗口、指令、服务之一）：
+1. **选域**（`contributes` 至少入驻工具箱、窗口、指令、服务、菜单栏之一）：
    - 有一屏要给用户看 → `toolbox`（面板里一行一页），想在大窗口里看 → 再加 `window`；
    - 有不用打开界面就能做完的一步 → `commands`（`/` 指令、快捷键；落点 `toolbox` / `window` / `popover` / `silent`）；
    - 要扩展一个内置能力（清理引擎）→ `services`，没有界面；
+   - 有一件一直在后台的事、要用户随手看一眼或点一下（开关、切换）→ `menuBar`（SDK 2.9，系统菜单栏上自己的一枚图标）；
    - 要让用户调东西 → `settings.preferences`（服务的设置写在服务自己的 `preferences` 里）。
 2. **能力**：把你会调用的每一个 `jarvis.*` 对应到 [06](06-capabilities.md) 的 `CapabilityID`，每项一句 `reason`（4–60 字，写"拿它做什么"）。
-   用到 `net.fetch` 就把主机写进 `network.hosts`。
+   用到 `net.fetch` 就把主机写进 `network.hosts`；要访问的是用户自己填的地址（订阅地址）就声明一项 `urlList` 偏好，
+   再在 `network.preferenceHosts` 里点名它（SDK 2.9）。
 3. **受限执行**（只在真的要跑命令时）：`process.executables` 逐个写可执行文件名与**每一组**参数；
-   `files.read` 逐个写文件路径；`process.terminal` 写脚本正文。**最小、逐字**：审核者会一行一行读它们（[13](13-review-checklist.md)）。
+   `files.read` 逐个写文件路径；`process.terminal` 写脚本正文；要一直跑着的（代理内核这类）写 `process.daemons`：一组参数逐字，
+   只认 `{config}` / `{workdir}` 两个占位符（SDK 2.9）。**最小、逐字**：审核者会一行一行读它们（[13](13-review-checklist.md)）。
 4. **Inbox**：静默命令要交结果的写 `{ messages, notifications }`；否则 `false`。
 
 ```bash
@@ -97,10 +100,34 @@ const engine: JunkCleanEngine = {
 defineExtension({ services: { mole: engine } });
 ```
 
+菜单栏扩展交 `menuBar`（SDK 2.9），跑在后台会话；回调里改了状态，自己推一份新模型——宿主只缓存最后一份，不会替你重画：
+
+```ts
+import { defineExtension, jarvis, type MenuBarModel } from "@fusionseek/jarvis-extension-sdk";
+
+let running = false;
+const model = (): MenuBarModel => ({
+  symbol: running ? "network" : "network.slash",
+  items: [{ kind: "item", id: "toggle", title: "代理", checked: running }],
+});
+
+defineExtension({
+  menuBar: {
+    async start(context) { /* 启动时恢复：读 storage、看 jarvis.daemon.status */ await jarvis.menuBar.update(model()); },
+    async open() { /* 用户点开菜单：刷新读数 */ await jarvis.menuBar.update(model()); },
+    async select(context, itemId) {
+      if (itemId === "toggle") running = !running;
+      await jarvis.menuBar.update(model());
+    },
+  },
+});
+```
+
 五条心智模型：
 
 - **域决定入口，命令只有一份实现**：页面里的按钮用 `jarvis.commands.run(id)` 触发同一条命令，不要再写一遍。
-- **前台与后台**：有界面的入口跑在前台会话（同一时刻全局一个）；服务与 `silent` 命令跑在后台会话（每扩展一个、没有界面、闲 60 秒被收走）。
+- **前台与后台**：有界面的入口跑在前台会话（同一时刻全局一个）；服务、`silent` 命令与菜单栏事件跑在后台会话（每扩展一个、没有界面、闲 60 秒被收走；
+  有在跑的常驻进程时不收）。
   后台里调 `panel.*` / `window.open` / `ui.dismissPopover` 得到 `surface.unavailable`。
 - **`render()` 是纯的**：只读你自己的变量，返回一棵树。`ui` 事件回调与命令返回之后宿主自动重画；异步回来的数据自己调 `jarvis.ui.update()`。
 - **状态在模块变量里**：前台会话换给别的扩展时上下文销毁；该跨越的用 `jarvis.storage`。
@@ -137,6 +164,27 @@ import { createTestHost, fakeAndroid } from "@fusionseek/jarvis-extension-sdk/te
 const phone = fakeAndroid({ devices: [{ serial: "R5CX", name: "Pixel 8", apps: [/* … */], details: { /* 包名 → { label, icon } */ } }] });
 const host = createTestHost({ async: { ...phone.stubs } });
 phone.failNext("appDetails", { code: "host.failure", message: "没有 aapt2，读不出应用名和图标" });
+```
+
+菜单栏扩展不用给 `menuBar.update` 写桩：替身自己收下模型（`host.menuBarModels` / `host.latestMenuBar`），`menuBarEvent()` 发事件并等落定；
+`select` 只能点到最新一份模型里点得到的那一项（不在、被禁用的直接抛错）：
+
+```ts
+await host.menuBarEvent("start", { granted: ["process.daemon"], preferences: { mixedPort: 7890 } });
+await host.menuBarEvent("select", { itemId: "toggle" });
+assert.equal(host.menuItem("toggle").checked, true);
+```
+
+用了常驻进程与系统代理的扩展（SDK 2.9）用 `fakeDaemons()`：它按宿主的规则答 `daemon.*` 与 `systemProxy.*`（配置该带没带、已在运行、控制口路径与请求头、
+没有在跑的常驻进程不让接管系统代理……），`configs` 留下每次起进程交来的配置正文，`respond` 演控制口的应答，
+`output()` / `crash()` 往订阅者推事件，进程没了就照宿主兜底把系统代理还原，`blockSystemProxy()` 演「被 Surge 拦着」：
+
+```ts
+import { createTestHost, fakeDaemons } from "@fusionseek/jarvis-extension-sdk/testing";
+const daemons = fakeDaemons({ daemons: [{ id: "sing-box", config: true }] });
+const host = createTestHost({ async: { ...daemons.stubs } });
+daemons.respond = (request) => ({ status: 200, headers: {}, text: "{}" });
+daemons.crash("sing-box", { signal: 9 });          // 订阅者收到 expected: false 的 exit；系统代理回到没人接管
 ```
 
 ### 第五步：构建与校验
@@ -193,4 +241,5 @@ cd ../.. && npm install && npm run verify
 - [06 · 能力接口目录](06-capabilities.md)
 - [13 · 审核清单](13-review-checklist.md)
 - [`templates/hello-extension`](../templates/hello-extension)（工具箱 + 指令）、[`extensions/http-status`](../extensions/http-status)（工具箱 + 窗口 + 弹窗 + 设置）、
-  [`extensions/mole-clean`](../extensions/mole-clean)（服务 + 受限执行）
+  [`extensions/mole-clean`](../extensions/mole-clean)（服务 + 受限执行）、[`extensions/proxy`](../extensions/proxy)（菜单栏 + 常驻进程 + 系统代理，SDK 2.9）
+- `jarvis-mac/specs/20261028-091917-proxy-extension-menubar-daemon/spec.md`（菜单栏域、常驻进程、系统代理的规则全文）

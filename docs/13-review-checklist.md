@@ -15,10 +15,11 @@
 - [ ] CI · `extension.json` 过 `schemas/extension.v2.schema.json`（`manifestVersion: 2`，`additionalProperties: false`）
 - [ ] CI · `id` 等于目录名、不与保留 id 撞名、全仓唯一
 - [ ] CI · `version` 相对主干递增（新扩展从 `0.1.0` 或 `1.0.0` 起）；`package-lock.json` 跟上
-- [ ] CI · `contributes` 至少入驻工具箱、窗口、指令、服务之一
+- [ ] CI · `contributes` 至少入驻工具箱、窗口、指令、服务、菜单栏之一
 - [ ] CI · 跨字段：`network.https` ⇔ `network.hosts`；`process.run` ⇔ `process.executables`；`terminal.run` ⇔ `process.terminal`；
       `files.read` 能力 ⇔ `files.read` 路径；`inbox.messages` ⇔ `inbox.post`；`inbox.notifications` ⇔ `notifications.post`；
-      `git.hosting.write` ⇔ `git.mutations`；声明了 `git.*` 能力 ⇒ 入驻 Git 域
+      `git.hosting.write` ⇔ `git.mutations`；声明了 `git.*` 能力 ⇒ 入驻 Git 域；`process.daemon` ⇔ `process.daemons`；`system.proxy` ⇒ `process.daemon`；
+      常驻进程的占位符只认 `{config}` / `{workdir}`、独占一个参数、至少一个、`{config}` ⇔ `config`；`network.preferenceHosts` 只点名本扩展的 `urlList`
 - [ ] CI · 命令：id 唯一、快捷键不重复、带快捷键 ⇔ 声明 `hotkeys.register`；落点 `toolbox` / `popover` 要有工具箱域、`window` 要有窗口域；
       `silent` 至少有 `clipboard.write` / `notifications.post` / `inbox.post` 之一
 - [ ] CI · `/` 指令词不撞内置保留词、不撞仓库里别的扩展
@@ -46,6 +47,15 @@
       不从网络拉脚本再执行，除非那就是工具官方的安装方式、且脚本里写明出处 URL（`mole-clean` 的「安装 Mole」是这一种）；没有 `sudo`
 - [ ] README 的授权一节逐项写出会运行的命令与参数、会读取的路径、终端脚本做什么，与 manifest 逐字一致，
       并写明「运行起来的命令拥有 Jarvis 的全部系统权限（含完全磁盘访问）」
+
+### 常驻进程与系统代理（声明了 `process.daemon` / `system.proxy` 的扩展，SDK 2.9）
+
+- [ ] `process.daemons[].executable` 是一个说得出名字的第三方工具（`sing-box`），**不是解释器**：`sh {config}` 等于把配置文件当脚本跑，校验脚本拦不住，只有这里拦得住
+- [ ] `process.daemons[].arguments` 逐项读完：它只做「按这份配置一直跑」这一件事；没有把配置当代码执行的开关（`--eval`、插件目录指向 `{workdir}` 之类）
+- [ ] 生成配置的代码读一遍：配置里的文件路径类字段只指向 `{workdir}` 之内；控制口只监听 `127.0.0.1`；监听端口与 `systemProxy.enable` 的端口是用户在设置里看得见的那一个
+- [ ] 意外退出（`expected: false`）有交代：横幅或页面上一句话；不在退出事件里无条件重启（宿主不自动重启，扩展也别写成死循环）
+- [ ] `systemProxy.enable` 的返回值看了 `blocker`：被别的工具拦着时把那句话原样给用户，不当成已经开了
+- [ ] `network.preferenceHosts` 点名的 `urlList` 在 README 里写清会访问的是什么（订阅地址），以及为什么默认进钥匙串
 
 ### Git 操作域（声明了 `git.*` 的扩展）
 

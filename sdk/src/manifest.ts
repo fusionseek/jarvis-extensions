@@ -2,7 +2,7 @@
  * `extension.json` 的类型。**真源是 `schemas/extension.v2.schema.json`**，这里只是它的
  * TypeScript 投影，供 `defineExtension` 与脚手架做静态检查；两处冲突时以 schema 为准。
  *
- * v2 按「域」组织：一个扩展在 `contributes` 里声明它入驻哪几个域——工具箱、窗口、指令、设置、服务、Git。
+ * v2 按「域」组织：一个扩展在 `contributes` 里声明它入驻哪几个域——工具箱、窗口、指令、设置、服务、Git、菜单栏（SDK 2.9）。
  * **悬浮球不是可入驻的域**：它是 Jarvis 的主入口，手势、动画与状态都是固定的；扩展只能通过
  * 「扩展一个本来就驱动悬浮球的内置能力」（服务域，例如清理引擎）间接影响它。
  */
@@ -28,6 +28,16 @@ export type CapabilityID =
   | "files.read"
   /** 在终端里执行 manifest `process.terminal` 里逐字写着的脚本。 */
   | "terminal.run"
+  /**
+   * 常驻进程（SDK 2.9）：在后台一直跑 manifest `process.daemons` 里逐字声明的那条命令，并经本机控制口与它说话。
+   * 生死归宿主、不归任何 JS 会话——这正是它与 `process.run` 分开的原因：`process.run` 跟会话走，会话闲 60 秒被收，进程随之中断。
+   */
+  | "process.daemon"
+  /**
+   * 修改系统代理（SDK 2.9）：把这台 Mac 的系统代理指向 `127.0.0.1` 的一个端口。主机写死、只能指向本机，
+   * 且这个扩展此刻必须有一个在跑的常驻进程；进程没了、扩展停用 / 卸载、Jarvis 退出或崩溃之后，宿主自己还原。
+   */
+  | "system.proxy"
   /** Git 操作域：读 Jarvis 最近打开过的仓库（名字与远端身份，不给本机路径）。要入驻 Git 域。 */
   | "git.repository.read"
   /** Git 操作域：经宿主的 Git 服务执行**只读** GraphQL、读 token 的身份与权限范围；token 不交给扩展。要入驻 Git 域。 */
@@ -56,6 +66,9 @@ export type CapabilityTier = "low" | "medium" | "high";
  *
  * Android 操作域：读是中（用户自己手机上的东西，不出本机；安装包只临时拉到本机、读完即删），
  * 交给内置工具是低（只是把工具打开、包名填好，开始与否仍由用户按）。
+ *
+ * SDK 2.9 的两项都是高：常驻进程与 `process.run` 一样继承 Jarvis 的全部系统权限，还一直跑着；
+ * 系统代理改的是整台机器的网络出口，浏览器与大部分应用的流量从此先经过这个扩展起的进程。
  */
 export const capabilityTiers: Readonly<Record<CapabilityID, CapabilityTier>> = {
   "system.openURL": "low",
@@ -79,6 +92,8 @@ export const capabilityTiers: Readonly<Record<CapabilityID, CapabilityTier>> = {
   "process.run": "high",
   "files.read": "high",
   "terminal.run": "high",
+  "process.daemon": "high",
+  "system.proxy": "high",
   "git.hosting.write": "high",
 };
 
@@ -161,7 +176,14 @@ export interface PreferenceOption {
   title: string;
 }
 
-/** 一项偏好。控件由宿主画：开关、单行输入、数字、单选、多选、机密、目录。 */
+/**
+ * 一项偏好。控件由宿主画：开关、单行输入、数字、单选、多选、机密、目录、一列地址（SDK 2.9）。
+ *
+ * `urlList` 是一列 `https://` 地址（订阅地址这一类），设置页画成「一行一条 + 删除 + 添加一行」，宿主逐条校验、填错的那一行标红不存。
+ * `maxItems` 省略 = 10（上限 20）；`secret` 省略 = `true`：整列进钥匙串（订阅地址里的 token 就是密码），只能经 `preferences.get` 单独读。
+ * 被 manifest `network.preferenceHosts` 点名时，这些地址的主机在请求那一刻放行给 `net.fetch`——
+ * 只认这种偏好，是因为它的控件由宿主画、值只可能来自用户亲手输入；页面里的输入框扩展自己就能填，宿主分不出是谁写的。没有默认值。
+ */
 export type Preference =
   | (PreferenceBase<"toggle"> & { default: boolean })
   | (PreferenceBase<"text"> & { default: string; placeholder?: string; maxLength?: number; monospaced?: boolean })
@@ -170,7 +192,8 @@ export type Preference =
   | (PreferenceBase<"multiselect"> & { default: string[]; options: PreferenceOption[] })
   /** 机密：宿主存 Keychain、设置页遮罩显示、只交给这个扩展、不进日志。没有默认值。 */
   | (PreferenceBase<"secret"> & { placeholder?: string })
-  | PreferenceBase<"directory">;
+  | PreferenceBase<"directory">
+  | (PreferenceBase<"urlList"> & { maxItems?: number; secret?: boolean; placeholder?: string });
 
 /** 设置域：设置页「扩展」区段里属于它的那块面板。 */
 export interface SettingsContribution {
@@ -209,7 +232,7 @@ export interface ServiceContribution {
 
 /**
  * Git 域：入驻 Git 的哪些托管服务、在那里是什么。没入驻的扩展碰不到 Git——
- * Git 操作域的能力（`git.*`）只对这里列出的服务放行。它不是入口：只有它的扩展仍要入驻工具箱、窗口、指令、服务之一。
+ * Git 操作域的能力（`git.*`）只对这里列出的服务放行。它不是入口：只有它的扩展仍要入驻工具箱、窗口、指令、服务、菜单栏之一。
  */
 export interface GitContribution {
   /** 1–4 个不重复的托管服务标识（例如 `github`），与 Jarvis Git 服务的服务标识一致。 */
@@ -218,10 +241,26 @@ export interface GitContribution {
   summary: string;
 }
 
-/** 扩展入驻的域。至少要有工具箱、窗口、指令、服务之一。 */
+/**
+ * 菜单栏域（SDK 2.9）：系统菜单栏上属于这个扩展的**一枚**图标与它的菜单，不并进 Jarvis 那枚。
+ *
+ * 宿主用 `NSStatusItem` + `NSMenu` 画（键盘、VoiceOver、深浅色都是系统的），扩展只经 `jarvis.menuBar.update` 推一份声明式模型，
+ * 代码跑在后台会话（`defineExtension({ menuBar })`）。它是入口域：菜单末尾宿主固定追加「打开」「设置」两项，用户总能从这枚图标回到 Jarvis。
+ * 用户可以在 设置 · 扩展 里关掉「在菜单栏显示」。
+ */
+export interface MenuBarContribution {
+  /** 1–20 字。设置页与 VoiceOver 里这枚图标的名字。 */
+  title: string;
+  /** SF Symbol。还没收到任何模型时（应用刚启动、后台会话还没起来）画它。 */
+  symbol: string;
+}
+
+/** 扩展入驻的域。至少要有工具箱、窗口、指令、服务、菜单栏之一。 */
 export interface Contributes {
   toolbox?: ToolboxContribution;
   window?: WindowContribution;
+  /** 菜单栏域（SDK 2.9）。一个扩展至多一枚图标。 */
+  menuBar?: MenuBarContribution;
   commands?: CommandSpec[];
   settings?: SettingsContribution;
   services?: ServiceContribution[];
@@ -251,13 +290,49 @@ export interface TerminalScriptDeclaration {
   script: string[];
 }
 
-/** 受限执行（指令域）。 */
+/**
+ * 一个常驻进程（SDK 2.9，配 `process.daemon`）。
+ *
+ * 与 `process.executables` 的差别在生死：它不跟任何 JS 会话走，停止只在扩展 `daemon.stop`、扩展停用 / 卸载 / 更新、Jarvis 退出时；
+ * Jarvis 崩溃留下的那一个，下次启动时宿主按参数认出来收掉。以用户身份运行、不经 shell、stdin 接空设备。
+ */
+export interface DaemonDeclaration {
+  /** `^[a-z][a-z0-9-]{0,31}$`，扩展内唯一。`jarvis.daemon.*` 按它点名，也是它工作目录的名字。 */
+  id: string;
+  /** 可执行文件名（不带路径），定位规则与 `process.executables[].name` 相同；用户填的路径，文件名也必须等于它。 */
+  executable: string;
+  /**
+   * **一组**固定参数，逐字。只认两个占位符且必须**独占一个参数**：`{config}`（宿主写下的配置文件的绝对路径）、
+   * `{workdir}`（这个常驻进程的工作目录）。至少用其中一个——宿主靠参数里的工作目录路径认出崩溃后留下的孤儿进程。
+   * 运行时扩展一个参数都传不进来：它能决定的只有配置文件的内容。
+   */
+  arguments: string[];
+  /** 声明了它，`daemon.start` 就必须带配置正文（≤ 4 MiB），宿主写到 `{workdir}/<fileName>`（0600），停止后删掉。参数里要有 `{config}`。 */
+  config?: { fileName: string };
+}
+
+/** 受限执行。 */
 export interface ProcessDeclaration {
   /** 配 `process.run`。 */
   executables?: ExecutableDeclaration[];
   /** 配 `terminal.run`。 */
   terminal?: TerminalScriptDeclaration[];
+  /** 配 `process.daemon`（SDK 2.9），至多 2 个。 */
+  daemons?: DaemonDeclaration[];
 }
+
+/**
+ * 联网的声明（配 `network.https`）。两项至少一项：
+ *
+ * - `hosts`：写死的白名单（1–8 个主机名），授权屏逐条列给用户；
+ * - `preferenceHosts`（SDK 2.9）：本扩展的 `urlList` 偏好的 key（1–4 个）。用户在那几项里填的地址，主机在**请求那一刻**放行——
+ *   订阅地址这一类，作者写 manifest 时不知道它在哪个主机；用户删掉一条，下一次请求就拦。
+ *
+ * 两种都只放行 HTTPS、只认完全相等的主机名，重定向落点照样核对。
+ */
+export type NetworkDeclaration =
+  | { hosts: string[]; preferenceHosts?: string[] }
+  | { hosts?: string[]; preferenceHosts: string[] };
 
 /**
  * Git 操作域的声明。声明了 `git.hosting.write` 时必填：宿主只执行这里逐字写出的 GraphQL 变更
@@ -293,8 +368,8 @@ export interface ExtensionManifest {
   minimumJarvisVersion: string;
   capabilities: CapabilityRequest[];
   /** 声明了 `network.https` 时必填。 */
-  network?: { hosts: string[] };
-  /** 声明了 `process.run` / `terminal.run` 时必填。 */
+  network?: NetworkDeclaration;
+  /** 声明了 `process.run` / `terminal.run` / `process.daemon` 时必填。 */
   process?: ProcessDeclaration;
   /** 声明了 `files.read` 时必填。 */
   files?: { read: string[] };
