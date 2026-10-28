@@ -40,6 +40,13 @@ export const storageKeys = {
    * 宿主把每次偏好变更都通知给所有会话、包括写的那一个；后台会话看到 30 秒内、值相同的这一笔，就知道是自己人在换内核，不再换一次。
    */
   tunSwitch: "tunSwitch",
+  /**
+   * `DayStats`：今天的流量（分时桶、按进程 / 域名 / 策略的合计），后台会话每分钟写一次（jarvis-mac
+   * `specs/20261028-191224-git-push-error-proxy-dashboard-issue-links` P-3）。窗口「活动」页读它。
+   */
+  statsToday: "stats.today",
+  /** `RuleHits`：本次开启以来每个 `rule` 字段的连接数（窗口「规则」页的使用计数），与 `stats.today` 一起写。 */
+  ruleHits: "ruleHits",
 } as const;
 
 /** 自己刚写的那一次增强模式开关（`storageKeys.tunSwitch`）。 */

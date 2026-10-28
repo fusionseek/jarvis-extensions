@@ -1,16 +1,16 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-28T09:40:11.843Z",
+  "generatedAt": "2026-10-28T12:20:31.001Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "e30edab17414ab53dd57c779383095ab3b24b888"
+    "commit": "d1acfebf513383992f11adbb9d0bb658368e2bd8"
   },
   "extensions": [
     {
       "manifest": {
         "manifestVersion": 2,
         "id": "android-apps",
-        "version": "1.0.5",
+        "version": "1.0.6",
         "name": "手机应用",
         "symbol": "apps.iphone",
         "description": "经 adb 扫描连着的安卓手机上装的全部应用：包名、安装包与数据大小，再一屏一屏读出应用名与图标；点一下把包名交给 APK 扫描或数据导出接着处理。",
@@ -51,8 +51,8 @@
       "path": "extensions/android-apps",
       "bundle": {
         "path": "extensions/android-apps/dist/extension.js",
-        "sha256": "a22eda10d159da4ffd1c7763904ff197e58d27d6112c41a6535759d601190906",
-        "byteCount": 63376
+        "sha256": "311d3e6624f491e15cc0735d45b4ddd84798773fcc014cc59a613e6f53869c17",
+        "byteCount": 63515
       },
       "updatedAt": "2026-10-28T13:50:29+08:00"
     },
@@ -60,7 +60,7 @@
       "manifest": {
         "manifestVersion": 2,
         "id": "code-format",
-        "version": "1.0.3",
+        "version": "1.0.4",
         "name": "代码格式化",
         "symbol": "wand.and.stars",
         "description": "给 Jarvis 的 Git 加上「格式化」：文件 diff 页里工作区那一份源码，按语言交给你装好的格式化工具——clang-format、swift-format、ktfmt、google-java-format、ruff、shfmt、prettier 等，先看对比，点「写入文件」才改。",
@@ -390,8 +390,8 @@
       "path": "extensions/code-format",
       "bundle": {
         "path": "extensions/code-format/dist/extension.js",
-        "sha256": "82551b07831bc3e2d2950b26242bf8ead5d9699c29d921b35f3f911d15b8e576",
-        "byteCount": 37692
+        "sha256": "680b38081b7f805212ae1421f6514de03769297d33c959eead12bdf6da7a12d0",
+        "byteCount": 37831
       },
       "updatedAt": "2026-10-28T13:50:29+08:00"
     },
@@ -399,7 +399,7 @@
       "manifest": {
         "manifestVersion": 2,
         "id": "code-highlight",
-        "version": "1.0.2",
+        "version": "1.0.3",
         "name": "代码高亮",
         "symbol": "paintbrush.pointed",
         "description": "给 Jarvis 的 Git 加上语法高亮：文件 diff 页与 Blame 里的源码按语言切成关键字、类型、字符串、注释、函数这些记号，Jarvis 按记号上色。认得 Java、Kotlin、Swift、C / C++ / Objective-C、C#、Python、Shell、Markdown、JS / TS、JSON、YAML、CSS、HTML / XML、Go、Rust、SQL。",
@@ -430,8 +430,8 @@
       "path": "extensions/code-highlight",
       "bundle": {
         "path": "extensions/code-highlight/dist/extension.js",
-        "sha256": "8e29b4e74515fb659f99976d54d9791e0ac9573c07d5a9f3ebcf2a12eaac6430",
-        "byteCount": 59915
+        "sha256": "bc8dcb217361636cfafc0dc58ba0af5d5047c971a81da32e0dd8954b085d06fb",
+        "byteCount": 60056
       },
       "updatedAt": "2026-10-28T13:50:29+08:00"
     },
@@ -439,7 +439,7 @@
       "manifest": {
         "manifestVersion": 2,
         "id": "github-project",
-        "version": "1.3.3",
+        "version": "1.3.4",
         "name": "GitHub 项目",
         "symbol": "tablecells",
         "description": "给 Jarvis「项目」接上 GitHub Projects v2：读 Project 的字段、条目、迭代与 Issue 的父子 / 依赖关系，把你在需求、迭代、缺陷页上的修改写回 GitHub。页面与规则由 Jarvis 画，它只负责读写数据。",
@@ -511,8 +511,8 @@
       "path": "extensions/github-project",
       "bundle": {
         "path": "extensions/github-project/dist/extension.js",
-        "sha256": "09148492ec32a8a1f8e666e84efe1f5943c721afa5861256046b6d5204019dfd",
-        "byteCount": 88532
+        "sha256": "751d548a87e863136471c2d35cbccbc07488a0e495e783f5e0219d398e21f182",
+        "byteCount": 91975
       },
       "updatedAt": "2026-10-28T13:50:29+08:00"
     },
@@ -520,7 +520,7 @@
       "manifest": {
         "manifestVersion": 2,
         "id": "http-status",
-        "version": "1.0.9",
+        "version": "1.0.10",
         "name": "HTTP 状态码",
         "symbol": "number.circle",
         "description": "输入状态码或关键词，给出这个码的读法、语义、常见成因、怎么处理、相关的码与 RFC 出处。/http 404 或 ⌥⌘/（从剪贴板里抓码）的结果贴着指针原地弹出；也能在工作区窗口里开一枚标签。62 个标准码与 12 个常见非标准码都编在扩展里，不联网。",
@@ -652,8 +652,8 @@
       "path": "extensions/http-status",
       "bundle": {
         "path": "extensions/http-status/dist/extension.js",
-        "sha256": "5a1788320f2f3fa51b00a4d429da108ff9c7cc2b67af04166fc866409a39cdd4",
-        "byteCount": 123717
+        "sha256": "c900b6c1480ef1eaf1ae8ae9903bf55dddf2a6cc0656418a5063a18721fe3318",
+        "byteCount": 123857
       },
       "updatedAt": "2026-10-28T13:50:29+08:00"
     },
@@ -661,7 +661,7 @@
       "manifest": {
         "manifestVersion": 2,
         "id": "mac-apps",
-        "version": "1.0.4",
+        "version": "1.0.5",
         "name": "应用",
         "symbol": "square.grid.3x3",
         "description": "让 Jarvis 的全局搜索认得这台 Mac 上的应用：打字时结果里出现应用，输入 app 空格看按组排开的图标网格，按住图标进编辑态移到废纸篓、右键在访达中显示。工具箱里这一页是它的显示设置：分组、排序、搜索结果里出几条、要不要系统应用。",
@@ -706,8 +706,8 @@
       "path": "extensions/mac-apps",
       "bundle": {
         "path": "extensions/mac-apps/dist/extension.js",
-        "sha256": "25964cca66fa9af0caf080c16ca500be16ead77b822df1db96f4ff1336ce9593",
-        "byteCount": 40948
+        "sha256": "dc4d1bd2db8250e15bde1f4fe2790d40dd90839c1bca4730f8934bb90d088d3b",
+        "byteCount": 41087
       },
       "updatedAt": "2026-10-28T13:50:29+08:00"
     },
@@ -715,7 +715,7 @@
       "manifest": {
         "manifestVersion": 2,
         "id": "mole-clean",
-        "version": "1.0.9",
+        "version": "1.0.10",
         "name": "Mole 深度清理",
         "symbol": "bubbles.and.sparkles",
         "description": "给 Jarvis 清理换一台更深的引擎：开着时，晃球、/clean 与工具箱清理改走你装好的 Mole（mo clean），覆盖浏览器、开发工具、云盘、已卸载应用残留等更多类别，并读 Mole 的操作日志逐项显示正在删什么。没装 mo 时可以一键在终端里安装。",
@@ -830,8 +830,8 @@
       "path": "extensions/mole-clean",
       "bundle": {
         "path": "extensions/mole-clean/dist/extension.js",
-        "sha256": "b8ddaba2e19469106cec0f68d2c2d5b93ab29c12caf4c638f23a42ed73fe48bb",
-        "byteCount": 57766
+        "sha256": "78021f8de1c06bc74ec61da50c8c92a3d77bd651ca59dbe3a280ace3cd679130",
+        "byteCount": 57906
       },
       "updatedAt": "2026-10-28T13:50:29+08:00"
     },
@@ -839,7 +839,7 @@
       "manifest": {
         "manifestVersion": 2,
         "id": "proxy",
-        "version": "1.0.1",
+        "version": "1.0.2",
         "name": "代理",
         "symbol": "network",
         "description": "用你自己装的 sing-box 跑你的订阅：菜单栏随手开关、切节点与策略组，系统代理或增强模式（TUN）接管整机网络；能导入 Surge 配置的规则，给正在看的网页一键加规则，悬浮球上看有效流量与成败。认 SS、VMess、VLESS（含 REALITY）、Trojan、Hysteria2、TUIC、AnyTLS 与 sing-box JSON。",
@@ -865,7 +865,7 @@
           },
           {
             "id": "network.https",
-            "reason": "拉取你在设置里填的订阅地址与规则集地址"
+            "reason": "拉取你在设置里填的订阅地址与规则集地址；在窗口「活动」页查一次外部 IP（api.ipify.org）"
           },
           {
             "id": "terminal.run",
@@ -889,6 +889,9 @@
           }
         ],
         "network": {
+          "hosts": [
+            "api.ipify.org"
+          ],
           "preferenceHosts": [
             "subscriptions",
             "ruleSets"
@@ -968,11 +971,11 @@
             ]
           },
           "window": {
-            "subtitle": "节点、连接、规则、日志与订阅：sing-box 的完整视图",
+            "subtitle": "活动、进程、策略、规则：今天的流量、谁在用、一张卡一个节点、每条规则用了多少次",
             "keywords": [
               "proxy",
               "vpn",
-              "流量"
+              "surge"
             ]
           },
           "menuBar": {
@@ -1096,7 +1099,7 @@
                 "key": "autoStart",
                 "type": "toggle",
                 "title": "启动 Jarvis 时自动开启",
-                "description": "要「在菜单栏显示」开着：菜单栏图标起来的那一刻开启",
+                "description": "Jarvis 启动时在后台开启，与菜单栏图标显不显示无关（代理关着时菜单栏图标本来就不显示）",
                 "default": false
               },
               {
@@ -1187,16 +1190,16 @@
       "path": "extensions/proxy",
       "bundle": {
         "path": "extensions/proxy/dist/extension.js",
-        "sha256": "576a898d7d93bb2585e9fb5644055c377c4c76f48606aace32aba3f74cde6e39",
-        "byteCount": 282290
+        "sha256": "8e1a87d168a3e6da388dc0fe8b97fbcf6e5053b5d701ccd8e82e951fe9d709c6",
+        "byteCount": 331742
       },
-      "updatedAt": "2026-10-28T15:49:26+08:00"
+      "updatedAt": "2026-10-28T17:44:17+08:00"
     },
     {
       "manifest": {
         "manifestVersion": 2,
         "id": "send-to-phone",
-        "version": "2.0.9",
+        "version": "2.0.10",
         "name": "发到手机",
         "symbol": "iphone.and.arrow.forward",
         "description": "读一次剪贴板，经 Jarvis 快传把文字或链接推到已配对的手机上；快传没开时给一颗按钮替你打开，发完在 Inbox 留一条消息。/phone 后面跟一段字，不开面板直接发。",
@@ -1279,8 +1282,8 @@
       "path": "extensions/send-to-phone",
       "bundle": {
         "path": "extensions/send-to-phone/dist/extension.js",
-        "sha256": "54edd883511749ec04bf008a12969e5af5fd50d6ebf978b18e528f538c4ed471",
-        "byteCount": 42754
+        "sha256": "03a9371d0eb297ad80d5f3367ef183e94d9c492c6fd1e287b6dd81a36c7ede25",
+        "byteCount": 42894
       },
       "updatedAt": "2026-10-28T13:50:29+08:00"
     },
@@ -1288,7 +1291,7 @@
       "manifest": {
         "manifestVersion": 2,
         "id": "translation",
-        "version": "1.0.9",
+        "version": "1.0.10",
         "name": "截屏翻译",
         "symbol": "translate",
         "description": "按一下快捷键框选屏幕上任意一块，Vision 识别文字、合并段落、检测语言，再经 Google 翻译；译文就贴着选区原地弹出。框到的是一个词时，译文下面还有读音与按词性分行的全部词义。也能翻译剪贴板里的文字或图片，或 /translate 后面跟的一段字。免费端点无需 key，填了 API key 走官方接口。",
@@ -1518,8 +1521,8 @@
       "path": "extensions/translation",
       "bundle": {
         "path": "extensions/translation/dist/extension.js",
-        "sha256": "78fc1525906ff5f0925c423d8171d13ba01fac1353fd4f4424c93e650f3b12b5",
-        "byteCount": 87983
+        "sha256": "2f477e4b966a67b6107d87aa3cd810932deae78cff46cf0bf2b44a0cd5d0e207",
+        "byteCount": 88123
       },
       "updatedAt": "2026-10-28T13:50:29+08:00"
     }

@@ -19,6 +19,7 @@ const collect = (node, predicate, out = []) => {
   for (const child of node.children ?? []) collect(child, predicate, out);
   return out;
 };
+const lastControl = () => storage.get("control");
 const countNodes = (node) => (node.children ?? []).reduce((sum, child) => sum + countNodes(child), 1);
 const fire = async (node, event, payload) => {
   await host.fire(node, event, payload);
@@ -85,6 +86,31 @@ test("没有订阅：说明卡指向设置；填了订阅、按「更新订阅�
   assert.equal(rows[0].props.selected, true);
   assert.equal(rows[1].props.subtitle, "Shadowsocks");
   assert.equal(byKey("sub:" + storage.get("subscriptions")[0].id).props.title, "1. sub.example.com");
+});
+
+// jarvis-mac specs/20261028-191224-git-push-error-proxy-dashboard-issue-links P-2：工具箱里就能加订阅地址——框由宿主画（preference 节点）。
+test("工具箱填订阅：没有订阅时直接画宿主的地址框；在框里填了（扩展读不到字）2 秒内自己拉一遍；有了之后收进「管理订阅」", async () => {
+  await reset();
+  scene.subscriptions = [];
+  storage.map.delete("subscriptions");
+  await activate();
+  const editor = byKey("subscriptions-editor");
+  assert.equal(editor.kind, "preference");
+  assert.deepEqual(editor.props, { preference: "subscriptions" }, "只点名那一项偏好，没有地址、没有句柄");
+  assert.equal(editor.on, undefined);
+
+  // 用户在宿主画的框里填了地址：宿主不推变更（地址进钥匙串），扩展每 2 秒现问一次。
+  const fetchesBefore = scene.fetches.length;
+  scene.subscriptions = [JMS];
+  await timers.advance(2000);
+  await idle(scene);
+  assert.equal(scene.fetches.slice(fetchesBefore).filter((fetch) => fetch.url === JMS).length, 1, "多了新地址就拉一遍");
+  assert.equal(byKey("subscriptions-editor"), undefined, "有了订阅就收起来");
+  const section = byKey("subscriptions-section");
+  await pressAction(section, "manage");
+  assert.ok(byKey("subscriptions-editor"), "「管理订阅」展开地址框");
+  await pressAction(byKey("subscriptions-section"), "manage");
+  assert.equal(byKey("subscriptions-editor"), undefined);
 });
 
 test("没装 sing-box：「在终端中安装」跑脚本，之后每 2 秒查一次，装好就换掉那张卡", async () => {
@@ -270,17 +296,29 @@ test("开着时改了端口：提示重新开启，按下去用新端口重开",
   assert.equal(byKey("restart"), undefined);
 });
 
-test("窗口：节点 / 连接 / 日志 / 订阅四页", async () => {
+test("窗口：左边栏活动 / 进程 / 策略 / 规则（jarvis-mac specs/20261028-191224-git-push-error-proxy-dashboard-issue-links P-3）", async () => {
   await reset();
   await activate("window");
-  if (daemons.status("sing-box").state !== "running") await fire(byKey("power"), "change", true);
-  assert.equal(byKey("view").props.value, "nodes");
-  assert.ok(byKey("nodes"));
+  const root = host.latest;
+  assert.equal(root.kind, "sidebar", "窗口的根是侧栏");
+  assert.deepEqual(root.props.items.map((item) => item.value), ["activity", "processes", "policies", "rules"]);
+  assert.equal(root.props.value, "activity");
+  assert.equal(root.children.length, 1, "侧栏下恰好一页");
+  assert.equal(root.children[0].kind, "scroll");
+
+  // 活动页：标题行的两个开关；关着时打开「系统代理」= 开启代理。
+  assert.equal(byKey("activity-system-proxy").props.value, false);
+  await fire(byKey("activity-system-proxy"), "change", true);
+  assert.equal(daemons.status("sing-box").state, "running");
+  assert.equal(byKey("activity-system-proxy").props.value, true);
+  assert.equal(byKey("fact-network").props.value, "Wi-Fi · en0");
+  assert.equal(byKey("fact-mode").props.value, "规则判定");
+  assert.match(byKey("fact-profile").props.value, /sub\.example\.com · \d+ 个节点/);
 
   clash.connections = [
     {
       id: "c-1",
-      metadata: { network: "tcp", type: "mixed/mixed-in", sourceIP: "127.0.0.1", destinationIP: "", sourcePort: "50000", destinationPort: "443", host: "www.example.org", dnsMode: "normal", processPath: "" },
+      metadata: { network: "tcp", type: "mixed/mixed-in", sourceIP: "127.0.0.1", destinationIP: "", sourcePort: "50000", destinationPort: "443", host: "www.example.org", dnsMode: "normal", processPath: "/Applications/Safari.app/Contents/MacOS/Safari (Fusion)" },
       upload: 1024,
       download: 4096,
       start: "2026-10-28T10:00:00+08:00",
@@ -289,22 +327,57 @@ test("窗口：节点 / 连接 / 日志 / 订阅四页", async () => {
       rulePayload: "",
     },
   ];
-  await fire(byKey("view"), "change", "connections");
   await timers.advance(1000);
   await idle(scene);
-  const row = byKey("conn:c-1");
-  assert.equal(row.props.title, "www.example.org:443");
-  assert.equal(row.props.subtitle, "JMS-1234567@c95s2.example.com:443 · tcp · ↓ 4.0 KB ↑ 1.0 KB · final");
+  assert.equal(byKey("card-connections:value").props.text, "1");
+  for (const key of ["traffic-hours", "top-table:processes", "card-latency", "card-upload", "card-download"]) assert.ok(byKey(key), key);
+  assert.equal(byKey("traffic-hours").props.labels.length, 24);
+  assert.equal(byKey("traffic-hours").props.series[0].values.length, 24);
+  await fire(byKey("top-category"), "change", "domains");
+  assert.ok(byKey("top-table:domains"));
 
+  // 进程页：每个程序一行；连接表；日志。
+  await fire(host.latest, "change", "processes");
+  assert.equal(host.latest.props.value, "processes");
+  clash.connections = [{ ...clash.connections[0], upload: 3072, download: 12288 }];
+  await timers.advance(1000);
+  await idle(scene);
+  const processes = byKey("process-table");
+  assert.equal(processes.props.rows[0].cells[0], "Safari");
+  assert.equal(processes.props.rows[0].cells[1], "1");
+  assert.equal(processes.props.rows[0].cells[3], "8.0 KB/s", "两份快照之间下行多了 8 KB、隔 1 秒");
+  const connections = byKey("connections");
+  assert.deepEqual(connections.props.rows[0].cells.slice(0, 4), ["www.example.org:443", "Safari", "节点选择 → 自动选择 → JMS-1234567@c95s2.example.com:443", "final"]);
   daemons.output("sing-box", ["+0800 2026-10-28 10:00:02 INFO inbound/mixed[mixed-in]: inbound connection to www.example.org:443"]);
-  await fire(byKey("view"), "change", "logs");
+  await fire(host.latest, "change", "policies");
+  await fire(host.latest, "change", "processes");
   assert.match(byKey("log-text").props.text, /inbound connection to www\.example\.org:443/);
 
-  await fire(byKey("view"), "change", "subscriptions");
-  assert.ok(byKey("subscriptions-section"));
-  assert.ok(clashCalls(scene).includes("GET /connections"));
+  // 策略页：一张卡一个节点；点卡 = 选它并只测它一个；订阅地址由宿主画（preference 节点）。
+  await fire(host.latest, "change", "policies");
+  assert.ok(byKey("policy-mode-picker"));
+  const nodeCards = collect(byKey("node-cards"), (node) => node.kind === "card");
+  assert.ok(nodeCards.length >= 2);
+  const target = nodeCards[1];
+  const name = target.key.slice("node:".length);
+  clash.delays[name] = 123;
+  const before = scene.daemons.requests.length;
+  await fire(target, "press");
+  const delayRequests = scene.daemons.requests.slice(before).filter((request) => request.path.includes("/delay"));
+  assert.equal(delayRequests.length, 1, "只测点的那一个");
+  assert.match(byKey(`node:${name}:detail`).props.text, /已选 · .*123 ms/);
+  assert.deepEqual(byKey("subscriptions-editor").props, { preference: "subscriptions" });
+
+  // 规则页：表里有兜底，命中计数来自后台记的 ruleHits。
+  storage.map.set("ruleHits", JSON.stringify({ startedAt: lastControl().startedAt, counts: { final: 3 } }));
+  await fire(host.latest, "change", "rules");
+  const table = byKey("rule-table");
+  const final = table.props.rows.at(-1).cells;
+  assert.equal(final[1], "FINAL");
+  assert.equal(final[4], "3");
+  assert.deepEqual(table.props.columns.map((column) => column.title), ["ID", "类型", "目标", "策略", "使用计数", "注释"]);
   assert.ok(countNodes(host.latest) <= 500);
-  await fire(byKey("power"), "change", false);
+  await fire(byKey("activity-power") ?? (await fire(host.latest, "change", "activity"), byKey("activity-power")), "press");
 });
 
 test("页面开着时内核意外退出（菜单栏关着、后台没人记）：页面自己记下失败、进「起不来」那一屏", async () => {

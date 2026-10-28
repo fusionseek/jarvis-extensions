@@ -409,3 +409,63 @@ test("菜单栏速率刷新间隔：设成 3 秒时标题 3 秒换一次、写�
   assert.equal(titles[2], "↓3.0M\n↑0.0K", "满 3 秒换成这 3 秒的平均（1M、2M、6M）");
   assert.equal(host.latestOrb.download, 6 * 1024 * 1024, "悬浮球写的是这一秒");
 });
+
+// jarvis-mac specs/20261028-191224-git-push-error-proxy-dashboard-issue-links P-1：代理没开就不画菜单栏图标。
+test("代理关着时菜单栏模型带 hidden：开着、开启中照画，关掉又藏起来", async () => {
+  await reset();
+  scene.preferences = { updateInterval: "never" };
+  await menu("start");
+  assert.equal(host.latestMenuBar.hidden, true, "关着：不画图标");
+  await select("toggle");
+  assert.equal(daemons.status("sing-box").state, "running");
+  assert.equal(host.latestMenuBar.hidden, false, "开着：画");
+  await select("toggle");
+  assert.equal(host.latestMenuBar.hidden, true, "关掉之后又藏起来");
+});
+
+// P-3：后台会话按连接 id 记今天的流量与规则命中，每分钟落一次存储（窗口「活动」「规则」页读它）。
+test("今天的流量与规则命中：开着时每秒按连接记差值，一分钟落一次存储", async () => {
+  await reset();
+  scene.preferences = { updateInterval: "never" };
+  await menu("start");
+  if (daemons.status("sing-box").state !== "running") await select("toggle");
+  const connection = (id, upload, download, extra = {}) => ({
+    id,
+    metadata: { network: "tcp", type: "mixed/mixed-in", sourceIP: "127.0.0.1", destinationIP: "", sourcePort: "50001", destinationPort: "443", host: "www.example.org", dnsMode: "normal", processPath: "/usr/bin/curl (Fusion)" },
+    upload,
+    download,
+    start: "2026-10-28T10:00:00+08:00",
+    chains: ["JMS-1234567@c95s2.example.com:443", "节点选择"],
+    rule: "final",
+    rulePayload: "",
+    ...extra,
+  });
+  storage.map.delete("stats.today");
+  storage.map.delete("ruleHits");
+  clash.connections = [connection("old", 5000, 5000)];
+  await timers.advance(1000);
+  await idle(scene);
+  clash.connections = [connection("old", 6000, 7000), connection("new", 100, 400, { chains: ["direct"], rule: "rule_set=geosite-cn => route(direct)", metadata: { network: "tcp", host: "www.example.cn", destinationPort: "443", processPath: "/Applications/Safari.app/Contents/MacOS/Safari (Fusion)" } })];
+  await timers.advance(1000);
+  await idle(scene);
+  assert.equal(storage.get("stats.today"), undefined, "不到一分钟不落盘");
+  await timers.advance(60_000);
+  await idle(scene);
+  const stats = storage.get("stats.today");
+  assert.ok(stats, "一分钟后落盘");
+  // 这个会话早就在记了：新开的内核上的连接都是新的，第一次见到就整条记（5000 / 5000），之后记差值（+1000 / +2000）。
+  assert.equal(stats.processes.curl.upload, 6000);
+  assert.equal(stats.processes.curl.download, 7000);
+  assert.equal(stats.processes.Safari.download, 400, "新出现的连接从 0 记");
+  assert.equal(stats.policies["节点选择"].download, 7000);
+  assert.equal(stats.policies.direct.download, 400);
+  assert.equal(stats.domains["www.example.cn"].connections, 1);
+  const hour = new Date(Date.now()).getHours();
+  assert.equal(stats.all.download[hour], 7400);
+  assert.equal(stats.proxy.download[hour], 7000, "仅代理不算直连的那条");
+  const hits = storage.get("ruleHits");
+  assert.equal(hits.startedAt, storage.get("control").startedAt);
+  assert.deepEqual(hits.counts, { final: 1, "rule_set=geosite-cn => route(direct)": 1 }, "每条连接只算一次命中，跨快照不重复");
+  clash.connections = [];
+  await select("toggle");
+});

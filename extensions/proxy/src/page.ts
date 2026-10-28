@@ -7,12 +7,13 @@
  * 卡住的五种情形（没授权、没装 sing-box、没有订阅、内核起不来、系统代理被别的工具拦着）各一张 `note`：
  * 拿不到什么、为什么、还剩哪几条路——不是一句红字。整页至多一颗实心主按钮：卡住时它就是那张说明卡上的出路。
  */
-import { ui, type ActionSpec, type Tint, type UINode } from "@fusionseek/jarvis-extension-sdk";
+import { layout, ui, type ActionSpec, type Tint, type UINode } from "@fusionseek/jarvis-extension-sdk";
+import { renderDashboard } from "./dashboard.js";
 import { formatBytes, formatDelay, formatRate } from "./clash.js";
 import type { Snapshot } from "./core.js";
 import { URLTEST_TAG, type ProxyNode } from "./nodes.js";
 import { pageRuleFor, policyTitle, registrableDomain, type PolicyRef } from "./rules.js";
-import type { Session, WindowView } from "./session.js";
+import type { Session } from "./session.js";
 import { terminalProxyCommand, type ProxyMode } from "./singbox-config.js";
 import {
   memberTitle,
@@ -32,10 +33,6 @@ import { shortRate } from "./traffic.js";
 
 /** 工具箱里节点至多列几行：再多就该用搜索或去窗口里看，一屏几百行谁也找不到要的那个。 */
 const toolboxNodeRows = 60;
-/** 窗口里节点至多列几行（一次 render ≤ 500 个节点，留出其余的位置）。 */
-const windowNodeRows = 300;
-/** 「连接」那一页至多列几条。 */
-const connectionRows = 200;
 /** 「日志」那一页给多少行。 */
 const logRows = 200;
 /** 「规则」页列多少条页面规则（一次 render ≤ 500 个节点）。 */
@@ -50,37 +47,22 @@ const failedRows = 20;
  */
 export function renderPage(session: Session): UINode {
   const snapshot = session.snapshot;
-  if (!snapshot) return ui.scroll({ children: [ui.text({ key: "loading", style: "footnote", text: "正在读取状态" })] });
-  const children: UINode[] = [statusSection(session, snapshot), ...notes(session, snapshot)];
-  if (session.surface === "window") {
-    children.push(
-      ui.segmented({
-        key: "view",
-        label: "窗口里看哪一页",
-        layout: "full",
-        value: session.view,
-        options: [
-          { value: "nodes", title: "节点" },
-          { value: "connections", title: "连接" },
-          { value: "rules", title: "规则" },
-          { value: "logs", title: "日志" },
-          { value: "subscriptions", title: "订阅" },
-        ],
-        onChange: (value) => void session.showView(value as WindowView),
-      }),
-    );
-    children.push(...windowView(session, snapshot));
-  } else {
-    if (snapshot.nodes.length > 0) children.push(modeSection(session, snapshot), nodesSection(session, snapshot, toolboxNodeRows));
-    if (snapshot.groups.length > 0) children.push(groupsSection(session, snapshot));
-    children.push(rulesSummarySection(session, snapshot), subscriptionsSection(session, snapshot, false), commandSection(snapshot));
+  if (!snapshot) {
+    const loading = ui.scroll({ children: [ui.text({ key: "loading", style: "footnote", text: "正在读取状态" })] });
+    return session.surface === "window" ? renderDashboard(session, null, loading) : loading;
   }
+  // 窗口：左边栏四页（jarvis-mac `specs/20261028-191224-git-push-error-proxy-dashboard-issue-links` P-3），见 `dashboard.ts`。
+  if (session.surface === "window") return renderDashboard(session, snapshot);
+  const children: UINode[] = [statusSection(session, snapshot), ...notes(session, snapshot)];
+  if (snapshot.nodes.length > 0) children.push(modeSection(session, snapshot), nodesSection(session, snapshot, toolboxNodeRows));
+  if (snapshot.groups.length > 0) children.push(groupsSection(session, snapshot));
+  children.push(rulesSummarySection(session, snapshot), subscriptionsSection(session, snapshot, false), commandSection(snapshot));
   return ui.scroll({ children });
 }
 
 // MARK: - 状态
 
-function statusSection(session: Session, snapshot: Snapshot): UINode {
+export function statusSection(session: Session, snapshot: Snapshot): UINode {
   const running = snapshot.phase === "running";
   const busy = session.core.busy;
   const canToggle = busy === null && (running || snapshot.phase === "stopped" || snapshot.phase === "failed");
@@ -160,7 +142,7 @@ function statusSection(session: Session, snapshot: Snapshot): UINode {
 }
 
 /** 卡住时那一屏，以及开着时要提醒的几件事。 */
-function notes(session: Session, snapshot: Snapshot): UINode[] {
+export function notes(session: Session, snapshot: Snapshot): UINode[] {
   const out: UINode[] = [];
   const action = (id: string, title: string, onPress: () => void, extra: Partial<ActionSpec> = {}): ActionSpec => ({ id, title, onPress, ...extra });
   switch (snapshot.phase) {
@@ -209,7 +191,7 @@ function notes(session: Session, snapshot: Snapshot): UINode[] {
               tint: "alert",
               symbol: "link.badge.plus",
               title: "还没有订阅",
-              body: "在设置里填订阅地址（机场给的那一串 https 链接，可以填几条），再回来点「更新订阅」。认分享链接（整段 base64 或逐行）与 sing-box JSON；Clash YAML 本期不认。",
+              body: "在下面「订阅」那一段填订阅地址（机场给的那一串 https 链接，可以填几条），填完会自己拉一遍；也可以在设置里填。认分享链接（整段 base64 或逐行）与 sing-box JSON；Clash YAML 本期不认。",
               actions: [action("settings", "打开设置", () => session.openSettings())],
             })
           : ui.note({
@@ -371,7 +353,7 @@ function modeSection(session: Session, snapshot: Snapshot): UINode {
  * 延迟对应的颜色：快的亮绿、慢的琥珀、超时红；没测过不上色。
  * @param delay 毫秒、`null`（超时）或 `undefined`（没测）。
  */
-function delayTint(delay: number | null | undefined): Tint | undefined {
+export function delayTint(delay: number | null | undefined): Tint | undefined {
   if (delay === undefined) return undefined;
   if (delay === null) return "danger";
   return delay < 300 ? "live" : delay < 800 ? "amber" : "alert";
@@ -494,7 +476,7 @@ function policyChips(session: Session, snapshot: Snapshot, keyPrefix: string, do
   return ui.stack({ key: `${keyPrefix}:chips`, axis: "horizontal", spacing: "tight", children: chips });
 }
 
-function currentPageSection(session: Session, snapshot: Snapshot): UINode {
+export function currentPageSection(session: Session, snapshot: Snapshot): UINode {
   const page = session.currentPage;
   const children: UINode[] = [];
   if (!page) {
@@ -522,7 +504,7 @@ function currentPageSection(session: Session, snapshot: Snapshot): UINode {
   });
 }
 
-function pageRulesSection(session: Session, snapshot: Snapshot): UINode {
+export function pageRulesSection(session: Session, snapshot: Snapshot): UINode {
   const shown = snapshot.pageRules.slice(0, pageRuleRows);
   const now = Date.now();
   const children: UINode[] = [
@@ -549,7 +531,7 @@ function pageRulesSection(session: Session, snapshot: Snapshot): UINode {
   return ui.section({ key: "page-rules-section", title: "页面规则 · PAGE RULES", trailing: `${snapshot.pageRules.length} 条 · 排在所有规则之前`, children });
 }
 
-function surgeSection(session: Session, snapshot: Snapshot): UINode {
+export function surgeSection(session: Session, snapshot: Snapshot): UINode {
   const surge = snapshot.surge;
   const busy = session.core.busy !== null;
   const actions: ActionSpec[] = [{ id: "import", title: surge ? "重新导入" : "导入 Surge 配置", symbol: "square.and.arrow.down", disabled: busy, onPress: () => void session.importSurge() }];
@@ -628,7 +610,7 @@ function surgeSection(session: Session, snapshot: Snapshot): UINode {
   return ui.section({ key: "surge", title: "SURGE 配置 · IMPORT", trailing: `${surge.sourceName} · 导入于${formatAge(surge.importedAt, Date.now())}`, actions, children });
 }
 
-function builtinRulesSection(snapshot: Snapshot): UINode {
+export function builtinRulesSection(snapshot: Snapshot): UINode {
   const lines = ["局域网（私有地址、localhost、.local）一律直连", "出站模式「全局」「直连」排在页面规则之前"];
   if (!snapshot.surge || !snapshot.preferences.useSurgeRules) lines.push(snapshot.preferences.chinaRules ? "中国大陆的域名与 IP 直连（geosite-cn、geoip-cn）" : "「中国大陆直连」关着：除局域网外都走节点");
   lines.push(snapshot.kernel === "tunnel" ? "增强模式：DNS 由 sing-box 答（fake-ip / 真实 IP 见设置），always-real-ip 的域名给真实地址" : "其余走「节点选择」");
@@ -641,7 +623,7 @@ function rulesView(session: Session, snapshot: Snapshot): UINode[] {
 
 // MARK: - 订阅
 
-function subscriptionsSection(session: Session, snapshot: Snapshot, detailed: boolean): UINode {
+export function subscriptionsSection(session: Session, snapshot: Snapshot, detailed: boolean): UINode {
   const now = Date.now();
   const latest = snapshot.subscriptions.reduce<number | null>((max, record) => (record.fetchedAt !== null && (max === null || record.fetchedAt > max) ? record.fetchedAt : max), null);
   const rows: UINode[] = snapshot.subscriptions.map((record) => {
@@ -660,18 +642,26 @@ function subscriptionsSection(session: Session, snapshot: Snapshot, detailed: bo
       ...(detailed ? {} : { accessory: "chevron" as const, onPress: () => session.openWindow("subscriptions") }),
     });
   });
-  const children: UINode[] = [
-    ui.list({
-      key: "subscriptions",
-      children: rows,
-      emptyState: ui.empty({
-        key: "no-subscriptions",
-        symbol: "link.badge.plus",
-        title: snapshot.subscriptionCount > 0 ? "还没有拉过订阅" : "设置里还没有订阅地址",
-        hint: snapshot.subscriptionCount > 0 ? "点右上角「更新」拉一次。" : "在设置 · 扩展 · 代理里填订阅地址。",
+  const children: UINode[] = [];
+  // 订阅地址由宿主画的输入框收（jarvis-mac `specs/20261028-191224-git-push-error-proxy-dashboard-issue-links` P-2）：
+  // 地址的主机会进 HTTPS 白名单，必须是用户亲手填的——扩展只说「在这里画『订阅地址』那一项」，读不到也写不到框里的字。
+  // 窗口里（策略页末尾）一直画；工具箱里还没有订阅时画，有了收进「管理订阅」。
+  const showEditor = detailed || snapshot.subscriptionCount === 0 || session.manageSubscriptions;
+  if (showEditor) children.push(layout.preference({ key: "subscriptions-editor", preference: "subscriptions" }));
+  if (snapshot.subscriptions.length > 0 || !showEditor) {
+    children.push(
+      ui.list({
+        key: "subscriptions",
+        children: rows,
+        emptyState: ui.empty({
+          key: "no-subscriptions",
+          symbol: "link.badge.plus",
+          title: snapshot.subscriptionCount > 0 ? "还没有拉过订阅" : "还没有订阅地址",
+          hint: snapshot.subscriptionCount > 0 ? "点右上角「更新订阅」拉一次。" : "点「管理订阅」填订阅地址。",
+        }),
       }),
-    }),
-  ];
+    );
+  }
   if (detailed) {
     for (const record of snapshot.subscriptions) {
       if (record.skipped.length === 0) continue;
@@ -698,6 +688,17 @@ function subscriptionsSection(session: Session, snapshot: Snapshot, detailed: bo
     title: "订阅 · SUBSCRIPTIONS",
     ...(latest !== null ? { trailing: `更新于${formatAge(latest, now)}` } : {}),
     actions: [
+      ...(!detailed && snapshot.subscriptionCount > 0
+        ? [
+            {
+              id: "manage",
+              title: session.manageSubscriptions ? "收起" : "管理订阅",
+              symbol: session.manageSubscriptions ? "chevron.up" : "link.badge.plus",
+              help: session.manageSubscriptions ? "收起订阅地址" : "加、改、删订阅地址",
+              onPress: () => session.toggleManageSubscriptions(),
+            },
+          ]
+        : []),
       {
         id: "update",
         title: "更新订阅",
@@ -711,7 +712,7 @@ function subscriptionsSection(session: Session, snapshot: Snapshot, detailed: bo
   });
 }
 
-function commandSection(snapshot: Snapshot): UINode {
+export function commandSection(snapshot: Snapshot): UINode {
   const command = terminalProxyCommand(snapshot.control?.mixedPort ?? snapshot.preferences.mixedPort);
   return ui.section({
     key: "terminal",
@@ -723,96 +724,43 @@ function commandSection(snapshot: Snapshot): UINode {
   });
 }
 
-// MARK: - 窗口
-
-function windowView(session: Session, snapshot: Snapshot): UINode[] {
-  switch (session.view) {
-    case "connections":
-      return [connectionsSection(session, snapshot)];
-    case "rules":
-      return rulesView(session, snapshot);
-    case "logs":
-      return [logsSection(session)];
-    case "subscriptions":
-      return [subscriptionsSection(session, snapshot, true), commandSection(snapshot)];
-    default:
-      return snapshot.nodes.length > 0
-        ? [modeSection(session, snapshot), nodesSection(session, snapshot, windowNodeRows), ...(snapshot.groups.length > 0 ? [groupsSection(session, snapshot)] : [])]
-        : [];
-  }
-}
+// MARK: - 窗口（连接与日志进「进程」页，见 `dashboard.ts`）
 
 /** 一条连接 / 请求上的「加规则」那几个动作（按可注册域名）。 */
-function ruleActions(session: Session, host: string): ActionSpec[] {
+export function ruleActions(session: Session, host: string): ActionSpec[] {
   const domain = registrableDomain(host.replace(/:\d+$/, ""));
   if (!domain) return [];
   return (["proxy", "direct", "reject"] as const).map((policy) => ({ id: policy, title: `${domain} ${policyTitle(policy)}`, onPress: () => void session.setPageRule(domain, policy) }));
 }
 
-function connectionsSection(session: Session, snapshot: Snapshot): UINode {
+/** 「进程」页顶上那一段：最近失败的请求，每条带「给这个域名加规则」。 */
+export function failuresSection(session: Session): UINode | null {
   const failures = session.meter.recent(Date.now(), 200).filter((attempt) => attempt.outcome === "failed").slice(0, failedRows);
-  const failedSection =
-    failures.length > 0
-      ? ui.section({
-          key: "failed-section",
-          title: "失败 · FAILED",
-          tint: "alert",
-          trailing: `最近 ${failures.length} 条`,
-          children: [
-            ui.list({
-              key: "failed",
-              children: failures.map((attempt) =>
-                ui.row({
-                  key: `failed:${attempt.id}`,
-                  symbol: "xmark.octagon",
-                  tint: "alert",
-                  title: attempt.port ? `${attempt.host}:${attempt.port}` : attempt.host,
-                  subtitle: [attempt.reason, attempt.process.split("/").pop() ?? ""].filter((part) => part.length > 0).join(" · "),
-                  actions: ruleActions(session, attempt.host),
-                }),
-              ),
-            }),
-          ],
-        })
-      : null;
-  const live = connectionsList(session, snapshot);
-  return failedSection ? ui.stack({ key: "connections-stack", children: [failedSection, live] }) : live;
-}
-
-function connectionsList(session: Session, snapshot: Snapshot): UINode {
-  const data = session.connections;
-  const list = data ? [...data.connections].sort((a, b) => b.start - a.start).slice(0, connectionRows) : [];
-  const trailing = data ? `${data.connections.length} 条 · ↓ ${formatBytes(data.downloadTotal)}  ↑ ${formatBytes(data.uploadTotal)}` : undefined;
+  if (failures.length === 0) return null;
   return ui.section({
-    key: "connections-section",
-    title: "连接 · CONNECTIONS",
-    ...(trailing ? { trailing } : {}),
+    key: "failed-section",
+    title: "失败 · FAILED",
+    tint: "alert",
+    trailing: `最近 ${failures.length} 条`,
     children: [
       ui.list({
-        key: "connections",
-        children: list.map((connection) =>
+        key: "failed",
+        children: failures.map((attempt) =>
           ui.row({
-            key: `conn:${connection.id}`,
-            symbol: connection.chains.includes("direct") ? "arrow.right" : "point.3.connected.trianglepath.dotted",
-            title: connection.host || "（没有主机名）",
-            subtitle: [connection.chains[0] ?? "", connection.network, `↓ ${formatBytes(connection.download)} ↑ ${formatBytes(connection.upload)}`, connection.rule, connection.process.split("/").pop() ?? ""]
-              .filter((part) => part.length > 0)
-              .join(" · "),
-            actions: ruleActions(session, connection.host),
+            key: `failed:${attempt.id}`,
+            symbol: "xmark.octagon",
+            tint: "alert",
+            title: attempt.port ? `${attempt.host}:${attempt.port}` : attempt.host,
+            subtitle: [attempt.reason, attempt.process.split("/").pop() ?? ""].filter((part) => part.length > 0).join(" · "),
+            actions: ruleActions(session, attempt.host),
           }),
         ),
-        emptyState: ui.empty({
-          key: "no-connections",
-          symbol: "point.3.connected.trianglepath.dotted",
-          title: snapshot.phase === "running" ? "此刻没有连接" : "代理没开",
-          hint: snapshot.phase === "running" ? "每秒刷新一次。" : "开启之后，经过代理的每一条连接都会列在这里。",
-        }),
       }),
     ],
   });
 }
 
-function logsSection(session: Session): UINode {
+export function logsSection(session: Session): UINode {
   const tail = session.logs.slice(-logRows);
   let text = tail.join("\n");
   if (text.length > 19_000) text = text.slice(text.length - 19_000);
@@ -820,7 +768,7 @@ function logsSection(session: Session): UINode {
     key: "logs-section",
     title: "日志 · LOGS",
     trailing: `${session.logs.length} 行`,
-    actions: [{ id: "reload", title: "重读", symbol: "arrow.clockwise", help: "重读 sing-box 最近 500 行输出", onPress: () => void session.showView("logs") }],
+    actions: [{ id: "reload", title: "重读", symbol: "arrow.clockwise", help: "重读 sing-box 最近 500 行输出", onPress: () => void session.showView("processes") }],
     children: [ui.result({ key: "log-text", mono: true, copy: true, text, empty: "sing-box 还没有输出" })],
   });
 }

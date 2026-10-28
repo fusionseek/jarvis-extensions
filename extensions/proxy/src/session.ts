@@ -4,9 +4,12 @@
  * 页面开着时每秒读一次连接快照（速率与「连接」那一页），每 10 秒重读一次全部状态——菜单栏或指令在另一个会话里开关了代理，
  * 这里要跟上。页面一关，两条都停（`generation` 一变，循环在下一拍退出）。
  */
-import { jarvis, sleep, type ActivationContext, type DaemonEvent, type PageDefinition, type Surface, type Unsubscribe } from "@fusionseek/jarvis-extension-sdk";
+import { jarvis, networkStatus, sleep, type ActivationContext, type DaemonEvent, type NetworkStatus, type PageDefinition, type Surface, type Unsubscribe } from "@fusionseek/jarvis-extension-sdk";
 import { pushMenu, seenConnections } from "./background.js";
 import { trafficRate, type ConnectionsSnapshot, type TrafficRate, type TrafficSample } from "./clash.js";
+import type { RuleHits } from "./rule-table.js";
+import type { RoutePlan } from "./singbox-config.js";
+import { processRates, restoreDay, type DayStats, type ProcessRate, type UsageCategory } from "./stats.js";
 import { allCapabilities, errorMessage, ProxyCore, tunnelCapability, type ActionResult, type Snapshot } from "./core.js";
 import { renderPage } from "./page.js";
 import type { PolicyRef } from "./rules.js";
@@ -15,11 +18,52 @@ import { describeFailure, requiredCapability, type GroupView, type PageView } fr
 import { storageKeys } from "./store.js";
 import { TrafficMeter, type TrafficReading } from "./traffic.js";
 
-/** 窗口里的五页。 */
-export type WindowView = "nodes" | "connections" | "rules" | "logs" | "subscriptions";
+/**
+ * 窗口左边栏的四页（jarvis-mac `specs/20261028-191224-git-push-error-proxy-dashboard-issue-links` P-3）：活动、进程、策略、规则。
+ * 原来 segmented 里的五页并进来：节点与订阅进「策略」，连接与日志进「进程」，规则照旧。
+ */
+export type WindowView = "activity" | "processes" | "policies" | "rules";
+
+/** 工具箱里「去窗口里看」的那几处说的旧页名，落到新的哪一页。 */
+export const legacyViews: Readonly<Record<string, WindowView>> = {
+  nodes: "policies",
+  subscriptions: "policies",
+  connections: "processes",
+  logs: "processes",
+  rules: "rules",
+};
+
+/** 「流量」卡看全部还是只看经过节点的。 */
+export type TrafficScope = "all" | "proxy";
+
+/** 「Internet 延迟」测哪里：苹果自己的连通性检测页，国内直连也通（谷歌那一个直连不通）。必须是 https——sing-box 遇到 http 会换成默认地址。 */
+export const internetTestURL = "https://www.apple.com/library/test/success.html";
+
+/** 外部 IP 从哪查（manifest `network.hosts` 写死的那一个）。 */
+export const externalIPURL = "https://api.ipify.org?format=json";
+
+/** 外部 IP 多久重查一次：出口换了（切节点、换网络）五分钟内跟上，又不至于每次开窗口都问一遍。 */
+export const externalIPTTL = 5 * 60 * 1000;
+
+/** 「Internet 延迟」与网络接口多久重测一次。 */
+const internetEveryTicks = 30;
 
 /** 挑 Surge 配置时打开面板的起点：Surge 自己存配置的地方。 */
 export const surgeProfilesDirectory = "~/Library/Application Support/Surge/Profiles";
+
+/**
+ * 读一次外部 IP 的回答（`{"ip":"…"}`）。
+ * @param text 正文。
+ * @returns 地址；读不出为 `null`。
+ */
+export function parseExternalIP(text: string): string | null {
+  try {
+    const body = JSON.parse(text) as { ip?: unknown };
+    return typeof body.ip === "string" && /^[0-9a-fA-F.:]{3,45}$/.test(body.ip) ? body.ip : null;
+  } catch {
+    return null;
+  }
+}
 
 /** 日志留多少行：与宿主 `daemon.logs` 的 500 行一致。 */
 const maximumLogLines = 500;
@@ -34,7 +78,27 @@ export class Session {
   readonly core = new ProxyCore(() => jarvis.ui.update());
   surface: Surface = "toolbox";
   snapshot: Snapshot | null = null;
-  view: WindowView = "nodes";
+  view: WindowView = "activity";
+  /** 工具箱「订阅」那一段展开了「管理订阅」（宿主画的地址列表，P-2）。 */
+  manageSubscriptions = false;
+  /** 「流量」卡看哪一份。 */
+  trafficScope: TrafficScope = "all";
+  /** Top 10 看哪一类。 */
+  topCategory: UsageCategory = "processes";
+  /** 此刻的主网络接口；没读过为 `null`。 */
+  network: NetworkStatus | null = null;
+  /** 外部 IP 与查到的时刻；`ip` 为 `null` = 查过但没查到。 */
+  externalIP: { ip: string | null; at: number } | null = null;
+  /** 「Internet 延迟」：毫秒；`null` 测过但不通；`undefined` 还没测。 */
+  internetDelay: number | null | undefined = undefined;
+  /** 今天的流量（后台会话每分钟写一次存储，这里每 10 秒读一次）。 */
+  stats: DayStats | null = null;
+  /** 本次开启以来的规则命中（同上）。 */
+  ruleHits: RuleHits | null = null;
+  /** 此刻的路由（规则页那张表）。 */
+  routes: RoutePlan | null = null;
+  /** 每个程序此刻的速率（进程页）。 */
+  processes: ProcessRate[] = [];
   /** 节点搜索框里的字。 */
   filter = "";
   /** 上一个动作的结果（页面上那一行）。 */
@@ -54,6 +118,8 @@ export class Session {
   /** 「规则」页里读到的当前页面；没读过为 `null`。 */
   currentPage: PageView | null = null;
   private sample: TrafficSample | null = null;
+  /** 上一次看到的订阅地址（换行拼起来）；还没看过为 `null`。 */
+  private knownSubscriptions: string | null = null;
   private generation = 0;
   private unobserveDaemon: Unsubscribe | null = null;
   private unobserveTunnel: Unsubscribe | null = null;
@@ -72,9 +138,14 @@ export class Session {
     const generation = this.generation;
     await this.core.migrateTunSelection();
     await this.refresh();
+    this.knownSubscriptions = null;
+    await this.checkSubscriptions();
     this.observe();
     if (!this.unwatch) this.unwatch = jarvis.preferences.onChange((changes) => void this.onPreferencesChanged(changes));
-    if (this.surface === "window") await this.loadLogs();
+    if (this.surface === "window") {
+      await this.loadLogs();
+      await this.loadDashboard(true);
+    }
     void this.loop(generation);
   }
 
@@ -136,7 +207,7 @@ export class Session {
       if (event.kind === "output") {
         this.logs = [...this.logs, ...event.lines].slice(-maximumLogLines);
         this.meter.ingestLines(event.lines, Date.now());
-        if (this.surface === "window" && this.view === "logs") jarvis.ui.update();
+        if (this.surface === "window" && this.view === "processes") jarvis.ui.update();
         return;
       }
       void this.onExit(event.expected, event.lines);
@@ -182,6 +253,8 @@ export class Session {
           const now = Date.now();
           const sample: TrafficSample = { at: now, upload: snapshot.uploadTotal, download: snapshot.downloadTotal };
           this.rate = trafficRate(this.sample, sample) ?? this.rate;
+          const seconds = this.sample ? (now - this.sample.at) / 1000 : 1;
+          this.processes = processRates(this.connections, snapshot, seconds);
           this.sample = sample;
           this.connections = snapshot;
           const effective = this.meter.ingestSnapshot(snapshot, now);
@@ -195,9 +268,91 @@ export class Session {
           jarvis.ui.update();
         }
       }
+      // 地址框在屏幕上时每 2 秒看一次订阅地址，其余时候跟着 10 秒那一拍看（读的是钥匙串，不必一直问）。
+      if ((tick % 2 === 0 && this.editingSubscriptions()) || tick % 10 === 0) await this.checkSubscriptions();
+      if (generation !== this.generation) return;
       const waitingInstall = this.installingSince !== null && tick % 2 === 0;
       if (waitingInstall || tick % 10 === 0) await this.refresh();
+      if (this.surface === "window" && tick % 10 === 0) await this.loadDashboard(tick % internetEveryTicks === 0);
     }
+  }
+
+  /** 订阅地址框此刻在不在屏幕上（工具箱「订阅」那一段展开着、或窗口在策略页）。 */
+  private editingSubscriptions(): boolean {
+    if (this.surface === "window") return this.view === "policies";
+    return this.manageSubscriptions || this.snapshot?.subscriptionCount === 0;
+  }
+
+  /**
+   * 订阅地址变了没有（P-2）：地址进钥匙串，宿主不把它放进偏好变更通知，所以每 2 秒现问一次。
+   * 多了新地址（工具箱里刚填的、设置页里加的）就当场拉一遍；只是删了就重读状态。
+   */
+  private async checkSubscriptions(): Promise<void> {
+    let urls: string[];
+    try {
+      urls = await this.core.subscriptionURLs();
+    } catch {
+      return;
+    }
+    const key = urls.join("\n");
+    const known = this.knownSubscriptions;
+    this.knownSubscriptions = key;
+    if (known === null || key === known) return;
+    const before = new Set(known.split("\n"));
+    const added = urls.some((url) => !before.has(url));
+    if (added && this.snapshot?.granted.includes("network.https")) await this.update();
+    else await this.refresh();
+  }
+
+  /**
+   * 窗口里「活动」「规则」两页要的那几样（P-3）：今天的统计与规则命中（后台写的存储）、此刻的路由、网络接口、外部 IP、Internet 延迟。
+   * 每一样读不出都只是那一格写「—」，不进错误屏。
+   * @param probe 这一次连网络接口与延迟也重测（开窗口时、每 30 秒）。
+   */
+  private async loadDashboard(probe: boolean): Promise<void> {
+    const now = Date.now();
+    try {
+      const [stats, hits] = await Promise.all([jarvis.storage.get(storageKeys.statsToday), jarvis.storage.get<RuleHits>(storageKeys.ruleHits)]);
+      this.stats = restoreDay(stats, now);
+      this.ruleHits = hits && typeof hits === "object" ? hits : null;
+    } catch {
+      this.stats = this.stats ?? restoreDay(undefined, now);
+    }
+    const snapshot = this.snapshot;
+    if (snapshot) {
+      try {
+        this.routes = await this.core.routeTable(snapshot);
+      } catch {
+        this.routes = null;
+      }
+    }
+    if (probe) {
+      try {
+        this.network = await networkStatus();
+      } catch {
+        this.network = null;
+      }
+      this.internetDelay = snapshot?.phase === "running" ? await this.core.internetLatency(internetTestURL) : undefined;
+    }
+    await this.loadExternalIP(now);
+    jarvis.ui.update();
+  }
+
+  /**
+   * 外部 IP：五分钟内查过就不再查（P-3）。经宿主的 `net.fetch`——它走系统此刻的路由，代理开着时查到的就是出口。
+   * @param now 此刻。
+   */
+  private async loadExternalIP(now: number): Promise<void> {
+    if (this.externalIP && now - this.externalIP.at < externalIPTTL) return;
+    if (!this.snapshot?.granted.includes("network.https")) return;
+    let ip: string | null = null;
+    try {
+      const response = await jarvis.net.fetch(externalIPURL, { method: "GET" });
+      ip = response.status === 200 ? parseExternalIP(response.text) : null;
+    } catch {
+      ip = null;
+    }
+    this.externalIP = { ip, at: now };
   }
 
   /**
@@ -259,21 +414,97 @@ export class Session {
 
   /**
    * 在工作区窗口里打开，并落在某一页。
-   * @param view 哪一页。
+   * @param view 哪一页（认旧页名：工具箱里「去窗口里看订阅 / 日志」那几处）。
    */
-  openWindow(view: WindowView): void {
-    this.view = view;
+  openWindow(view: WindowView | keyof typeof legacyViews): void {
+    this.view = legacyViews[view] ?? (view as WindowView);
     void jarvis.window.open().catch(() => undefined);
   }
 
   /**
-   * 换窗口里的页。
+   * 换窗口里的页（左边栏）。
    * @param view 哪一页。
    */
   async showView(view: WindowView): Promise<void> {
     this.view = view;
     jarvis.ui.update();
-    if (view === "logs") await this.loadLogs();
+    if (view === "processes") await this.loadLogs();
+    if (view === "rules" || view === "activity") await this.loadDashboard(false);
+  }
+
+  /** 展开 / 收起工具箱「订阅」那一段的地址列表。 */
+  toggleManageSubscriptions(): void {
+    this.manageSubscriptions = !this.manageSubscriptions;
+    jarvis.ui.update();
+  }
+
+  /**
+   * 「流量」卡换一份。
+   * @param scope 全部 / 仅代理。
+   */
+  setTrafficScope(scope: TrafficScope): void {
+    this.trafficScope = scope;
+    jarvis.ui.update();
+  }
+
+  /**
+   * Top 10 换一类。
+   * @param category 进程与设备 / 域名 / 策略。
+   */
+  setTopCategory(category: UsageCategory): void {
+    this.topCategory = category;
+    jarvis.ui.update();
+  }
+
+  /**
+   * 「活动」页的「系统代理」开关（P-3）：开着时就是设 / 还原系统代理；关着时打开它 = 开启代理（开启时按偏好顺手设系统代理）。
+   * @param on 开还是关。
+   */
+  activitySystemProxy(on: boolean): Promise<void> {
+    if (this.snapshot?.phase === "running") return this.setSystemProxy(on);
+    return on ? this.toggle(true) : Promise.resolve();
+  }
+
+  /**
+   * 「活动」页的「增强模式」开关：开着时换内核；关着时打开它 = 记下要增强模式并开启代理，关掉只记下。
+   * @param on 开还是关。
+   */
+  activityTun(on: boolean): Promise<void> {
+    if (this.snapshot?.phase === "running" || !on) return this.setTun(on);
+    return this.run(async () => {
+      const result = await this.core.setTun(true);
+      if (!result.ok) return result;
+      return this.core.turnOn();
+    });
+  }
+
+  /**
+   * 策略页点一张节点卡（P-3）：选它，并只测它一个的延迟。
+   * @param name 节点名或「自动选择」。
+   */
+  pickNode(name: string): Promise<void> {
+    return this.run(async () => {
+      const result = await this.core.selectNode(name);
+      if (!result.ok) return result;
+      if (this.snapshot?.phase !== "running") return { ok: true, message: "" };
+      const tested = await this.core.testLatency([name]);
+      return tested.ok ? { ok: true, message: "" } : tested;
+    });
+  }
+
+  /**
+   * 策略页点导入的策略组里的一张卡：选它，并测它的延迟。
+   * @param group 组。
+   * @param member 组员 tag。
+   */
+  pickGroupMember(group: GroupView, member: string): Promise<void> {
+    return this.run(async () => {
+      const result = await this.core.selectGroupMember(group, member);
+      if (!result.ok) return result;
+      if (this.snapshot?.phase !== "running") return { ok: true, message: "" };
+      const tested = await this.core.testLatency([member]);
+      return tested.ok ? { ok: true, message: "" } : tested;
+    });
   }
 
   setMode(mode: ProxyMode): Promise<void> {
@@ -374,6 +605,7 @@ export class Session {
    */
   async command(id: string): Promise<void> {
     this.view = "rules";
+    void this.loadDashboard(false);
     jarvis.ui.update();
     if (id === "import-surge") await this.importSurge();
   }

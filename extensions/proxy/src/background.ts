@@ -6,10 +6,12 @@
  * 菜单栏的模型由这里推；页面改了状态也会推一份（同一个构造函数），两边推的是同一种东西。
  */
 import { jarvis, sleep, type CommandContext, type DaemonEvent, type MenuBarContext, type Unsubscribe } from "@fusionseek/jarvis-extension-sdk";
-import { trafficRate, type TrafficRate, type TrafficSample } from "./clash.js";
+import { trafficRate, type ConnectionsSnapshot, type TrafficRate, type TrafficSample } from "./clash.js";
 import { errorMessage, ProxyCore, tunnelCapability, type ActionResult, type Snapshot } from "./core.js";
 import { URLTEST_TAG } from "./nodes.js";
+import { countRuleHits, type RuleHits } from "./rule-table.js";
 import { registrableDomain, type SeenConnection } from "./rules.js";
+import { ingest, restoreDay, type StatsState } from "./stats.js";
 import {
   buildMenuModel,
   describeFailure,
@@ -35,6 +37,9 @@ const outputRefreshMs = 2000;
 
 /** 菜单顶部那块曲线留多少个点（一秒一个）。 */
 const historyLength = 60;
+
+/** 今天的流量统计多久落一次存储（P-3）：窗口里的分时柱与 Top 10 至多慢这么久，存储也不必每秒写一次。 */
+export const statsSaveMs = 60_000;
 
 /** 菜单里的额外读数。 */
 export interface MenuExtras {
@@ -136,6 +141,13 @@ export class Background {
   /** 这一段里攒下的有效速率：凑满 `speedInterval` 个点取平均，换一次标题。 */
   private titleWindow: { upload: number; download: number; count: number } = { upload: 0, download: 0, count: 0 };
   private unwatchPreferences: Unsubscribe | null = null;
+  /** 今天的流量统计（P-3）；这个会话还没读过存储为 `null`。 */
+  private stats: StatsState | null = null;
+  /** 本次开启以来的规则命中（P-3）。 */
+  private hits: RuleHits | null = null;
+  /** 已经记过命中的连接 id。 */
+  private readonly hitSeen = new Set<string>();
+  private lastStatsSave = 0;
 
   private extras(): MenuExtras {
     return {
@@ -510,6 +522,7 @@ export class Background {
         const sample: TrafficSample = { at: now, upload: snapshot.uploadTotal, download: snapshot.downloadTotal };
         this.rate = trafficRate(this.lastSample, sample) ?? this.rate;
         this.lastSample = sample;
+        await this.recordStats(snapshot, now);
         const effective = this.meter.ingestSnapshot(snapshot, now);
         if (effective) {
           this.history.upload = [...this.history.upload, effective.upload].slice(-historyLength);
@@ -524,6 +537,56 @@ export class Background {
       this.speedRunning = false;
       this.resetTraffic();
       await this.pushOrb(null);
+      // 关掉时把最后一段落盘；下次开启的连接都是新的，`seen` 从头记。
+      if (this.stats) {
+        await this.saveStats(Date.now());
+        this.stats = { stats: this.stats.stats, seen: new Map() };
+      }
+      this.hitSeen.clear();
+    }
+  }
+
+  /**
+   * 记一份连接快照进今天的统计与规则命中（P-3），每分钟落一次存储。
+   *
+   * 这个会话第一次记的那一份只用来认下「此刻已有的连接各走到多少字节了」、不记账：后台会话被回收过又起来时，
+   * 那些长连接之前的字节已经记过一次，再记就翻倍——代价是会话刚起来那一秒的新连接少记一点。
+   * @param snapshot 快照。
+   * @param now 此刻。
+   */
+  private async recordStats(snapshot: ConnectionsSnapshot, now: number): Promise<void> {
+    const startedAt = this.lastSnapshot?.control?.startedAt ?? 0;
+    if (!this.stats) {
+      let stored: unknown;
+      let storedHits: unknown;
+      try {
+        [stored, storedHits] = await Promise.all([jarvis.storage.get(storageKeys.statsToday), jarvis.storage.get(storageKeys.ruleHits)]);
+      } catch {
+        stored = undefined;
+      }
+      const seen = new Map(snapshot.connections.map((connection) => [connection.id, { upload: connection.upload, download: connection.download }]));
+      this.stats = { stats: restoreDay(stored, now), seen };
+      const hits = storedHits as Partial<RuleHits> | undefined;
+      this.hits = hits && typeof hits.startedAt === "number" && typeof hits.counts === "object" && hits.counts !== null ? { startedAt: hits.startedAt, counts: { ...hits.counts } } : null;
+      // 先认下此刻已有的连接，再走一遍：一条都不记，只把「不是这一份内核的」旧计数清掉。
+      for (const connection of snapshot.connections) if (connection.id) this.hitSeen.add(connection.id);
+      this.hits = countRuleHits(this.hits, startedAt, snapshot.connections, this.hitSeen);
+      this.lastStatsSave = now;
+      return;
+    }
+    this.stats = ingest(this.stats, snapshot, now);
+    this.hits = countRuleHits(this.hits, startedAt, snapshot.connections, this.hitSeen);
+    if (now - this.lastStatsSave >= statsSaveMs) await this.saveStats(now);
+  }
+
+  /** 把今天的统计与规则命中写进存储；写不进去只记一条（下一分钟再试）。 */
+  private async saveStats(now: number): Promise<void> {
+    this.lastStatsSave = now;
+    try {
+      if (this.stats) await jarvis.storage.set(storageKeys.statsToday, this.stats.stats);
+      if (this.hits) await jarvis.storage.set(storageKeys.ruleHits, this.hits);
+    } catch (error) {
+      jarvis.log.warn("流量统计没存上", errorMessage(error));
     }
   }
 }

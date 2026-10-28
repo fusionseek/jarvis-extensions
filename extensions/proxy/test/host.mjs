@@ -207,6 +207,8 @@ export async function createProxyHost() {
     commandsRun: [],
     /** 偏好里的「规则集地址」。 */
     ruleSetURLs: [],
+    /** `network.status()` 答什么。 */
+    network: { kind: "wifi", interface: "en0", name: "Wi-Fi" },
   };
   const host = createTestHost({
     async: {
@@ -235,6 +237,8 @@ export async function createProxyHost() {
       },
       "preferences.get": async ({ key }) => (key === "subscriptions" ? [...scene.subscriptions] : key === "ruleSets" ? [...scene.ruleSetURLs] : scene.preferences[key]),
       "browser.activeTab": async () => scene.tab,
+      // 主网络接口（jarvis-mac specs/20261028-191224-git-push-error-proxy-dashboard-issue-links P-3）。
+      "network.status": async () => scene.network,
       "files.pick": async (params) => {
         scene.picks.push(params);
         return scene.picked;

@@ -1,4 +1,4 @@
-// jarvis-extension bundle · proxy@1.0.1 · sdk 2.10.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · proxy@1.0.2 · sdk 2.10.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -105,6 +105,20 @@
     keycap: make("keycap"),
     image: make("image"),
     chart: make("chart")
+  };
+
+  // sdk/src/layout.ts
+  var layout = {
+    /** 侧栏导航（只许做根）。 */
+    sidebar: (props) => ({ kind: "sidebar", ...props }),
+    /** 自适应网格。 */
+    grid: (props) => ({ kind: "grid", ...props }),
+    /** 表格。 */
+    table: (props) => ({ kind: "table", ...props }),
+    /** 堆叠柱。 */
+    bars: (props) => ({ kind: "bars", ...props }),
+    /** 宿主画的偏好控件。 */
+    preference: (props) => ({ kind: "preference", ...props })
   };
 
   // sdk/src/index.ts
@@ -337,6 +351,9 @@
               case "createItem":
                 if (!engine.createItem) break;
                 return engine.createItem(request, context, signal);
+              case "addItem":
+                if (!engine.addItem) break;
+                return engine.addItem(request, context, signal);
             }
             break;
           }
@@ -481,6 +498,9 @@
   var runtime = new Runtime();
   function defineExtension(definition) {
     runtime.define(definition);
+  }
+  function networkStatus() {
+    return runtime.invoke("network", "status", {});
   }
   function namespaced(namespace) {
     return (method, params) => runtime.invoke(namespace, method, params ?? {});
@@ -1049,7 +1069,14 @@
      * `TunSwitch`：自己刚把偏好 `tun` 改成了什么（jarvis-mac `specs/20261028-130540-proxy-walkthrough-fixes` W-6）。
      * 宿主把每次偏好变更都通知给所有会话、包括写的那一个；后台会话看到 30 秒内、值相同的这一笔，就知道是自己人在换内核，不再换一次。
      */
-    tunSwitch: "tunSwitch"
+    tunSwitch: "tunSwitch",
+    /**
+     * `DayStats`：今天的流量（分时桶、按进程 / 域名 / 策略的合计），后台会话每分钟写一次（jarvis-mac
+     * `specs/20261028-191224-git-push-error-proxy-dashboard-issue-links` P-3）。窗口「活动」页读它。
+     */
+    statsToday: "stats.today",
+    /** `RuleHits`：本次开启以来每个 `rule` 字段的连接数（窗口「规则」页的使用计数），与 `stats.today` 一起写。 */
+    ruleHits: "ruleHits"
   };
   var tunSwitchEchoMs = 3e4;
   function isTunSwitchEcho(marker, on, now) {
@@ -1494,13 +1521,13 @@
         continue;
       }
       const value = fields[1] ?? "";
-      const policyName = fields[2];
+      const policyName2 = fields[2];
       const options = fields.slice(3).map((option) => option.toLowerCase());
-      if (!policyName) {
+      if (!policyName2) {
         noteUnsupported(unsupported, type || "\uFF08\u7A7A\uFF09", "\u6CA1\u5199\u7B56\u7565", line);
         continue;
       }
-      const policy = policyOf(policyName);
+      const policy = policyOf(policyName2);
       if (type === "RULE-SET" || type === "DOMAIN-SET") {
         if (type === "RULE-SET" && value.toUpperCase() === "LAN") {
           rules.push({ kind: "match", match: { ip_is_private: true }, policy, resolve: false });
@@ -1806,6 +1833,47 @@
     const entries = (surge?.general.skipProxy ?? []).filter((entry) => entry !== "*" && /^\S{1,253}$/.test(entry));
     return [...new Set(entries)].slice(0, 64);
   }
+  function routePlan(options) {
+    const tunnel = options.kernel === "tunnel";
+    const surge = options.surge ?? null;
+    const tags = groupTags(surge, dedupeNodeNames(options.nodes));
+    const rules = [{ action: "sniff" }];
+    const origins = [{ kind: "plumbing" }];
+    const push = (origin, ...added) => {
+      for (const rule of added) {
+        rules.push(rule);
+        origins.push(origin);
+      }
+    };
+    if (tunnel) push({ kind: "plumbing" }, { protocol: "dns", action: "hijack-dns" });
+    push({ kind: "lan" }, { ip_is_private: true, domain_suffix: ["localhost", "local"], action: "route", outbound: DIRECT_TAG });
+    push({ kind: "mode", mode: "direct" }, { clash_mode: clashModeNames.direct, action: "route", outbound: DIRECT_TAG });
+    push({ kind: "mode", mode: "global" }, { clash_mode: clashModeNames.global, action: "route", outbound: SELECTOR_TAG });
+    push({ kind: "page" }, ...compilePageRules(options.pageRules ?? [], tags));
+    const remoteSets = [];
+    const inlineSets = [];
+    let final = SELECTOR_TAG;
+    let finalFromSurge = false;
+    if (surge) {
+      const compiled = compileSurgeRules(surge.rules, tags, options.ruleSets ?? {});
+      compiled.rules.forEach((rule, index) => push(compiled.origins[index] ?? { kind: "plumbing" }, rule));
+      for (const tag of compiled.usedRuleSets) inlineSets.push({ type: "inline", tag, rules: options.ruleSets?.[tag]?.rules ?? [] });
+      for (const code of surge.geoip) remoteSets.push({ tag: `geoip-${code}`, url: geoipRuleSetURL(code) });
+      if (surge.final) {
+        finalFromSurge = true;
+        if (surge.final.kind === "reject") push({ kind: "surgeFinal" }, ruleFor({}, surge.final, tags));
+        else final = outboundOf(surge.final, tags);
+      }
+    } else if (options.chinaRules) {
+      push(
+        { kind: "china" },
+        { rule_set: "geosite-cn", action: "route", outbound: DIRECT_TAG },
+        { rule_set: "geoip-cn", action: "route", outbound: DIRECT_TAG }
+      );
+      remoteSets.push(...chinaRuleSets);
+    }
+    return { rules, origins, final, finalFromSurge, remoteSets, inlineSets };
+  }
   function buildConfig(options) {
     validate(options);
     const tunnel = options.kernel === "tunnel";
@@ -1817,33 +1885,8 @@
     const selected = options.selected !== void 0 && members.includes(options.selected) ? options.selected : URLTEST_TAG;
     const tags = groupTags(surge, nodes);
     const directDNS = tunnel ? "dns-direct" : LOCAL_DNS_TAG;
-    const rules = [{ action: "sniff" }];
-    if (tunnel) rules.push({ protocol: "dns", action: "hijack-dns" });
-    rules.push(
-      { ip_is_private: true, domain_suffix: ["localhost", "local"], action: "route", outbound: DIRECT_TAG },
-      { clash_mode: clashModeNames.direct, action: "route", outbound: DIRECT_TAG },
-      { clash_mode: clashModeNames.global, action: "route", outbound: SELECTOR_TAG }
-    );
-    rules.push(...compilePageRules(options.pageRules ?? [], tags));
-    const remoteSets = [];
-    const inlineSets = [];
-    let final = SELECTOR_TAG;
-    if (surge) {
-      const compiled = compileSurgeRules(surge.rules, tags, options.ruleSets ?? {});
-      rules.push(...compiled.rules);
-      for (const tag of compiled.usedRuleSets) inlineSets.push({ type: "inline", tag, rules: options.ruleSets?.[tag]?.rules ?? [] });
-      for (const code of surge.geoip) remoteSets.push({ tag: `geoip-${code}`, url: geoipRuleSetURL(code) });
-      if (surge.final) {
-        if (surge.final.kind === "reject") rules.push(ruleFor({}, surge.final, tags));
-        else final = outboundOf(surge.final, tags);
-      }
-    } else if (options.chinaRules) {
-      rules.push(
-        { rule_set: "geosite-cn", action: "route", outbound: DIRECT_TAG },
-        { rule_set: "geoip-cn", action: "route", outbound: DIRECT_TAG }
-      );
-      remoteSets.push(...chinaRuleSets);
-    }
+    const plan = routePlan(options);
+    const { rules, remoteSets, inlineSets, final } = plan;
     const route = {
       rules,
       final,
@@ -1944,9 +1987,10 @@
   }
   function compileSurgeRules(rules, tags, ruleSets) {
     const out = [];
+    const origins = [];
     const used = [];
     let resolved = false;
-    for (const rule of rules) {
+    for (const [position, rule] of rules.entries()) {
       let match;
       let resolve;
       if (rule.kind === "ruleSet") {
@@ -1961,11 +2005,13 @@
       }
       if (resolve && !resolved) {
         out.push({ action: "resolve" });
+        origins.push({ kind: "plumbing" });
         resolved = true;
       }
       out.push(ruleFor(match, rule.policy, tags));
+      origins.push({ kind: "surge", index: position + 1 });
     }
-    return { rules: out, usedRuleSets: used };
+    return { rules: out, usedRuleSets: used, origins, count: rules.length };
   }
   function realIPMatch(patterns) {
     const domain = [];
@@ -2578,6 +2624,7 @@
   }
   function buildMenuModel(input) {
     const running = input.phase === "running";
+    const hidden = !running && input.busy === null;
     const tunActive = running && input.kernel === "tunnel";
     const symbol = tunActive ? "network.badge.shield.half.filled" : running ? "network" : input.phase === "failed" ? "exclamationmark.triangle" : "network.slash";
     const groups = input.groups ?? [];
@@ -2696,7 +2743,7 @@
       items.push({ kind: "submenu", title: menuText(`${SELECTOR_TAG} \xB7 ${input.selection.node}`), items: nodeItems });
     }
     items.push(...groupItems, ...tail);
-    const model = { symbol, items, tooltip: menuText(`\u4EE3\u7406 \xB7 ${statusLine(input)}`) };
+    const model = { hidden, symbol, items, tooltip: menuText(`\u4EE3\u7406 \xB7 ${statusLine(input)}`) };
     if (running && input.preferences.showSpeed) {
       const shown = input.titleRate ?? (reading ? { upload: reading.upload, download: reading.download } : input.rate ? { upload: input.rate.up, download: input.rate.down } : null);
       if (shown) model.title = speedTitle(shown);
@@ -4264,6 +4311,44 @@
         this.setBusy(null);
       }
     }
+    /**
+     * 此刻的路由（窗口「规则」页那张表，jarvis-mac `specs/20261028-191224-git-push-error-proxy-dashboard-issue-links` P-3）：
+     * 与开启时交给 sing-box 的同一份算法、同一份输入（页面规则、导入的配置、拉到的外部规则集）；这一份有没有分流按在跑的那一份记的为准。
+     * 改过规则还没重新载入时，这里列的是新的那一份——页面上「重新载入之后生效」那张卡会说清楚。
+     * @param snapshot 快照。
+     * @returns 路由。
+     */
+    async routeTable(snapshot) {
+      const rules = await this.ruleInputs(snapshot.preferences);
+      return routePlan({
+        nodes: snapshot.nodes,
+        mixedPort: snapshot.control?.mixedPort ?? snapshot.preferences.mixedPort,
+        controlPort: snapshot.control?.controlPort ?? snapshot.preferences.controlPort,
+        controlSecret: snapshot.control?.secret ?? "-",
+        mode: snapshot.selection.mode,
+        testURL: snapshot.preferences.testURL,
+        selected: snapshot.selection.node,
+        chinaRules: snapshot.control ? snapshot.control.chinaRules && !snapshot.control.ruleSetFallback : snapshot.preferences.chinaRules,
+        kernel: snapshot.kernel ?? snapshot.control?.kernel ?? "daemon",
+        dnsMode: snapshot.preferences.dnsMode,
+        pageRules: rules.pageRules,
+        surge: rules.surge,
+        ruleSets: rules.ruleSets,
+        groupSelection: snapshot.selection.groups
+      });
+    }
+    /**
+     * 经直连出站测一次「Internet 延迟」（窗口「活动」页那张卡）：本机到外网通不通、要多久，不经过任何节点。
+     * @param url 测试地址（https）。
+     * @returns 毫秒；没在跑、超时、连不上为 `null`。
+     */
+    async internetLatency(url) {
+      try {
+        return parseDelay(await this.clash("GET", delayPath(DIRECT_TAG, url), void 0, requestTimeoutSeconds));
+      } catch {
+        return null;
+      }
+    }
     /** 读一份连接快照；没在跑、读不出为 `null`。 */
     async connections() {
       try {
@@ -4509,11 +4594,307 @@
     return `\u8D70\u300C${policy.slice("group:".length)}\u300D`;
   }
 
+  // extensions/proxy/src/rule-table.ts
+  var nonConditionKeys = /* @__PURE__ */ new Set(["action", "outbound", "method", "no_drop", "invert", "type", "mode", "rules", "override_address", "override_port", "network_strategy", "fallback_delay", "udp_disable_domain_unmapping", "udp_connect", "udp_timeout", "tls_fragment", "tls_record_fragment"]);
+  function signatureOf(rule) {
+    const action = actionOf(rule);
+    if (!action) return null;
+    const values = /* @__PURE__ */ new Map();
+    const collect = (source) => {
+      for (const [key, value] of Object.entries(source)) {
+        if (nonConditionKeys.has(key)) continue;
+        const list2 = (Array.isArray(value) ? value : [value]).map((item) => String(item));
+        values.set(key, [...values.get(key) ?? [], ...list2]);
+      }
+    };
+    if (rule.type === "logical" && Array.isArray(rule.rules)) {
+      for (const sub of rule.rules) if (typeof sub === "object" && sub !== null) collect(sub);
+    } else {
+      collect(rule);
+    }
+    return { action, keys: [...values.keys()].sort(), values };
+  }
+  function actionOf(rule) {
+    if (rule.action === "route" && typeof rule.outbound === "string") return `route(${rule.outbound})`;
+    if (rule.action === "reject") return "reject";
+    return null;
+  }
+  function parseRuleText(text) {
+    const arrow = text.lastIndexOf(" => ");
+    if (arrow < 0) return null;
+    const rawAction = text.slice(arrow + 4).trim();
+    const action = rawAction.startsWith("reject") ? "reject" : rawAction;
+    const values = /* @__PURE__ */ new Map();
+    const pattern = /([a-z_]+)=(\[[^\]]*\]|\S+)/g;
+    const conditions = text.slice(0, arrow);
+    for (let match = pattern.exec(conditions); match; match = pattern.exec(conditions)) {
+      const raw = match[2];
+      const list2 = raw.startsWith("[") ? raw.slice(1, -1).split(" ").filter((item) => item.length > 0) : [raw];
+      values.set(match[1], [...values.get(match[1]) ?? [], ...list2]);
+    }
+    return { action, keys: [...values.keys()].sort(), values };
+  }
+  function sameValues(left, right) {
+    if (!left || !right || left.length !== right.length) return false;
+    const a = [...left].sort();
+    const b = [...right].sort();
+    return a.every((item, index) => item === b[index]);
+  }
+  function matchRule(plan, text) {
+    if (text === "final") return "final";
+    const wanted = parseRuleText(text);
+    if (!wanted) return null;
+    let fallback = null;
+    for (const [index, rule] of plan.rules.entries()) {
+      const signature = signatureOf(rule);
+      if (!signature || signature.action !== wanted.action) continue;
+      if (signature.keys.length !== wanted.keys.length || signature.keys.some((key, position) => key !== wanted.keys[position])) continue;
+      if (signature.keys.every((key) => sameValues(signature.values.get(key), wanted.values.get(key)))) return index;
+      if (fallback === null) fallback = index;
+    }
+    return fallback;
+  }
+  var typeTitles = {
+    domain: "DOMAIN",
+    domain_suffix: "DOMAIN-SUFFIX",
+    domain_keyword: "DOMAIN-KEYWORD",
+    domain_regex: "DOMAIN-REGEX",
+    ip_cidr: "IP-CIDR",
+    source_ip_cidr: "SRC-IP",
+    ip_is_private: "LAN",
+    rule_set: "RULE-SET",
+    process_name: "PROCESS-NAME",
+    process_path: "PROCESS-PATH",
+    clash_mode: "MODE",
+    port: "DEST-PORT",
+    port_range: "DEST-PORT",
+    source_port: "SRC-PORT",
+    network: "NETWORK",
+    protocol: "PROTOCOL"
+  };
+  function policyColumn(action) {
+    if (action === "reject") return "\u62D2\u7EDD";
+    const tag = action.slice("route(".length, -1);
+    if (tag === DIRECT_TAG) return "\u76F4\u8FDE";
+    return tag;
+  }
+  function noteOf(origin) {
+    switch (origin.kind) {
+      case "lan":
+        return "\u5C40\u57DF\u7F51\u4E0E\u672C\u673A\u4E00\u5F8B\u76F4\u8FDE";
+      case "mode":
+        return origin.mode === "direct" ? "\u51FA\u7AD9\u6A21\u5F0F\u300C\u76F4\u8FDE\u300D\u65F6\u5168\u90E8\u76F4\u8FDE" : "\u51FA\u7AD9\u6A21\u5F0F\u300C\u5168\u5C40\u300D\u65F6\u5168\u90E8\u8D70\u8282\u70B9\u9009\u62E9";
+      case "page":
+        return "\u9875\u9762\u89C4\u5219";
+      case "surge":
+        return `Surge \u5BFC\u5165 \xB7 \u7B2C ${origin.index} \u6761`;
+      case "surgeFinal":
+        return "Surge \u7684 FINAL";
+      case "china":
+        return "\u5185\u7F6E\uFF1A\u4E2D\u56FD\u5927\u9646\u76F4\u8FDE";
+      default:
+        return "";
+    }
+  }
+  function targetOf(values, titles) {
+    const parts = [];
+    for (const [key, list2] of values) {
+      if (key === "ip_is_private") continue;
+      const shown = list2.map((value) => key === "rule_set" ? titles.get(value) ?? value : value);
+      parts.push(...shown);
+    }
+    if (parts.length === 0) return "\u2014";
+    const head = parts.slice(0, 3).join(", ");
+    const text = parts.length > 3 ? `${head} \u7B49 ${parts.length} \u9879` : head;
+    return text.length > 200 ? text.slice(0, 200) : text;
+  }
+  function ruleRows(plan, hits, titles = /* @__PURE__ */ new Map()) {
+    const counts = /* @__PURE__ */ new Map();
+    for (const [text, count] of Object.entries(hits)) {
+      const index = matchRule(plan, text);
+      if (index === null) continue;
+      counts.set(index, (counts.get(index) ?? 0) + count);
+    }
+    const rows = [];
+    for (const [index, rule] of plan.rules.entries()) {
+      const origin = plan.origins[index] ?? { kind: "plumbing" };
+      const signature = signatureOf(rule);
+      if (!signature || origin.kind === "plumbing") continue;
+      const type = rule.type === "logical" ? String(rule.mode ?? "and").toUpperCase() : signature.keys.length === 0 ? "FINAL" : [...new Set(signature.keys.filter((key) => !(origin.kind === "lan" && key === "domain_suffix")).map((key) => typeTitles[key] ?? key.toUpperCase()))].join(" + ");
+      rows.push({ id: rows.length + 1, type, target: targetOf(signature.values, titles), policy: policyColumn(signature.action), hits: counts.get(index) ?? 0, note: noteOf(origin) });
+    }
+    rows.push({
+      id: rows.length + 1,
+      type: "FINAL",
+      target: "\u2014",
+      policy: policyColumn(`route(${plan.final})`),
+      hits: counts.get("final") ?? 0,
+      note: plan.finalFromSurge ? "Surge \u7684 FINAL\uFF1A\u6CA1\u547D\u4E2D\u4EFB\u4F55\u89C4\u5219\u7684\u8FDE\u63A5" : `\u515C\u5E95\uFF1A\u6CA1\u547D\u4E2D\u4EFB\u4F55\u89C4\u5219\u7684\u8FDE\u63A5\u8D70${plan.final === SELECTOR_TAG ? "\u300C\u8282\u70B9\u9009\u62E9\u300D" : `\u300C${plan.final}\u300D`}`
+    });
+    return rows;
+  }
+  var maximumRuleHitKeys = 400;
+  function countRuleHits(hits, startedAt, connections, seen) {
+    const counts = hits && hits.startedAt === startedAt ? { ...hits.counts } : {};
+    const present = /* @__PURE__ */ new Set();
+    for (const connection of connections) {
+      if (!connection.id) continue;
+      present.add(connection.id);
+      if (seen.has(connection.id) || !connection.rule) continue;
+      seen.add(connection.id);
+      counts[connection.rule] = (counts[connection.rule] ?? 0) + 1;
+    }
+    for (const id of [...seen]) if (!present.has(id)) seen.delete(id);
+    const entries = Object.entries(counts);
+    if (entries.length <= maximumRuleHitKeys) return { startedAt, counts };
+    entries.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    return { startedAt, counts: Object.fromEntries(entries.slice(0, maximumRuleHitKeys)) };
+  }
+
+  // extensions/proxy/src/stats.ts
+  var maximumKeys = 200;
+  function localDay(now) {
+    const date = new Date(now);
+    const pad = (value) => String(value).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  }
+  function emptyBuckets() {
+    return { upload: new Array(24).fill(0), download: new Array(24).fill(0) };
+  }
+  function emptyDay(now) {
+    return { day: localDay(now), all: emptyBuckets(), proxy: emptyBuckets(), processes: {}, domains: {}, policies: {}, updatedAt: now };
+  }
+  function restoreDay(raw, now) {
+    if (typeof raw !== "object" || raw === null) return emptyDay(now);
+    const value = raw;
+    if (value.day !== localDay(now)) return emptyDay(now);
+    const buckets = (input) => {
+      const source = typeof input === "object" && input !== null ? input : {};
+      const column = (list2) => Array.from({ length: 24 }, (_, hour) => {
+        const number = Array.isArray(list2) ? list2[hour] : 0;
+        return typeof number === "number" && Number.isFinite(number) && number > 0 ? number : 0;
+      });
+      return { upload: column(source.upload), download: column(source.download) };
+    };
+    const usages = (input) => {
+      const out = {};
+      if (typeof input !== "object" || input === null) return out;
+      for (const [key, usage] of Object.entries(input)) {
+        if (typeof usage !== "object" || usage === null) continue;
+        const item = usage;
+        const number = (field) => typeof field === "number" && Number.isFinite(field) && field > 0 ? field : 0;
+        out[key] = { upload: number(item.upload), download: number(item.download), connections: number(item.connections) };
+      }
+      return out;
+    };
+    return {
+      day: value.day,
+      all: buckets(value.all),
+      proxy: buckets(value.proxy),
+      processes: usages(value.processes),
+      domains: usages(value.domains),
+      policies: usages(value.policies),
+      updatedAt: typeof value.updatedAt === "number" ? value.updatedAt : now
+    };
+  }
+  function processName(connection) {
+    const name = connection.process.split("/").pop() ?? "";
+    return name.length > 0 ? name : "\u672A\u77E5\u8FDB\u7A0B";
+  }
+  function domainOf(connection) {
+    const host = connection.host;
+    if (host.startsWith("[")) return host.slice(1, host.indexOf("]") > 0 ? host.indexOf("]") : void 0);
+    const colon = host.lastIndexOf(":");
+    const bare = colon > 0 && host.indexOf(":") === colon ? host.slice(0, colon) : host;
+    return bare.length > 0 ? bare : "\uFF08\u6CA1\u6709\u4E3B\u673A\u540D\uFF09";
+  }
+  function connectionPolicy(connection) {
+    return connection.chains[connection.chains.length - 1] ?? DIRECT_TAG;
+  }
+  function isProxied(connection) {
+    const final = connection.chains[0];
+    return final !== void 0 && final !== DIRECT_TAG;
+  }
+  function add(target, key, upload, download, isNew) {
+    const usage = target[key] ?? { upload: 0, download: 0, connections: 0 };
+    usage.upload += upload;
+    usage.download += download;
+    if (isNew) usage.connections += 1;
+    target[key] = usage;
+  }
+  function trimUsages(usages, limit = maximumKeys) {
+    const entries = Object.entries(usages);
+    if (entries.length <= limit) return usages;
+    entries.sort((a, b) => b[1].upload + b[1].download - (a[1].upload + a[1].download) || a[0].localeCompare(b[0]));
+    return Object.fromEntries(entries.slice(0, limit));
+  }
+  function ingest(state, snapshot, now) {
+    const day = localDay(now);
+    const base = state.stats.day === day ? state.stats : emptyDay(now);
+    const stats = {
+      day,
+      all: { upload: [...base.all.upload], download: [...base.all.download] },
+      proxy: { upload: [...base.proxy.upload], download: [...base.proxy.download] },
+      processes: { ...base.processes },
+      domains: { ...base.domains },
+      policies: { ...base.policies },
+      updatedAt: now
+    };
+    for (const category of ["processes", "domains", "policies"]) {
+      stats[category] = Object.fromEntries(Object.entries(stats[category]).map(([key, usage]) => [key, { ...usage }]));
+    }
+    const hour = new Date(now).getHours();
+    const seen = /* @__PURE__ */ new Map();
+    for (const connection of snapshot.connections) {
+      if (!connection.id) continue;
+      const previous = state.seen.get(connection.id);
+      const upload = Math.max(0, connection.upload - (previous && connection.upload >= previous.upload ? previous.upload : 0));
+      const download = Math.max(0, connection.download - (previous && connection.download >= previous.download ? previous.download : 0));
+      seen.set(connection.id, { upload: connection.upload, download: connection.download });
+      const isNew = previous === void 0;
+      if (upload === 0 && download === 0 && !isNew) continue;
+      stats.all.upload[hour] += upload;
+      stats.all.download[hour] += download;
+      if (isProxied(connection)) {
+        stats.proxy.upload[hour] += upload;
+        stats.proxy.download[hour] += download;
+      }
+      add(stats.processes, processName(connection), upload, download, isNew);
+      add(stats.domains, domainOf(connection), upload, download, isNew);
+      add(stats.policies, connectionPolicy(connection), upload, download, isNew);
+    }
+    stats.processes = trimUsages(stats.processes);
+    stats.domains = trimUsages(stats.domains);
+    stats.policies = trimUsages(stats.policies);
+    return { stats, seen };
+  }
+  function topUsages(stats, category, limit = 10) {
+    return Object.entries(stats[category]).sort((a, b) => b[1].upload + b[1].download - (a[1].upload + a[1].download) || a[0].localeCompare(b[0])).slice(0, limit);
+  }
+  function processRates(previous, current, seconds) {
+    const before = new Map((previous?.connections ?? []).map((connection) => [connection.id, connection]));
+    const rows = /* @__PURE__ */ new Map();
+    const span = seconds > 0 ? seconds : 1;
+    for (const connection of current.connections) {
+      const name = processName(connection);
+      const row = rows.get(name) ?? { name, connections: 0, upload: 0, download: 0 };
+      row.connections += 1;
+      const last = before.get(connection.id);
+      if (last) {
+        row.upload += Math.max(0, connection.upload - last.upload) / span;
+        row.download += Math.max(0, connection.download - last.download) / span;
+      }
+      rows.set(name, row);
+    }
+    return [...rows.values()].sort((a, b) => b.upload + b.download - (a.upload + a.download) || b.connections - a.connections || a.name.localeCompare(b.name));
+  }
+
   // extensions/proxy/src/background.ts
   var scheduleTickMs = 3e4;
   var speedTickMs = 1e3;
   var outputRefreshMs = 2e3;
   var historyLength = 60;
+  var statsSaveMs = 6e4;
   async function pushMenu(snapshot, extra) {
     try {
       await jarvis.menuBar.update(
@@ -4578,6 +4959,13 @@
       /** 这一段里攒下的有效速率：凑满 `speedInterval` 个点取平均，换一次标题。 */
       this.titleWindow = { upload: 0, download: 0, count: 0 };
       this.unwatchPreferences = null;
+      /** 今天的流量统计（P-3）；这个会话还没读过存储为 `null`。 */
+      this.stats = null;
+      /** 本次开启以来的规则命中（P-3）。 */
+      this.hits = null;
+      /** 已经记过命中的连接 id。 */
+      this.hitSeen = /* @__PURE__ */ new Set();
+      this.lastStatsSave = 0;
     }
     extras() {
       return {
@@ -4928,6 +5316,7 @@
           const sample = { at: now, upload: snapshot.uploadTotal, download: snapshot.downloadTotal };
           this.rate = trafficRate(this.lastSample, sample) ?? this.rate;
           this.lastSample = sample;
+          await this.recordStats(snapshot, now);
           const effective = this.meter.ingestSnapshot(snapshot, now);
           if (effective) {
             this.history.upload = [...this.history.upload, effective.upload].slice(-historyLength);
@@ -4942,44 +5331,488 @@
         this.speedRunning = false;
         this.resetTraffic();
         await this.pushOrb(null);
+        if (this.stats) {
+          await this.saveStats(Date.now());
+          this.stats = { stats: this.stats.stats, seen: /* @__PURE__ */ new Map() };
+        }
+        this.hitSeen.clear();
+      }
+    }
+    /**
+     * 记一份连接快照进今天的统计与规则命中（P-3），每分钟落一次存储。
+     *
+     * 这个会话第一次记的那一份只用来认下「此刻已有的连接各走到多少字节了」、不记账：后台会话被回收过又起来时，
+     * 那些长连接之前的字节已经记过一次，再记就翻倍——代价是会话刚起来那一秒的新连接少记一点。
+     * @param snapshot 快照。
+     * @param now 此刻。
+     */
+    async recordStats(snapshot, now) {
+      const startedAt = this.lastSnapshot?.control?.startedAt ?? 0;
+      if (!this.stats) {
+        let stored;
+        let storedHits;
+        try {
+          [stored, storedHits] = await Promise.all([jarvis.storage.get(storageKeys.statsToday), jarvis.storage.get(storageKeys.ruleHits)]);
+        } catch {
+          stored = void 0;
+        }
+        const seen = new Map(snapshot.connections.map((connection) => [connection.id, { upload: connection.upload, download: connection.download }]));
+        this.stats = { stats: restoreDay(stored, now), seen };
+        const hits = storedHits;
+        this.hits = hits && typeof hits.startedAt === "number" && typeof hits.counts === "object" && hits.counts !== null ? { startedAt: hits.startedAt, counts: { ...hits.counts } } : null;
+        for (const connection of snapshot.connections) if (connection.id) this.hitSeen.add(connection.id);
+        this.hits = countRuleHits(this.hits, startedAt, snapshot.connections, this.hitSeen);
+        this.lastStatsSave = now;
+        return;
+      }
+      this.stats = ingest(this.stats, snapshot, now);
+      this.hits = countRuleHits(this.hits, startedAt, snapshot.connections, this.hitSeen);
+      if (now - this.lastStatsSave >= statsSaveMs) await this.saveStats(now);
+    }
+    /** 把今天的统计与规则命中写进存储；写不进去只记一条（下一分钟再试）。 */
+    async saveStats(now) {
+      this.lastStatsSave = now;
+      try {
+        if (this.stats) await jarvis.storage.set(storageKeys.statsToday, this.stats.stats);
+        if (this.hits) await jarvis.storage.set(storageKeys.ruleHits, this.hits);
+      } catch (error) {
+        jarvis.log.warn("\u6D41\u91CF\u7EDF\u8BA1\u6CA1\u5B58\u4E0A", errorMessage2(error));
       }
     }
   };
 
+  // extensions/proxy/src/dashboard.ts
+  var sidebarItems = [
+    { value: "activity", title: "\u6D3B\u52A8", symbol: "waveform.path.ecg" },
+    { value: "processes", title: "\u8FDB\u7A0B", symbol: "cpu" },
+    { value: "policies", title: "\u7B56\u7565", symbol: "point.3.connected.trianglepath.dotted" },
+    { value: "rules", title: "\u89C4\u5219", symbol: "list.bullet.rectangle" }
+  ];
+  var dashboardModeTitles = { direct: "\u76F4\u63A5\u8FDE\u63A5", global: "\u5168\u5C40\u4EE3\u7406", rule: "\u89C4\u5219\u5224\u5B9A" };
+  var maximumCards = 120;
+  var connectionRows = 200;
+  var ruleTableRows = 300;
+  var hourLabels = Array.from({ length: 24 }, (_, hour) => String(hour));
+  function renderDashboard(session2, snapshot, loading) {
+    const page = snapshot ? pageOf(session2, snapshot) : loading ?? ui.scroll({ children: [] });
+    return layout.sidebar({
+      key: "dashboard",
+      label: "\u4EE3\u7406",
+      value: session2.view,
+      items: sidebarItems.map((item) => ({ ...item })),
+      onChange: (value) => void session2.showView(value),
+      children: [page]
+    });
+  }
+  function pageOf(session2, snapshot) {
+    const message = session2.message ? [ui.text({ key: "message", style: "footnote", tint: session2.message.ok ? "live" : "alert", text: session2.message.message })] : [];
+    switch (session2.view) {
+      case "processes":
+        return ui.scroll({ key: "page:processes", children: [...message, ...processesPage(session2, snapshot)] });
+      case "policies":
+        return ui.scroll({ key: "page:policies", children: [...message, ...policiesPage(session2, snapshot)] });
+      case "rules":
+        return ui.scroll({ key: "page:rules", children: [...message, ...rulesPage(session2, snapshot)] });
+      default:
+        return ui.scroll({ key: "page:activity", children: activityPage(session2, snapshot) });
+    }
+  }
+  function networkText(network) {
+    if (!network) return "\u2014";
+    if (network.kind === "none") return "\u6CA1\u6709\u7F51\u7EDC";
+    return `${network.name} \xB7 ${network.interface}`;
+  }
+  function profileText(snapshot) {
+    if (snapshot.surge && snapshot.preferences.useSurgeRules) return `Surge \xB7 ${snapshot.surge.sourceName}`;
+    if (snapshot.subscriptions.length === 0) return snapshot.subscriptionCount > 0 ? "\u8BA2\u9605\u8FD8\u6CA1\u62C9\u8FC7" : "\u8FD8\u6CA1\u6709\u8BA2\u9605";
+    const hosts = snapshot.subscriptions.map((record) => record.host);
+    const head = hosts.length > 2 ? `${hosts.slice(0, 2).join("\u3001")} \u7B49 ${hosts.length} \u4E2A` : hosts.join("\u3001");
+    return `${head} \xB7 ${snapshot.nodes.length} \u4E2A\u8282\u70B9`;
+  }
+  function activityPage(session2, snapshot) {
+    const running = snapshot.phase === "running";
+    const busy = session2.core.busy !== null;
+    const condition = systemProxyCondition(snapshot.proxy, snapshot.granted);
+    const tunActive = snapshot.kernel === "tunnel";
+    const canStart = snapshot.phase === "stopped" || snapshot.phase === "failed";
+    const children = [];
+    children.push(
+      ui.stack({
+        key: "activity-title",
+        axis: "horizontal",
+        spacing: "loose",
+        alignment: "center",
+        children: [
+          ui.text({ key: "activity-heading", style: "title", text: "\u6D3B\u52A8" }),
+          ui.toggle({
+            key: "activity-system-proxy",
+            title: "\u7CFB\u7EDF\u4EE3\u7406",
+            subtitle: running ? condition.kind === "active" ? `127.0.0.1:${snapshot.control?.mixedPort ?? snapshot.preferences.mixedPort}` : condition.kind === "off" ? "\u6CA1\u6709\u63A5\u7BA1" : condition.kind === "notGranted" ? "\u6CA1\u6709\u6388\u6743" : "\u88AB\u62E6\u7740" : "\u4EE3\u7406\u5173\u7740",
+            value: running && condition.kind === "active",
+            disabled: busy || condition.kind === "notGranted" || !running && !canStart,
+            onChange: (on) => void session2.activitySystemProxy(on)
+          }),
+          ui.toggle({
+            key: "activity-tun",
+            title: "\u589E\u5F3A\u6A21\u5F0F",
+            subtitle: running ? tunActive ? "\u6574\u673A\u7F51\u7EDC\u7ECF\u8FC7 sing-box" : "\u6CA1\u6709\u63A5\u7BA1" : tunSubtitle({ ...snapshot.tun, active: false }) ?? (snapshot.tun.wanted ? "\u5F00\u542F\u4EE3\u7406\u65F6\u7528" : "\u4EE3\u7406\u5173\u7740"),
+            value: running ? tunActive : wantsTunnel(snapshot.preferences),
+            disabled: busy || !snapshot.tun.granted || snapshot.phase === "notInstalled" || snapshot.phase === "notGranted",
+            onChange: (on) => void session2.activityTun(on)
+          }),
+          ui.iconButton({
+            key: "activity-power",
+            symbol: "power",
+            label: running ? "\u5173\u95ED\u4EE3\u7406" : "\u5F00\u542F\u4EE3\u7406",
+            active: running,
+            disabled: busy || !(running || canStart),
+            onPress: () => void session2.toggle(!running)
+          })
+        ]
+      })
+    );
+    children.push(...notes(session2, snapshot));
+    if (session2.message) children.push(ui.text({ key: "message", style: "footnote", tint: session2.message.ok ? "live" : "alert", text: session2.message.message }));
+    const ip = session2.externalIP;
+    children.push(
+      layout.grid({
+        key: "activity-facts",
+        minimum: 150,
+        spacing: "tight",
+        children: [
+          ui.readout({ key: "fact-network", label: "\u7F51\u7EDC", value: networkText(session2.network) }),
+          ui.readout({ key: "fact-profile", label: "\u5F53\u524D\u914D\u7F6E", value: profileText(snapshot) }),
+          ui.readout({ key: "fact-mode", label: "\u51FA\u7AD9\u6A21\u5F0F", value: dashboardModeTitles[snapshot.selection.mode], tint: running ? "live" : "neutral" }),
+          ui.readout({ key: "fact-ip", label: "\u5916\u90E8 IP", value: ip?.ip ?? "\u2014", ...ip?.ip ? { copy: true } : {} })
+        ]
+      })
+    );
+    children.push(layout.grid({ key: "activity-cards", minimum: 160, spacing: "regular", children: activityCards(session2, snapshot) }));
+    children.push(trafficSection(session2), topSection(session2));
+    return children;
+  }
+  function activityCards(session2, snapshot) {
+    const running = snapshot.phase === "running";
+    const delay = session2.internetDelay;
+    const delayTintValue = delay === void 0 ? "neutral" : delay === null ? "danger" : delay < 150 ? "live" : delay < 400 ? "amber" : "alert";
+    const latest = (values) => values.length > 0 ? values[values.length - 1] : 0;
+    const upload = session2.reading?.upload ?? latest(session2.history.upload);
+    const download = session2.reading?.download ?? latest(session2.history.download);
+    const card = (key, title, value, tint, extra = []) => ui.card({
+      key,
+      children: [ui.text({ key: `${key}:title`, style: "footnote", text: title }), ui.text({ key: `${key}:value`, style: "readout", tint, text: value }), ...extra]
+    });
+    const chart = (key, tone, values) => values.length > 1 ? [ui.chart({ key, series: [{ tone, values: values.slice(-120) }], label: tone === "upload" ? "\u6700\u8FD1\u4E00\u5206\u949F\u7684\u4E0A\u884C" : "\u6700\u8FD1\u4E00\u5206\u949F\u7684\u4E0B\u884C" })] : [];
+    return [
+      card("card-latency", "Internet \u5EF6\u8FDF", running ? delay === void 0 ? "\u6D4B\u91CF\u4E2D" : delay === null ? "\u4E0D\u901A" : `${delay} ms` : "\u2014", running ? delayTintValue : "neutral"),
+      card("card-connections", "\u6D3B\u52A8\u8FDE\u63A5", running && session2.connections ? String(session2.connections.connections.length) : "\u2014", running ? "accent" : "neutral"),
+      card("card-upload", "\u4E0A\u884C", running ? formatRate(upload) : "\u2014", running ? "amber" : "neutral", running ? chart("card-upload:chart", "upload", session2.history.upload) : []),
+      card("card-download", "\u4E0B\u884C", running ? formatRate(download) : "\u2014", running ? "blue" : "neutral", running ? chart("card-download:chart", "download", session2.history.download) : [])
+    ];
+  }
+  function trafficSection(session2) {
+    const stats = session2.stats;
+    const buckets = stats ? session2.trafficScope === "proxy" ? stats.proxy : stats.all : null;
+    const sum = (values) => values.reduce((total, value) => total + value, 0);
+    const caption = buckets ? `\u4ECA\u5929${session2.trafficScope === "proxy" ? "\u7ECF\u8FC7\u8282\u70B9" : "\u4E00\u5171"} \u2193 ${formatBytes(sum(buckets.download))}  \u2191 ${formatBytes(sum(buckets.upload))}` : "\u8FD8\u6CA1\u6709\u7EDF\u8BA1";
+    return ui.section({
+      key: "traffic",
+      title: "\u6D41\u91CF \xB7 TRAFFIC",
+      trailing: stats ? `\u66F4\u65B0\u4E8E${formatAge(stats.updatedAt, Date.now())}` : void 0,
+      children: [
+        ui.segmented({
+          key: "traffic-scope",
+          label: "\u6D41\u91CF\u770B\u54EA\u4E00\u4EFD",
+          layout: "full",
+          value: session2.trafficScope,
+          options: [
+            { value: "all", title: "\u5168\u90E8" },
+            { value: "proxy", title: "\u4EC5\u4EE3\u7406", help: "\u53EA\u7B97\u51FA\u7AD9\u4E0D\u662F\u76F4\u8FDE\u7684\u8FDE\u63A5" }
+          ],
+          onChange: (value) => session2.setTrafficScope(value)
+        }),
+        layout.bars({
+          key: "traffic-hours",
+          labels: hourLabels,
+          series: [
+            { tone: "download", values: buckets ? buckets.download.slice(0, 24) : new Array(24).fill(0) },
+            { tone: "upload", values: buckets ? buckets.upload.slice(0, 24) : new Array(24).fill(0) }
+          ],
+          caption,
+          label: `\u4ECA\u5929\u6BCF\u5C0F\u65F6\u7684\u6D41\u91CF\uFF0C${caption}`
+        })
+      ]
+    });
+  }
+  function policyName(tag) {
+    return tag === DIRECT_TAG ? "\u76F4\u8FDE" : tag;
+  }
+  function topSection(session2) {
+    const stats = session2.stats;
+    const category = session2.topCategory;
+    const rows = stats ? topUsages(stats, category, 10) : [];
+    return ui.section({
+      key: "top",
+      title: "TOP 10 \xB7 \u4ECA\u5929",
+      children: [
+        ui.segmented({
+          key: "top-category",
+          label: "Top 10 \u770B\u54EA\u4E00\u7C7B",
+          layout: "full",
+          value: category,
+          options: [
+            { value: "processes", title: "\u8FDB\u7A0B\u4E0E\u8BBE\u5907" },
+            { value: "domains", title: "\u57DF\u540D" },
+            { value: "policies", title: "\u7B56\u7565" }
+          ],
+          onChange: (value) => session2.setTopCategory(value)
+        }),
+        layout.table({
+          key: `top-table:${category}`,
+          label: "\u4ECA\u5929\u6D41\u91CF\u6700\u591A\u7684\u5341\u4E2A",
+          columns: [
+            { title: category === "processes" ? "\u8FDB\u7A0B" : category === "domains" ? "\u57DF\u540D" : "\u7B56\u7565", width: "fill" },
+            { title: "\u8FDE\u63A5", width: "narrow", alignment: "trailing" },
+            { title: "\u2191", alignment: "trailing" },
+            { title: "\u2193", alignment: "trailing" },
+            { title: "\u5408\u8BA1", alignment: "trailing" }
+          ],
+          rows: rows.map(([name, usage]) => ({
+            cells: [category === "policies" ? policyName(name) : name, String(usage.connections), formatBytes(usage.upload), formatBytes(usage.download), formatBytes(usage.upload + usage.download)]
+          })),
+          emptyText: "\u4EE3\u7406\u5F00\u7740\u65F6\u540E\u53F0\u4F1A\u8BB0\u4ECA\u5929\u7684\u6D41\u91CF\uFF0C\u6BCF\u5206\u949F\u66F4\u65B0\u4E00\u6B21"
+        })
+      ]
+    });
+  }
+  function processesPage(session2, snapshot) {
+    const running = snapshot.phase === "running";
+    const today = session2.stats?.processes ?? {};
+    const rows = session2.processes.slice(0, 300).map((row) => {
+      const usage = today[row.name];
+      return {
+        cells: [row.name, String(row.connections), formatRate(row.upload), formatRate(row.download), usage ? formatBytes(usage.upload + usage.download) : "\u2014"],
+        ...row.upload + row.download === 0 ? { tint: "neutral" } : {}
+      };
+    });
+    const children = [
+      ui.section({
+        key: "processes",
+        title: "\u8FDB\u7A0B \xB7 PROCESSES",
+        trailing: running && session2.connections ? `${session2.processes.length} \u4E2A\u7A0B\u5E8F \xB7 ${session2.connections.connections.length} \u6761\u8FDE\u63A5` : void 0,
+        children: [
+          layout.table({
+            key: "process-table",
+            label: "\u6BCF\u4E2A\u7A0B\u5E8F\u6B64\u523B\u7684\u901F\u7387",
+            columns: [
+              { title: "\u7A0B\u5E8F", width: "fill" },
+              { title: "\u8FDE\u63A5", width: "narrow", alignment: "trailing" },
+              { title: "\u4E0A\u884C", alignment: "trailing" },
+              { title: "\u4E0B\u884C", alignment: "trailing" },
+              { title: "\u4ECA\u5929", alignment: "trailing" }
+            ],
+            rows,
+            emptyText: running ? "\u6B64\u523B\u6CA1\u6709\u8FDE\u63A5" : "\u4EE3\u7406\u6CA1\u5F00"
+          })
+        ]
+      })
+    ];
+    const failures = failuresSection(session2);
+    if (failures) children.push(failures);
+    children.push(connectionsSection(session2, snapshot), logsSection(session2));
+    return children;
+  }
+  function connectionsSection(session2, snapshot) {
+    const data = session2.connections;
+    const list2 = data ? [...data.connections].sort((a, b) => b.start - a.start).slice(0, connectionRows) : [];
+    const trailing = data ? `${data.connections.length} \u6761 \xB7 \u2193 ${formatBytes(data.downloadTotal)}  \u2191 ${formatBytes(data.uploadTotal)}` : void 0;
+    return ui.section({
+      key: "connections-section",
+      title: "\u8FDE\u63A5 \xB7 CONNECTIONS",
+      ...trailing ? { trailing } : {},
+      children: [
+        layout.table({
+          key: "connections",
+          label: "\u6B64\u523B\u7684\u8FDE\u63A5",
+          columns: [
+            { title: "\u4E3B\u673A", width: "fill" },
+            { title: "\u7A0B\u5E8F" },
+            { title: "\u7B56\u7565" },
+            { title: "\u89C4\u5219", width: "wide" },
+            { title: "\u2193", alignment: "trailing" },
+            { title: "\u2191", alignment: "trailing" }
+          ],
+          rows: list2.map((connection) => ({
+            cells: [
+              connection.host || "\uFF08\u6CA1\u6709\u4E3B\u673A\u540D\uFF09",
+              connection.process.split("/").pop() || "\u2014",
+              connection.chains.length > 0 ? [...connection.chains].reverse().map(policyName).join(" \u2192 ") : "\u2014",
+              connection.rule || "\u2014",
+              formatBytes(connection.download),
+              formatBytes(connection.upload)
+            ]
+          })),
+          emptyText: snapshot.phase === "running" ? "\u6B64\u523B\u6CA1\u6709\u8FDE\u63A5\uFF0C\u6BCF\u79D2\u5237\u65B0\u4E00\u6B21" : "\u5F00\u542F\u4E4B\u540E\uFF0C\u7ECF\u8FC7\u4EE3\u7406\u7684\u6BCF\u4E00\u6761\u8FDE\u63A5\u90FD\u4F1A\u5217\u5728\u8FD9\u91CC"
+        })
+      ]
+    });
+  }
+  function policiesPage(session2, snapshot) {
+    const running = snapshot.phase === "running";
+    const mode = snapshot.selection.mode;
+    const children = [
+      ui.section({
+        key: "policy-mode",
+        title: "\u51FA\u7AD9\u6A21\u5F0F \xB7 MODE",
+        children: [
+          ui.segmented({
+            key: "policy-mode-picker",
+            label: "\u51FA\u7AD9\u6A21\u5F0F",
+            layout: "full",
+            value: mode,
+            options: ["direct", "global", "rule"].map((value) => ({ value, title: dashboardModeTitles[value], help: modeHelps[value] })),
+            onChange: (value) => void session2.setMode(value)
+          }),
+          ui.text({ key: "policy-mode-help", style: "footnote", text: mode === "direct" ? "\u76F4\u63A5\u8FDE\u63A5\u6A21\u5F0F\u4E0B\u4E0D\u7ECF\u8FC7\u8282\u70B9\uFF1A\u4E0B\u9762\u7684\u9009\u62E9\u7167\u6837\u8BB0\u7740\uFF0C\u6362\u56DE\u522B\u7684\u6A21\u5F0F\u65F6\u751F\u6548\u3002" : modeHelps[mode] })
+        ]
+      })
+    ];
+    if (snapshot.nodes.length === 0) {
+      children.push(ui.empty({ key: "no-nodes", symbol: "server.rack", title: "\u8FD8\u6CA1\u6709\u8282\u70B9", hint: "\u5728\u4E0B\u9762\u300C\u8BA2\u9605\u300D\u91CC\u586B\u8BA2\u9605\u5730\u5740\uFF0C\u62C9\u4E0B\u6765\u5C31\u6709\u4E86\u3002" }));
+    } else {
+      let budget = maximumCards;
+      const query = session2.filter.trim().toLowerCase();
+      const matched = query ? snapshot.nodes.filter((node) => node.name.toLowerCase().includes(query) || node.protocol.includes(query)) : snapshot.nodes;
+      const cards = [];
+      const autoSelected = snapshot.selection.node === URLTEST_TAG;
+      cards.push(nodeCard(session2, `node:${URLTEST_TAG}`, URLTEST_TAG, running && autoSelected && session2.autoPick ? `\u6B64\u523B\u7528\u300C${session2.autoPick}\u300D` : "\u6309\u5EF6\u8FDF\u81EA\u52A8\u6311\u6700\u5FEB\u7684", void 0, autoSelected, () => void session2.pickNode(URLTEST_TAG)));
+      budget -= 1;
+      for (const node of matched.slice(0, Math.max(0, budget))) {
+        const delay = snapshot.latency.values[node.name];
+        cards.push(nodeCard(session2, `node:${node.name}`, node.name, [protocolTitles[node.protocol], formatDelay(delay)].filter((part) => part).join(" \xB7 "), delayTint(delay), snapshot.selection.node === node.name, () => void session2.pickNode(node.name)));
+      }
+      budget -= Math.min(matched.length, budget);
+      const selectorChildren = [];
+      if (snapshot.nodes.length > 8) {
+        selectorChildren.push(ui.search({ key: "node-search", value: session2.filter, placeholder: "\u641C\u7D22\u8282\u70B9", label: "\u641C\u7D22\u8282\u70B9", onChange: (value) => session2.search(value) }));
+      }
+      selectorChildren.push(layout.grid({ key: "node-cards", minimum: 150, spacing: "tight", children: cards }));
+      if (matched.length > cards.length - 1) selectorChildren.push(ui.text({ key: "nodes-more", style: "footnote", text: `\u53E6\u6709 ${matched.length - (cards.length - 1)} \u4E2A\u6CA1\u753B\u51FA\u6765\uFF1A\u7528\u641C\u7D22\u627E` }));
+      const tested = snapshot.latency.testedAt ? ` \xB7 \u6D4B\u4E8E${formatAge(snapshot.latency.testedAt, Date.now())}` : "";
+      children.push(
+        ui.section({
+          key: "policy-selector",
+          title: `${SELECTOR_TAG} \xB7 ${snapshot.nodes.length} \u4E2A\u8282\u70B9${tested}`,
+          tint: mode === "direct" ? "neutral" : "accent",
+          actions: [
+            {
+              id: "test-all",
+              title: "\u5168\u90E8\u6D4B\u901F",
+              symbol: "speedometer",
+              help: running ? "\u6D4B\u4E00\u904D\u5168\u90E8\u8282\u70B9\u7684\u5EF6\u8FDF" : "\u4EE3\u7406\u5F00\u7740\u624D\u80FD\u6D4B\u901F",
+              disabled: !running || session2.core.busy !== null,
+              onPress: () => void session2.test()
+            }
+          ],
+          children: selectorChildren
+        })
+      );
+      for (const group of snapshot.groups) {
+        if (budget <= 0) break;
+        const members = group.members.slice(0, budget);
+        budget -= members.length;
+        children.push(
+          ui.section({
+            key: `policy-group:${group.name}`,
+            title: group.name,
+            trailing: snapshot.surge ? `\u6765\u81EA ${snapshot.surge.sourceName}` : void 0,
+            children: [
+              layout.grid({
+                key: `group-cards:${group.name}`,
+                minimum: 150,
+                spacing: "tight",
+                children: members.map((member) => {
+                  const delay = snapshot.latency.values[member.tag];
+                  return nodeCard(session2, `group:${group.name}:${member.tag}`, memberTitle(member.title), formatDelay(delay) || (member.tag === DIRECT_TAG ? "\u76F4\u8FDE" : ""), delayTint(delay), group.selected === member.tag, () => void session2.pickGroupMember(group, member.tag));
+                })
+              })
+            ]
+          })
+        );
+      }
+    }
+    children.push(subscriptionsSection(session2, snapshot, true), commandSection(snapshot));
+    return children;
+  }
+  function nodeCard(session2, key, title, detail, tint, selected, onPress) {
+    return ui.card({
+      key,
+      ...selected ? { tint: "accent" } : {},
+      onPress: session2.core.busy === null ? onPress : void 0,
+      children: [
+        ui.text({ key: `${key}:name`, style: selected ? "title" : "body", text: title, lines: 1 }),
+        ui.text({ key: `${key}:detail`, style: "footnote", text: selected ? `\u5DF2\u9009 \xB7 ${detail || "\u70B9\u4E00\u4E0B\u6D4B\u901F"}` : detail || "\u70B9\u4E00\u4E0B\u9009\u5B83\u5E76\u6D4B\u901F", lines: 1, ...tint ? { tint } : {} })
+      ]
+    });
+  }
+  function rulesPage(session2, snapshot) {
+    const children = [];
+    const plan = session2.routes;
+    if (plan) {
+      const titles = new Map((snapshot.surge?.ruleSets ?? []).map((ref) => [ref.tag, ref.url.split("/").pop() || ref.host]));
+      const rows = ruleRows(plan, session2.ruleHits?.counts ?? {}, titles);
+      const shown = rows.length > ruleTableRows ? [...rows.slice(0, ruleTableRows - 1), rows[rows.length - 1]] : rows;
+      const total = rows.reduce((sum, row) => sum + row.hits, 0);
+      const tableChildren = [
+        layout.table({
+          key: "rule-table",
+          label: "\u6B64\u523B\u751F\u6548\u7684\u89C4\u5219",
+          columns: [
+            { title: "ID", width: "narrow", alignment: "trailing", mono: true },
+            { title: "\u7C7B\u578B" },
+            { title: "\u76EE\u6807", width: "fill" },
+            { title: "\u7B56\u7565" },
+            { title: "\u4F7F\u7528\u8BA1\u6570", width: "narrow", alignment: "trailing" },
+            { title: "\u6CE8\u91CA", width: "wide" }
+          ],
+          rows: shown.map((row) => ({
+            cells: [String(row.id), row.type, row.target, row.policy, String(row.hits), row.note],
+            ...row.hits === 0 ? { tint: "neutral" } : {}
+          }))
+        })
+      ];
+      if (rows.length > shown.length) tableChildren.push(ui.text({ key: "rule-table-more", style: "footnote", text: `\u53E6\u6709 ${rows.length - shown.length} \u6761\u6CA1\u5217\u51FA\u6765\uFF08\u8868\u91CC\u81F3\u591A ${ruleTableRows} \u884C\uFF09` }));
+      children.push(
+        ui.section({
+          key: "rule-table-section",
+          title: "\u89C4\u5219 \xB7 RULES",
+          trailing: `${rows.length} \u6761 \xB7 \u672C\u6B21\u5F00\u542F\u4EE5\u6765 ${total} \u6761\u8FDE\u63A5`,
+          children: tableChildren
+        })
+      );
+    } else {
+      children.push(ui.text({ key: "rule-table-loading", style: "footnote", text: "\u6B63\u5728\u8BFB\u53D6\u89C4\u5219" }));
+    }
+    children.push(currentPageSection(session2, snapshot), pageRulesSection(session2, snapshot), surgeSection(session2, snapshot), builtinRulesSection(snapshot));
+    return children;
+  }
+
   // extensions/proxy/src/page.ts
   var toolboxNodeRows = 60;
-  var windowNodeRows = 300;
-  var connectionRows = 200;
   var logRows = 200;
   var pageRuleRows = 120;
   var failedRows = 20;
   function renderPage(session2) {
     const snapshot = session2.snapshot;
-    if (!snapshot) return ui.scroll({ children: [ui.text({ key: "loading", style: "footnote", text: "\u6B63\u5728\u8BFB\u53D6\u72B6\u6001" })] });
-    const children = [statusSection(session2, snapshot), ...notes(session2, snapshot)];
-    if (session2.surface === "window") {
-      children.push(
-        ui.segmented({
-          key: "view",
-          label: "\u7A97\u53E3\u91CC\u770B\u54EA\u4E00\u9875",
-          layout: "full",
-          value: session2.view,
-          options: [
-            { value: "nodes", title: "\u8282\u70B9" },
-            { value: "connections", title: "\u8FDE\u63A5" },
-            { value: "rules", title: "\u89C4\u5219" },
-            { value: "logs", title: "\u65E5\u5FD7" },
-            { value: "subscriptions", title: "\u8BA2\u9605" }
-          ],
-          onChange: (value) => void session2.showView(value)
-        })
-      );
-      children.push(...windowView(session2, snapshot));
-    } else {
-      if (snapshot.nodes.length > 0) children.push(modeSection(session2, snapshot), nodesSection(session2, snapshot, toolboxNodeRows));
-      if (snapshot.groups.length > 0) children.push(groupsSection(session2, snapshot));
-      children.push(rulesSummarySection(session2, snapshot), subscriptionsSection(session2, snapshot, false), commandSection(snapshot));
+    if (!snapshot) {
+      const loading = ui.scroll({ children: [ui.text({ key: "loading", style: "footnote", text: "\u6B63\u5728\u8BFB\u53D6\u72B6\u6001" })] });
+      return session2.surface === "window" ? renderDashboard(session2, null, loading) : loading;
     }
+    if (session2.surface === "window") return renderDashboard(session2, snapshot);
+    const children = [statusSection(session2, snapshot), ...notes(session2, snapshot)];
+    if (snapshot.nodes.length > 0) children.push(modeSection(session2, snapshot), nodesSection(session2, snapshot, toolboxNodeRows));
+    if (snapshot.groups.length > 0) children.push(groupsSection(session2, snapshot));
+    children.push(rulesSummarySection(session2, snapshot), subscriptionsSection(session2, snapshot, false), commandSection(snapshot));
     return ui.scroll({ children });
   }
   function statusSection(session2, snapshot) {
@@ -5095,7 +5928,7 @@
             tint: "alert",
             symbol: "link.badge.plus",
             title: "\u8FD8\u6CA1\u6709\u8BA2\u9605",
-            body: "\u5728\u8BBE\u7F6E\u91CC\u586B\u8BA2\u9605\u5730\u5740\uFF08\u673A\u573A\u7ED9\u7684\u90A3\u4E00\u4E32 https \u94FE\u63A5\uFF0C\u53EF\u4EE5\u586B\u51E0\u6761\uFF09\uFF0C\u518D\u56DE\u6765\u70B9\u300C\u66F4\u65B0\u8BA2\u9605\u300D\u3002\u8BA4\u5206\u4EAB\u94FE\u63A5\uFF08\u6574\u6BB5 base64 \u6216\u9010\u884C\uFF09\u4E0E sing-box JSON\uFF1BClash YAML \u672C\u671F\u4E0D\u8BA4\u3002",
+            body: "\u5728\u4E0B\u9762\u300C\u8BA2\u9605\u300D\u90A3\u4E00\u6BB5\u586B\u8BA2\u9605\u5730\u5740\uFF08\u673A\u573A\u7ED9\u7684\u90A3\u4E00\u4E32 https \u94FE\u63A5\uFF0C\u53EF\u4EE5\u586B\u51E0\u6761\uFF09\uFF0C\u586B\u5B8C\u4F1A\u81EA\u5DF1\u62C9\u4E00\u904D\uFF1B\u4E5F\u53EF\u4EE5\u5728\u8BBE\u7F6E\u91CC\u586B\u3002\u8BA4\u5206\u4EAB\u94FE\u63A5\uFF08\u6574\u6BB5 base64 \u6216\u9010\u884C\uFF09\u4E0E sing-box JSON\uFF1BClash YAML \u672C\u671F\u4E0D\u8BA4\u3002",
             actions: [action("settings", "\u6253\u5F00\u8BBE\u7F6E", () => session2.openSettings())]
           }) : ui.note({
             key: "no-nodes",
@@ -5488,9 +6321,6 @@
     lines.push(snapshot.kernel === "tunnel" ? "\u589E\u5F3A\u6A21\u5F0F\uFF1ADNS \u7531 sing-box \u7B54\uFF08fake-ip / \u771F\u5B9E IP \u89C1\u8BBE\u7F6E\uFF09\uFF0Calways-real-ip \u7684\u57DF\u540D\u7ED9\u771F\u5B9E\u5730\u5740" : "\u5176\u4F59\u8D70\u300C\u8282\u70B9\u9009\u62E9\u300D");
     return ui.section({ key: "builtin-rules", title: "\u5185\u7F6E \xB7 BUILT-IN", children: lines.map((line, index) => ui.text({ key: `builtin:${index}`, style: "footnote", text: `\xB7 ${line}` })) });
   }
-  function rulesView(session2, snapshot) {
-    return [currentPageSection(session2, snapshot), pageRulesSection(session2, snapshot), surgeSection(session2, snapshot), builtinRulesSection(snapshot)];
-  }
   function subscriptionsSection(session2, snapshot, detailed) {
     const now = Date.now();
     const latest = snapshot.subscriptions.reduce((max, record) => record.fetchedAt !== null && (max === null || record.fetchedAt > max) ? record.fetchedAt : max, null);
@@ -5510,18 +6340,23 @@
         ...detailed ? {} : { accessory: "chevron", onPress: () => session2.openWindow("subscriptions") }
       });
     });
-    const children = [
-      ui.list({
-        key: "subscriptions",
-        children: rows,
-        emptyState: ui.empty({
-          key: "no-subscriptions",
-          symbol: "link.badge.plus",
-          title: snapshot.subscriptionCount > 0 ? "\u8FD8\u6CA1\u6709\u62C9\u8FC7\u8BA2\u9605" : "\u8BBE\u7F6E\u91CC\u8FD8\u6CA1\u6709\u8BA2\u9605\u5730\u5740",
-          hint: snapshot.subscriptionCount > 0 ? "\u70B9\u53F3\u4E0A\u89D2\u300C\u66F4\u65B0\u300D\u62C9\u4E00\u6B21\u3002" : "\u5728\u8BBE\u7F6E \xB7 \u6269\u5C55 \xB7 \u4EE3\u7406\u91CC\u586B\u8BA2\u9605\u5730\u5740\u3002"
+    const children = [];
+    const showEditor = detailed || snapshot.subscriptionCount === 0 || session2.manageSubscriptions;
+    if (showEditor) children.push(layout.preference({ key: "subscriptions-editor", preference: "subscriptions" }));
+    if (snapshot.subscriptions.length > 0 || !showEditor) {
+      children.push(
+        ui.list({
+          key: "subscriptions",
+          children: rows,
+          emptyState: ui.empty({
+            key: "no-subscriptions",
+            symbol: "link.badge.plus",
+            title: snapshot.subscriptionCount > 0 ? "\u8FD8\u6CA1\u6709\u62C9\u8FC7\u8BA2\u9605" : "\u8FD8\u6CA1\u6709\u8BA2\u9605\u5730\u5740",
+            hint: snapshot.subscriptionCount > 0 ? "\u70B9\u53F3\u4E0A\u89D2\u300C\u66F4\u65B0\u8BA2\u9605\u300D\u62C9\u4E00\u6B21\u3002" : "\u70B9\u300C\u7BA1\u7406\u8BA2\u9605\u300D\u586B\u8BA2\u9605\u5730\u5740\u3002"
+          })
         })
-      })
-    ];
+      );
+    }
     if (detailed) {
       for (const record of snapshot.subscriptions) {
         if (record.skipped.length === 0) continue;
@@ -5548,6 +6383,15 @@
       title: "\u8BA2\u9605 \xB7 SUBSCRIPTIONS",
       ...latest !== null ? { trailing: `\u66F4\u65B0\u4E8E${formatAge(latest, now)}` } : {},
       actions: [
+        ...!detailed && snapshot.subscriptionCount > 0 ? [
+          {
+            id: "manage",
+            title: session2.manageSubscriptions ? "\u6536\u8D77" : "\u7BA1\u7406\u8BA2\u9605",
+            symbol: session2.manageSubscriptions ? "chevron.up" : "link.badge.plus",
+            help: session2.manageSubscriptions ? "\u6536\u8D77\u8BA2\u9605\u5730\u5740" : "\u52A0\u3001\u6539\u3001\u5220\u8BA2\u9605\u5730\u5740",
+            onPress: () => session2.toggleManageSubscriptions()
+          }
+        ] : [],
         {
           id: "update",
           title: "\u66F4\u65B0\u8BA2\u9605",
@@ -5571,28 +6415,15 @@
       ]
     });
   }
-  function windowView(session2, snapshot) {
-    switch (session2.view) {
-      case "connections":
-        return [connectionsSection(session2, snapshot)];
-      case "rules":
-        return rulesView(session2, snapshot);
-      case "logs":
-        return [logsSection(session2)];
-      case "subscriptions":
-        return [subscriptionsSection(session2, snapshot, true), commandSection(snapshot)];
-      default:
-        return snapshot.nodes.length > 0 ? [modeSection(session2, snapshot), nodesSection(session2, snapshot, windowNodeRows), ...snapshot.groups.length > 0 ? [groupsSection(session2, snapshot)] : []] : [];
-    }
-  }
   function ruleActions(session2, host) {
     const domain = registrableDomain(host.replace(/:\d+$/, ""));
     if (!domain) return [];
     return ["proxy", "direct", "reject"].map((policy) => ({ id: policy, title: `${domain} ${policyTitle(policy)}`, onPress: () => void session2.setPageRule(domain, policy) }));
   }
-  function connectionsSection(session2, snapshot) {
+  function failuresSection(session2) {
     const failures = session2.meter.recent(Date.now(), 200).filter((attempt) => attempt.outcome === "failed").slice(0, failedRows);
-    const failedSection = failures.length > 0 ? ui.section({
+    if (failures.length === 0) return null;
+    return ui.section({
       key: "failed-section",
       title: "\u5931\u8D25 \xB7 FAILED",
       tint: "alert",
@@ -5612,38 +6443,6 @@
           )
         })
       ]
-    }) : null;
-    const live = connectionsList(session2, snapshot);
-    return failedSection ? ui.stack({ key: "connections-stack", children: [failedSection, live] }) : live;
-  }
-  function connectionsList(session2, snapshot) {
-    const data = session2.connections;
-    const list2 = data ? [...data.connections].sort((a, b) => b.start - a.start).slice(0, connectionRows) : [];
-    const trailing = data ? `${data.connections.length} \u6761 \xB7 \u2193 ${formatBytes(data.downloadTotal)}  \u2191 ${formatBytes(data.uploadTotal)}` : void 0;
-    return ui.section({
-      key: "connections-section",
-      title: "\u8FDE\u63A5 \xB7 CONNECTIONS",
-      ...trailing ? { trailing } : {},
-      children: [
-        ui.list({
-          key: "connections",
-          children: list2.map(
-            (connection) => ui.row({
-              key: `conn:${connection.id}`,
-              symbol: connection.chains.includes("direct") ? "arrow.right" : "point.3.connected.trianglepath.dotted",
-              title: connection.host || "\uFF08\u6CA1\u6709\u4E3B\u673A\u540D\uFF09",
-              subtitle: [connection.chains[0] ?? "", connection.network, `\u2193 ${formatBytes(connection.download)} \u2191 ${formatBytes(connection.upload)}`, connection.rule, connection.process.split("/").pop() ?? ""].filter((part) => part.length > 0).join(" \xB7 "),
-              actions: ruleActions(session2, connection.host)
-            })
-          ),
-          emptyState: ui.empty({
-            key: "no-connections",
-            symbol: "point.3.connected.trianglepath.dotted",
-            title: snapshot.phase === "running" ? "\u6B64\u523B\u6CA1\u6709\u8FDE\u63A5" : "\u4EE3\u7406\u6CA1\u5F00",
-            hint: snapshot.phase === "running" ? "\u6BCF\u79D2\u5237\u65B0\u4E00\u6B21\u3002" : "\u5F00\u542F\u4E4B\u540E\uFF0C\u7ECF\u8FC7\u4EE3\u7406\u7684\u6BCF\u4E00\u6761\u8FDE\u63A5\u90FD\u4F1A\u5217\u5728\u8FD9\u91CC\u3002"
-          })
-        })
-      ]
     });
   }
   function logsSection(session2) {
@@ -5654,13 +6453,32 @@
       key: "logs-section",
       title: "\u65E5\u5FD7 \xB7 LOGS",
       trailing: `${session2.logs.length} \u884C`,
-      actions: [{ id: "reload", title: "\u91CD\u8BFB", symbol: "arrow.clockwise", help: "\u91CD\u8BFB sing-box \u6700\u8FD1 500 \u884C\u8F93\u51FA", onPress: () => void session2.showView("logs") }],
+      actions: [{ id: "reload", title: "\u91CD\u8BFB", symbol: "arrow.clockwise", help: "\u91CD\u8BFB sing-box \u6700\u8FD1 500 \u884C\u8F93\u51FA", onPress: () => void session2.showView("processes") }],
       children: [ui.result({ key: "log-text", mono: true, copy: true, text, empty: "sing-box \u8FD8\u6CA1\u6709\u8F93\u51FA" })]
     });
   }
 
   // extensions/proxy/src/session.ts
+  var legacyViews = {
+    nodes: "policies",
+    subscriptions: "policies",
+    connections: "processes",
+    logs: "processes",
+    rules: "rules"
+  };
+  var internetTestURL = "https://www.apple.com/library/test/success.html";
+  var externalIPURL = "https://api.ipify.org?format=json";
+  var externalIPTTL = 5 * 60 * 1e3;
+  var internetEveryTicks = 30;
   var surgeProfilesDirectory = "~/Library/Application Support/Surge/Profiles";
+  function parseExternalIP(text) {
+    try {
+      const body = JSON.parse(text);
+      return typeof body.ip === "string" && /^[0-9a-fA-F.:]{3,45}$/.test(body.ip) ? body.ip : null;
+    } catch {
+      return null;
+    }
+  }
   var maximumLogLines = 500;
   var installWaitMs = 10 * 60 * 1e3;
   var chartPoints = 60;
@@ -5669,7 +6487,27 @@
       this.core = new ProxyCore(() => jarvis.ui.update());
       this.surface = "toolbox";
       this.snapshot = null;
-      this.view = "nodes";
+      this.view = "activity";
+      /** 工具箱「订阅」那一段展开了「管理订阅」（宿主画的地址列表，P-2）。 */
+      this.manageSubscriptions = false;
+      /** 「流量」卡看哪一份。 */
+      this.trafficScope = "all";
+      /** Top 10 看哪一类。 */
+      this.topCategory = "processes";
+      /** 此刻的主网络接口；没读过为 `null`。 */
+      this.network = null;
+      /** 外部 IP 与查到的时刻；`ip` 为 `null` = 查过但没查到。 */
+      this.externalIP = null;
+      /** 「Internet 延迟」：毫秒；`null` 测过但不通；`undefined` 还没测。 */
+      this.internetDelay = void 0;
+      /** 今天的流量（后台会话每分钟写一次存储，这里每 10 秒读一次）。 */
+      this.stats = null;
+      /** 本次开启以来的规则命中（同上）。 */
+      this.ruleHits = null;
+      /** 此刻的路由（规则页那张表）。 */
+      this.routes = null;
+      /** 每个程序此刻的速率（进程页）。 */
+      this.processes = [];
       /** 节点搜索框里的字。 */
       this.filter = "";
       /** 上一个动作的结果（页面上那一行）。 */
@@ -5689,6 +6527,8 @@
       /** 「规则」页里读到的当前页面；没读过为 `null`。 */
       this.currentPage = null;
       this.sample = null;
+      /** 上一次看到的订阅地址（换行拼起来）；还没看过为 `null`。 */
+      this.knownSubscriptions = null;
       this.generation = 0;
       this.unobserveDaemon = null;
       this.unobserveTunnel = null;
@@ -5706,9 +6546,14 @@
       const generation = this.generation;
       await this.core.migrateTunSelection();
       await this.refresh();
+      this.knownSubscriptions = null;
+      await this.checkSubscriptions();
       this.observe();
       if (!this.unwatch) this.unwatch = jarvis.preferences.onChange((changes) => void this.onPreferencesChanged(changes));
-      if (this.surface === "window") await this.loadLogs();
+      if (this.surface === "window") {
+        await this.loadLogs();
+        await this.loadDashboard(true);
+      }
       void this.loop(generation);
     }
     deactivate() {
@@ -5766,7 +6611,7 @@
         if (event.kind === "output") {
           this.logs = [...this.logs, ...event.lines].slice(-maximumLogLines);
           this.meter.ingestLines(event.lines, Date.now());
-          if (this.surface === "window" && this.view === "logs") jarvis.ui.update();
+          if (this.surface === "window" && this.view === "processes") jarvis.ui.update();
           return;
         }
         void this.onExit(event.expected, event.lines);
@@ -5808,6 +6653,8 @@
             const now = Date.now();
             const sample = { at: now, upload: snapshot.uploadTotal, download: snapshot.downloadTotal };
             this.rate = trafficRate(this.sample, sample) ?? this.rate;
+            const seconds = this.sample ? (now - this.sample.at) / 1e3 : 1;
+            this.processes = processRates(this.connections, snapshot, seconds);
             this.sample = sample;
             this.connections = snapshot;
             const effective = this.meter.ingestSnapshot(snapshot, now);
@@ -5821,9 +6668,86 @@
             jarvis.ui.update();
           }
         }
+        if (tick % 2 === 0 && this.editingSubscriptions() || tick % 10 === 0) await this.checkSubscriptions();
+        if (generation !== this.generation) return;
         const waitingInstall = this.installingSince !== null && tick % 2 === 0;
         if (waitingInstall || tick % 10 === 0) await this.refresh();
+        if (this.surface === "window" && tick % 10 === 0) await this.loadDashboard(tick % internetEveryTicks === 0);
       }
+    }
+    /** 订阅地址框此刻在不在屏幕上（工具箱「订阅」那一段展开着、或窗口在策略页）。 */
+    editingSubscriptions() {
+      if (this.surface === "window") return this.view === "policies";
+      return this.manageSubscriptions || this.snapshot?.subscriptionCount === 0;
+    }
+    /**
+     * 订阅地址变了没有（P-2）：地址进钥匙串，宿主不把它放进偏好变更通知，所以每 2 秒现问一次。
+     * 多了新地址（工具箱里刚填的、设置页里加的）就当场拉一遍；只是删了就重读状态。
+     */
+    async checkSubscriptions() {
+      let urls;
+      try {
+        urls = await this.core.subscriptionURLs();
+      } catch {
+        return;
+      }
+      const key = urls.join("\n");
+      const known = this.knownSubscriptions;
+      this.knownSubscriptions = key;
+      if (known === null || key === known) return;
+      const before = new Set(known.split("\n"));
+      const added = urls.some((url) => !before.has(url));
+      if (added && this.snapshot?.granted.includes("network.https")) await this.update();
+      else await this.refresh();
+    }
+    /**
+     * 窗口里「活动」「规则」两页要的那几样（P-3）：今天的统计与规则命中（后台写的存储）、此刻的路由、网络接口、外部 IP、Internet 延迟。
+     * 每一样读不出都只是那一格写「—」，不进错误屏。
+     * @param probe 这一次连网络接口与延迟也重测（开窗口时、每 30 秒）。
+     */
+    async loadDashboard(probe) {
+      const now = Date.now();
+      try {
+        const [stats, hits] = await Promise.all([jarvis.storage.get(storageKeys.statsToday), jarvis.storage.get(storageKeys.ruleHits)]);
+        this.stats = restoreDay(stats, now);
+        this.ruleHits = hits && typeof hits === "object" ? hits : null;
+      } catch {
+        this.stats = this.stats ?? restoreDay(void 0, now);
+      }
+      const snapshot = this.snapshot;
+      if (snapshot) {
+        try {
+          this.routes = await this.core.routeTable(snapshot);
+        } catch {
+          this.routes = null;
+        }
+      }
+      if (probe) {
+        try {
+          this.network = await networkStatus();
+        } catch {
+          this.network = null;
+        }
+        this.internetDelay = snapshot?.phase === "running" ? await this.core.internetLatency(internetTestURL) : void 0;
+      }
+      await this.loadExternalIP(now);
+      jarvis.ui.update();
+    }
+    /**
+     * 外部 IP：五分钟内查过就不再查（P-3）。经宿主的 `net.fetch`——它走系统此刻的路由，代理开着时查到的就是出口。
+     * @param now 此刻。
+     */
+    async loadExternalIP(now) {
+      if (this.externalIP && now - this.externalIP.at < externalIPTTL) return;
+      if (!this.snapshot?.granted.includes("network.https")) return;
+      let ip = null;
+      try {
+        const response = await jarvis.net.fetch(externalIPURL, { method: "GET" });
+        ip = response.status === 200 ? parseExternalIP(response.text) : null;
+      } catch {
+        ip = null;
+      }
+      this.externalIP = { ip, at: now };
     }
     /**
      * 跑一个动作：记下结果那一句、重读状态。
@@ -5876,20 +6800,89 @@
     }
     /**
      * 在工作区窗口里打开，并落在某一页。
-     * @param view 哪一页。
+     * @param view 哪一页（认旧页名：工具箱里「去窗口里看订阅 / 日志」那几处）。
      */
     openWindow(view) {
-      this.view = view;
+      this.view = legacyViews[view] ?? view;
       void jarvis.window.open().catch(() => void 0);
     }
     /**
-     * 换窗口里的页。
+     * 换窗口里的页（左边栏）。
      * @param view 哪一页。
      */
     async showView(view) {
       this.view = view;
       jarvis.ui.update();
-      if (view === "logs") await this.loadLogs();
+      if (view === "processes") await this.loadLogs();
+      if (view === "rules" || view === "activity") await this.loadDashboard(false);
+    }
+    /** 展开 / 收起工具箱「订阅」那一段的地址列表。 */
+    toggleManageSubscriptions() {
+      this.manageSubscriptions = !this.manageSubscriptions;
+      jarvis.ui.update();
+    }
+    /**
+     * 「流量」卡换一份。
+     * @param scope 全部 / 仅代理。
+     */
+    setTrafficScope(scope) {
+      this.trafficScope = scope;
+      jarvis.ui.update();
+    }
+    /**
+     * Top 10 换一类。
+     * @param category 进程与设备 / 域名 / 策略。
+     */
+    setTopCategory(category) {
+      this.topCategory = category;
+      jarvis.ui.update();
+    }
+    /**
+     * 「活动」页的「系统代理」开关（P-3）：开着时就是设 / 还原系统代理；关着时打开它 = 开启代理（开启时按偏好顺手设系统代理）。
+     * @param on 开还是关。
+     */
+    activitySystemProxy(on) {
+      if (this.snapshot?.phase === "running") return this.setSystemProxy(on);
+      return on ? this.toggle(true) : Promise.resolve();
+    }
+    /**
+     * 「活动」页的「增强模式」开关：开着时换内核；关着时打开它 = 记下要增强模式并开启代理，关掉只记下。
+     * @param on 开还是关。
+     */
+    activityTun(on) {
+      if (this.snapshot?.phase === "running" || !on) return this.setTun(on);
+      return this.run(async () => {
+        const result = await this.core.setTun(true);
+        if (!result.ok) return result;
+        return this.core.turnOn();
+      });
+    }
+    /**
+     * 策略页点一张节点卡（P-3）：选它，并只测它一个的延迟。
+     * @param name 节点名或「自动选择」。
+     */
+    pickNode(name) {
+      return this.run(async () => {
+        const result = await this.core.selectNode(name);
+        if (!result.ok) return result;
+        if (this.snapshot?.phase !== "running") return { ok: true, message: "" };
+        const tested = await this.core.testLatency([name]);
+        return tested.ok ? { ok: true, message: "" } : tested;
+      });
+    }
+    /**
+     * 策略页点导入的策略组里的一张卡：选它，并测它的延迟。
+     * @param group 组。
+     * @param member 组员 tag。
+     */
+    pickGroupMember(group, member) {
+      return this.run(async () => {
+        const result = await this.core.selectGroupMember(group, member);
+        if (!result.ok) return result;
+        if (this.snapshot?.phase !== "running") return { ok: true, message: "" };
+        const tested = await this.core.testLatency([member]);
+        return tested.ok ? { ok: true, message: "" } : tested;
+      });
     }
     setMode(mode) {
       return this.run(() => this.core.setMode(mode));
@@ -5976,6 +6969,7 @@
      */
     async command(id) {
       this.view = "rules";
+      void this.loadDashboard(false);
       jarvis.ui.update();
       if (id === "import-surge") await this.importSurge();
     }

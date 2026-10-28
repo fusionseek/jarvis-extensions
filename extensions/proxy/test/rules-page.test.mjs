@@ -33,7 +33,7 @@ const activate = async (surface = "window") => {
   await idle(scene);
 };
 const showRules = async () => {
-  await host.fire(byKey("view"), "change", "rules");
+  await host.fire(host.latest, "change", "rules");
   await idle(scene);
 };
 
@@ -57,7 +57,7 @@ scene.responses = { [JMS]: { status: 200, headers: {}, text: jmsSubscription } }
 
 test("窗口多一页「规则」：当前页面、页面规则、Surge 配置、内置", async () => {
   await activate();
-  assert.deepEqual(byKey("view").props.options.map((option) => option.value), ["nodes", "connections", "rules", "logs", "subscriptions"]);
+  assert.deepEqual(host.latest.props.items.map((item) => item.value), ["activity", "processes", "policies", "rules"]);
   await showRules();
   for (const key of ["current-page", "page-rules-section", "surge", "builtin-rules"]) assert.ok(byKey(key), key);
   assert.equal(byKey("page-rules").props.emptyState.props.title, "还没有页面规则");
@@ -146,5 +146,5 @@ test("窗口命令 import-surge（菜单栏点的）：开到「规则」页并�
   host.dispatch({ type: "command", context: { id: "import-surge", trigger: "page", granted: scene.granted, preferences: scene.preferences } });
   await idle(scene);
   assert.equal(scene.picks.length, picks + 1);
-  assert.equal(byKey("view").props.value, "rules");
+  assert.equal(host.latest.props.value, "rules");
 });

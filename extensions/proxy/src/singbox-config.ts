@@ -217,6 +217,84 @@ export function systemProxyBypass(surge: Pick<SurgeImport, "general"> | null | u
 }
 
 /**
+ * 一条路由规则从哪来（jarvis-mac `specs/20261028-191224-git-push-error-proxy-dashboard-issue-links` P-3：窗口「规则」页的「注释」一列）。
+ *
+ * - `plumbing`：嗅探、DNS 劫持、解析——让后面的规则认得出域名的那几条，不是分流规则，规则页不列；
+ * - `lan`：局域网直连；`mode`：出站模式「直连」「全局」；`page`：页面规则；
+ * - `surge`：导入的 Surge 规则（`index` 是它在导入结果里排第几，1 起）；`surgeFinal`：导入配置的 `FINAL` 是拒绝时那一条；
+ * - `china`：内置「中国大陆直连」那两个规则集。
+ */
+export type RuleOrigin =
+  | { kind: "plumbing" }
+  | { kind: "lan" }
+  | { kind: "mode"; mode: "direct" | "global" }
+  | { kind: "page" }
+  | { kind: "surge"; index: number }
+  | { kind: "surgeFinal" }
+  | { kind: "china" };
+
+/** 一份配置里的路由：规则与它们各自的来历（一一对应）、兜底出站、要下载 / 内联的规则集。 */
+export interface RoutePlan {
+  rules: Record<string, unknown>[];
+  origins: RuleOrigin[];
+  /** 兜底出站的 tag。 */
+  final: string;
+  /** 兜底来自导入的 Surge 配置（`FINAL`）还是默认的「节点选择」。 */
+  finalFromSurge: boolean;
+  remoteSets: { tag: string; url: string }[];
+  inlineSets: Record<string, unknown>[];
+}
+
+/**
+ * 路由那一段（{@link buildConfig} 与规则页同一份真源：规则页列的就是交给 sing-box 的那几条，顺序与序号一致）。
+ * @param options 选项。
+ * @returns 路由。
+ */
+export function routePlan(options: ConfigOptions): RoutePlan {
+  const tunnel = options.kernel === "tunnel";
+  const surge = options.surge ?? null;
+  const tags = groupTags(surge, dedupeNodeNames(options.nodes));
+  const rules: Record<string, unknown>[] = [{ action: "sniff" }];
+  const origins: RuleOrigin[] = [{ kind: "plumbing" }];
+  const push = (origin: RuleOrigin, ...added: Record<string, unknown>[]) => {
+    for (const rule of added) {
+      rules.push(rule);
+      origins.push(origin);
+    }
+  };
+  // TUN：发往 53 的查询由 sing-box 自己答（fake-ip / 分流解析），排在一切规则之前——不然一条「直连」规则会把它原样放出去。
+  if (tunnel) push({ kind: "plumbing" }, { protocol: "dns", action: "hijack-dns" });
+  push({ kind: "lan" }, { ip_is_private: true, domain_suffix: ["localhost", "local"], action: "route", outbound: DIRECT_TAG });
+  push({ kind: "mode", mode: "direct" }, { clash_mode: clashModeNames.direct, action: "route", outbound: DIRECT_TAG });
+  push({ kind: "mode", mode: "global" }, { clash_mode: clashModeNames.global, action: "route", outbound: SELECTOR_TAG });
+  push({ kind: "page" }, ...compilePageRules(options.pageRules ?? [], tags));
+
+  const remoteSets: { tag: string; url: string }[] = [];
+  const inlineSets: Record<string, unknown>[] = [];
+  let final = SELECTOR_TAG;
+  let finalFromSurge = false;
+  if (surge) {
+    const compiled = compileSurgeRules(surge.rules, tags, options.ruleSets ?? {});
+    compiled.rules.forEach((rule, index) => push(compiled.origins[index] ?? { kind: "plumbing" }, rule));
+    for (const tag of compiled.usedRuleSets) inlineSets.push({ type: "inline", tag, rules: options.ruleSets?.[tag]?.rules ?? [] });
+    for (const code of surge.geoip) remoteSets.push({ tag: `geoip-${code}`, url: geoipRuleSetURL(code) });
+    if (surge.final) {
+      finalFromSurge = true;
+      if (surge.final.kind === "reject") push({ kind: "surgeFinal" }, ruleFor({}, surge.final, tags));
+      else final = outboundOf(surge.final, tags);
+    }
+  } else if (options.chinaRules) {
+    push(
+      { kind: "china" },
+      { rule_set: "geosite-cn", action: "route", outbound: DIRECT_TAG },
+      { rule_set: "geoip-cn", action: "route", outbound: DIRECT_TAG },
+    );
+    remoteSets.push(...chinaRuleSets);
+  }
+  return { rules, origins, final, finalFromSurge, remoteSets, inlineSets };
+}
+
+/**
  * 生成配置。
  *
  * 规则的顺序（第一条命中即定）：
@@ -247,35 +325,8 @@ export function buildConfig(options: ConfigOptions): Record<string, unknown> {
   const tags = groupTags(surge, nodes);
   const directDNS = tunnel ? "dns-direct" : LOCAL_DNS_TAG;
 
-  const rules: Record<string, unknown>[] = [{ action: "sniff" }];
-  // TUN：发往 53 的查询由 sing-box 自己答（fake-ip / 分流解析），排在一切规则之前——不然一条「直连」规则会把它原样放出去。
-  if (tunnel) rules.push({ protocol: "dns", action: "hijack-dns" });
-  rules.push(
-    { ip_is_private: true, domain_suffix: ["localhost", "local"], action: "route", outbound: DIRECT_TAG },
-    { clash_mode: clashModeNames.direct, action: "route", outbound: DIRECT_TAG },
-    { clash_mode: clashModeNames.global, action: "route", outbound: SELECTOR_TAG },
-  );
-  rules.push(...compilePageRules(options.pageRules ?? [], tags));
-
-  const remoteSets: { tag: string; url: string }[] = [];
-  const inlineSets: Record<string, unknown>[] = [];
-  let final = SELECTOR_TAG;
-  if (surge) {
-    const compiled = compileSurgeRules(surge.rules, tags, options.ruleSets ?? {});
-    rules.push(...compiled.rules);
-    for (const tag of compiled.usedRuleSets) inlineSets.push({ type: "inline", tag, rules: options.ruleSets?.[tag]?.rules ?? [] });
-    for (const code of surge.geoip) remoteSets.push({ tag: `geoip-${code}`, url: geoipRuleSetURL(code) });
-    if (surge.final) {
-      if (surge.final.kind === "reject") rules.push(ruleFor({}, surge.final, tags));
-      else final = outboundOf(surge.final, tags);
-    }
-  } else if (options.chinaRules) {
-    rules.push(
-      { rule_set: "geosite-cn", action: "route", outbound: DIRECT_TAG },
-      { rule_set: "geoip-cn", action: "route", outbound: DIRECT_TAG },
-    );
-    remoteSets.push(...chinaRuleSets);
-  }
+  const plan = routePlan(options);
+  const { rules, remoteSets, inlineSets, final } = plan;
 
   const route: Record<string, unknown> = {
     rules,
@@ -416,11 +467,12 @@ export function compileSurgeRules(
   rules: readonly ImportedRule[],
   tags: ReadonlyMap<string, string>,
   ruleSets: Readonly<Record<string, ConvertedList>>,
-): { rules: Record<string, unknown>[]; usedRuleSets: string[] } {
+): { rules: Record<string, unknown>[]; usedRuleSets: string[]; origins: RuleOrigin[]; count: number } {
   const out: Record<string, unknown>[] = [];
+  const origins: RuleOrigin[] = [];
   const used: string[] = [];
   let resolved = false;
-  for (const rule of rules) {
+  for (const [position, rule] of rules.entries()) {
     let match: Record<string, unknown>;
     let resolve: boolean;
     if (rule.kind === "ruleSet") {
@@ -435,11 +487,13 @@ export function compileSurgeRules(
     }
     if (resolve && !resolved) {
       out.push({ action: "resolve" });
+      origins.push({ kind: "plumbing" });
       resolved = true;
     }
     out.push(ruleFor(match, rule.policy, tags));
+    origins.push({ kind: "surge", index: position + 1 });
   }
-  return { rules: out, usedRuleSets: used };
+  return { rules: out, usedRuleSets: used, origins, count: rules.length };
 }
 
 /**

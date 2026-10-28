@@ -717,6 +717,9 @@ function recentSubmenu(input: MenuInput): MenuBarItem | null {
  */
 export function buildMenuModel(input: MenuInput): MenuBarModel {
   const running = input.phase === "running";
+  // 代理没开就不画图标（jarvis-mac `specs/20261028-191224-git-push-error-proxy-dashboard-issue-links` P-1，仓库主人：「代理没有打开时，菜单图标去掉」）。
+  // 正在开启 / 停止（`busy`）时照画：那一两秒里图标先没、再出现，比转着的图标更让人以为出了事。
+  const hidden = !running && input.busy === null;
   const tunActive = running && input.kernel === "tunnel";
   const symbol = tunActive ? "network.badge.shield.half.filled" : running ? "network" : input.phase === "failed" ? "exclamationmark.triangle" : "network.slash";
   const groups = input.groups ?? [];
@@ -847,7 +850,7 @@ export function buildMenuModel(input: MenuInput): MenuBarModel {
   }
   items.push(...groupItems, ...tail);
 
-  const model: MenuBarModel = { symbol, items, tooltip: menuText(`代理 · ${statusLine(input)}`) };
+  const model: MenuBarModel = { hidden, symbol, items, tooltip: menuText(`代理 · ${statusLine(input)}`) };
   if (running && input.preferences.showSpeed) {
     // 两行、每行恰好「箭头 + 4 个字符」：宿主用等宽字体画，读数怎么变状态项都不伸缩（W-2）。
     const shown = input.titleRate ?? (reading ? { upload: reading.upload, download: reading.download } : input.rate ? { upload: input.rate.up, download: input.rate.down } : null);

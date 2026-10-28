@@ -31,7 +31,7 @@ import {
   runLimited,
   type ConnectionsSnapshot,
 } from "./clash.js";
-import { dedupeNodeNames, SELECTOR_TAG, URLTEST_TAG, type ProxyNode } from "./nodes.js";
+import { dedupeNodeNames, DIRECT_TAG, SELECTOR_TAG, URLTEST_TAG, type ProxyNode } from "./nodes.js";
 import { normalizePageRules, pageDomains, removePageRule, upsertPageRule, urlHost, type PageRule, type PolicyRef, type SeenConnection } from "./rules.js";
 import {
   buildConfig,
@@ -44,6 +44,8 @@ import {
   type ConfigOptions,
   type KernelKind,
   type ProxyMode,
+  routePlan,
+  type RoutePlan,
 } from "./singbox-config.js";
 import {
   describeFailure,
@@ -1126,6 +1128,46 @@ export class ProxyCore {
       return { ok: true, message: `测完 ${targets.length} 个节点，${reachable} 个连得上` };
     } finally {
       this.setBusy(null);
+    }
+  }
+
+  /**
+   * 此刻的路由（窗口「规则」页那张表，jarvis-mac `specs/20261028-191224-git-push-error-proxy-dashboard-issue-links` P-3）：
+   * 与开启时交给 sing-box 的同一份算法、同一份输入（页面规则、导入的配置、拉到的外部规则集）；这一份有没有分流按在跑的那一份记的为准。
+   * 改过规则还没重新载入时，这里列的是新的那一份——页面上「重新载入之后生效」那张卡会说清楚。
+   * @param snapshot 快照。
+   * @returns 路由。
+   */
+  async routeTable(snapshot: Snapshot): Promise<RoutePlan> {
+    const rules = await this.ruleInputs(snapshot.preferences);
+    return routePlan({
+      nodes: snapshot.nodes,
+      mixedPort: snapshot.control?.mixedPort ?? snapshot.preferences.mixedPort,
+      controlPort: snapshot.control?.controlPort ?? snapshot.preferences.controlPort,
+      controlSecret: snapshot.control?.secret ?? "-",
+      mode: snapshot.selection.mode,
+      testURL: snapshot.preferences.testURL,
+      selected: snapshot.selection.node,
+      chinaRules: snapshot.control ? snapshot.control.chinaRules && !snapshot.control.ruleSetFallback : snapshot.preferences.chinaRules,
+      kernel: snapshot.kernel ?? snapshot.control?.kernel ?? "daemon",
+      dnsMode: snapshot.preferences.dnsMode,
+      pageRules: rules.pageRules,
+      surge: rules.surge,
+      ruleSets: rules.ruleSets,
+      groupSelection: snapshot.selection.groups,
+    });
+  }
+
+  /**
+   * 经直连出站测一次「Internet 延迟」（窗口「活动」页那张卡）：本机到外网通不通、要多久，不经过任何节点。
+   * @param url 测试地址（https）。
+   * @returns 毫秒；没在跑、超时、连不上为 `null`。
+   */
+  async internetLatency(url: string): Promise<number | null> {
+    try {
+      return parseDelay(await this.clash("GET", delayPath(DIRECT_TAG, url), undefined, requestTimeoutSeconds));
+    } catch {
+      return null;
     }
   }
 

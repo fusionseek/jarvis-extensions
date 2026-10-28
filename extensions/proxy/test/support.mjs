@@ -15,7 +15,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 export const extensionRoot = join(here, "..");
 
 /**
- * 现编 `src/` 的纯模块（`nodes`、`subscription`、`singbox-config`、`clash`、`store`、`status`、`surge`、`rules`、`traffic`）。
+ * 现编 `src/` 的纯模块（`nodes`、`subscription`、`singbox-config`、`clash`、`store`、`status`、`surge`、`rules`、`traffic`、`stats`、`rule-table`）。
  * @returns 模块命名空间。
  */
 export async function loadSource() {
@@ -31,6 +31,8 @@ export async function loadSource() {
         'export * from "./src/surge.ts";',
         'export * from "./src/rules.ts";',
         'export * from "./src/traffic.ts";',
+        'export * from "./src/stats.ts";',
+        'export * from "./src/rule-table.ts";',
       ].join("\n"),
       resolveDir: extensionRoot,
       loader: "ts",
