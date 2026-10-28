@@ -1,4 +1,4 @@
-// jarvis-extension bundle · send-to-phone@2.0.9 · sdk 2.9.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · send-to-phone@2.0.9 · sdk 2.10.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -107,7 +107,7 @@
   };
 
   // sdk/src/index.ts
-  var sdkVersion = "2.9.0";
+  var sdkVersion = "2.10.0";
   var Cancellation = class {
     constructor() {
       this.listeners = [];
@@ -511,7 +511,9 @@
     system: namespaced("system"),
     menuBar: namespaced("menuBar"),
     daemon: namespaced("daemon"),
-    systemProxy: namespaced("systemProxy")
+    systemProxy: namespaced("systemProxy"),
+    tunnel: namespaced("tunnel"),
+    browser: namespaced("browser")
   };
   var sync = {
     text: syncNamespaced("text"),
@@ -648,7 +650,8 @@
     },
     files: {
       stat: (path) => call.files("stat", { path }),
-      tail: (path, offset) => call.files("tail", { path, offset })
+      tail: (path, offset) => call.files("tail", { path, offset }),
+      pick: (request) => call.files("pick", request ?? {})
     },
     terminal: {
       run: (scriptId) => call.terminal("run", { id: scriptId })
@@ -660,6 +663,7 @@
       status: (id, executable) => call.daemon("status", executable === void 0 ? { id } : { id, executable }),
       logs: (id) => call.daemon("logs", { id }),
       request: (request) => call.daemon("request", request),
+      reload: (request) => call.daemon("reload", request),
       observe: (id, listener) => runtime.subscribe("daemon", "observe", listener, { id })
     },
     // 系统代理（SDK 2.9）：主机由宿主写死 127.0.0.1，扩展只给端口与例外。
@@ -667,6 +671,23 @@
       status: () => call.systemProxy("status"),
       enable: (request) => call.systemProxy("enable", request),
       disable: () => call.systemProxy("disable")
+    },
+    // TUN 增强模式（SDK 2.10）：入参原样上线缆；守卫、TUN 段、网络助手的安装都在宿主。
+    tunnel: {
+      status: (executable) => call.tunnel("status", executable === void 0 ? {} : { executable }),
+      start: (request) => call.tunnel("start", request),
+      reload: (config) => call.tunnel("reload", { config }),
+      stop: () => call.tunnel("stop"),
+      logs: () => call.tunnel("logs"),
+      request: (request) => call.tunnel("request", request),
+      observe: (listener) => runtime.subscribe("tunnel", "observe", listener)
+    },
+    // 悬浮球那一层（SDK 2.10）：模型原样就是 params——撤掉时线缆上是 null（不走 namespaced 那个 `?? {}`：{} 会被宿主当成一份坏模型）。
+    orb: {
+      update: (model) => runtime.invoke("orb", "update", model)
+    },
+    browser: {
+      activeTab: () => call.browser("activeTab")
     },
     git: {
       repositories: () => call.git("repositories"),

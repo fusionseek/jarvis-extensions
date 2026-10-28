@@ -4,26 +4,30 @@
   "version": "1.0.0",
   "name": "代理",
   "symbol": "network",
-  "description": "用你自己装的 sing-box 跑你的订阅：菜单栏一枚图标随手开关、切节点、换模式，开着时把系统代理指向它。认 Shadowsocks、VMess、VLESS（含 REALITY）、Trojan、Hysteria2、TUIC 分享链接与 sing-box JSON，局域网与中国大陆直连。",
+  "description": "用你自己装的 sing-box 跑你的订阅：菜单栏随手开关、切节点与策略组，系统代理或增强模式（TUN）接管整机网络；能导入 Surge 配置的规则，给正在看的网页一键加规则，悬浮球上看有效流量与成败。认 SS、VMess、VLESS（含 REALITY）、Trojan、Hysteria2、TUIC 与 sing-box JSON。",
   "author": {
     "name": "fusionseek",
     "github": "fusionseek"
   },
   "main": "dist/extension.js",
-  "sdk": "^2.9.0",
+  "sdk": "^2.10.0",
   "minimumJarvisVersion": "3.2.7",
   "capabilities": [
     {
       "id": "process.daemon",
-      "reason": "在后台常驻运行你装好的 sing-box，并经本机控制口切节点、测速"
+      "reason": "在后台常驻运行你装好的 sing-box（系统代理模式），经本机控制口切节点、测速"
     },
     {
       "id": "system.proxy",
       "reason": "开着时把系统代理指向本机的 sing-box，关掉或退出时还原"
     },
     {
+      "id": "network.tunnel",
+      "reason": "增强模式：以管理员身份运行 sing-box 接管整机网络，命令行工具也走它"
+    },
+    {
       "id": "network.https",
-      "reason": "拉取你在设置里填的订阅地址"
+      "reason": "拉取你在设置里填的订阅地址与规则集地址"
     },
     {
       "id": "terminal.run",
@@ -36,22 +40,43 @@
     {
       "id": "clipboard.write",
       "reason": "菜单栏「复制终端代理命令」把 export 那一行放进剪贴板"
+    },
+    {
+      "id": "browser.activeTab",
+      "reason": "读前台浏览器当前标签的地址，给这个网站一键加「走代理 / 直连 / 拒绝」"
+    },
+    {
+      "id": "files.pick",
+      "reason": "导入 Surge 配置时让你挑那份 .conf"
     }
   ],
   "network": {
-    "preferenceHosts": ["subscriptions"]
+    "preferenceHosts": [
+      "subscriptions",
+      "ruleSets"
+    ]
   },
   "process": {
     "daemons": [
       {
         "id": "sing-box",
         "executable": "sing-box",
-        "arguments": ["run", "-c", "{config}", "-D", "{workdir}"],
+        "arguments": [
+          "run",
+          "-c",
+          "{config}",
+          "-D",
+          "{workdir}"
+        ],
         "config": {
           "fileName": "config.json"
-        }
+        },
+        "reload": "SIGHUP"
       }
     ],
+    "tunnel": {
+      "executable": "sing-box"
+    },
     "terminal": [
       {
         "id": "install",
@@ -90,27 +115,59 @@
   },
   "contributes": {
     "toolbox": {
-      "subtitle": "开关代理、换模式、切节点",
-      "keywords": ["proxy", "sing-box", "vpn", "订阅", "vless", "shadowsocks", "clash", "测速"]
+      "subtitle": "开关代理与增强模式、切节点",
+      "keywords": [
+        "proxy",
+        "sing-box",
+        "vpn",
+        "tun",
+        "订阅",
+        "vless",
+        "shadowsocks",
+        "clash",
+        "surge",
+        "测速"
+      ]
     },
     "window": {
-      "subtitle": "节点、连接、日志与订阅：sing-box 的完整视图",
-      "keywords": ["proxy", "vpn", "流量"]
+      "subtitle": "节点、连接、规则、日志与订阅：sing-box 的完整视图",
+      "keywords": [
+        "proxy",
+        "vpn",
+        "流量"
+      ]
     },
     "menuBar": {
       "title": "代理",
       "symbol": "network"
     },
+    "orb": {
+      "title": "代理流量"
+    },
     "commands": [
       {
         "id": "toggle",
         "title": "开关代理",
-        "description": "不带参数切换；/proxy 开、/proxy 关 指定",
+        "description": "不带参数切换；/proxy 开、/proxy 关、/proxy tun、/proxy 系统代理",
         "slash": {
           "keyword": "proxy",
-          "aliases": ["代理"]
+          "aliases": [
+            "代理"
+          ]
         },
         "presentation": "silent"
+      },
+      {
+        "id": "import-surge",
+        "title": "导入 Surge 配置",
+        "description": "挑一份 Surge 的 .conf，把规则与策略组转成 sing-box",
+        "presentation": "window"
+      },
+      {
+        "id": "rules",
+        "title": "规则",
+        "description": "打开「代理」窗口的规则页：当前页面、页面规则、导入的 Surge 配置",
+        "presentation": "window"
       }
     ],
     "settings": {
@@ -149,6 +206,51 @@
           "default": true
         },
         {
+          "key": "tun",
+          "type": "toggle",
+          "title": "开启时用增强模式（TUN）",
+          "description": "以管理员身份运行 sing-box 接管整机网络，命令行工具与不认系统代理的应用也走它。第一次打开要输一次管理员密码装网络助手。菜单里拨过之后以那一次为准，直到再改这一项",
+          "default": false
+        },
+        {
+          "key": "dnsMode",
+          "type": "select",
+          "title": "增强模式的 DNS",
+          "description": "fake-ip 与 Surge 增强模式相同：域名规则对每个应用都有效；真实 IP 兼容性更好，但只靠嗅探认域名",
+          "default": "fakeip",
+          "options": [
+            {
+              "value": "fakeip",
+              "title": "fake-ip（推荐）"
+            },
+            {
+              "value": "realip",
+              "title": "真实 IP"
+            }
+          ]
+        },
+        {
+          "key": "tunStack",
+          "type": "select",
+          "title": "增强模式的协议栈（高级）",
+          "description": "mixed：TCP 走系统栈、UDP 走 gVisor。遇到个别应用连不上时再换",
+          "default": "mixed",
+          "options": [
+            {
+              "value": "mixed",
+              "title": "mixed（推荐）"
+            },
+            {
+              "value": "system",
+              "title": "system"
+            },
+            {
+              "value": "gvisor",
+              "title": "gVisor"
+            }
+          ]
+        },
+        {
           "key": "autoStart",
           "type": "toggle",
           "title": "启动 Jarvis 时自动开启",
@@ -161,6 +263,22 @@
           "title": "中国大陆直连",
           "description": "中国大陆的网站与 IP 不经过节点。规则集第一次开启时直连下载（jsDelivr 镜像），之后存在本机",
           "default": true
+        },
+        {
+          "key": "useSurgeRules",
+          "type": "toggle",
+          "title": "使用导入的 Surge 规则",
+          "description": "导入过 Surge 配置时，用它的规则与策略组代替内置的「中国大陆直连」。关掉回到内置规则，导入的那份留着",
+          "default": true
+        },
+        {
+          "key": "ruleSets",
+          "type": "urlList",
+          "title": "规则集地址",
+          "description": "导入的 Surge 配置里 RULE-SET / DOMAIN-SET 的地址：贴进来的这几条才会去拉（一次贴多行会拆成多条）",
+          "maxItems": 20,
+          "secret": false,
+          "placeholder": "https://"
         },
         {
           "key": "testURL",
@@ -186,9 +304,18 @@
           "description": "在后台按时重新拉订阅；节点变了且代理开着时会重新开启一次",
           "default": "daily",
           "options": [
-            { "value": "never", "title": "不自动" },
-            { "value": "6h", "title": "每 6 小时" },
-            { "value": "daily", "title": "每天" }
+            {
+              "value": "never",
+              "title": "不自动"
+            },
+            {
+              "value": "6h",
+              "title": "每 6 小时"
+            },
+            {
+              "value": "daily",
+              "title": "每天"
+            }
           ]
         },
         {

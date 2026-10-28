@@ -53,7 +53,7 @@ async function reset() {
   storage.map.delete("failure");
 }
 
-test("没授权：一张说明卡，按「授权」一次问完全部六项", async () => {
+test("没授权：一张说明卡，按「授权」一次问完全部九项", async () => {
   await reset();
   scene.granted = [];
   await activate();

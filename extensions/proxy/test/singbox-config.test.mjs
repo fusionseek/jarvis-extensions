@@ -23,6 +23,13 @@ const {
   URLTEST_TAG,
   DIRECT_TAG,
   RULE_SET_HTTP_CLIENT_TAG,
+  convertSurgeProfile,
+  convertSurgeList,
+  tunnelExcludeRoutes,
+  systemProxyBypass,
+  groupTags,
+  realIPMatch,
+  fakeIPRanges,
 } = await loadSource();
 
 const SING_BOX = "/opt/homebrew/bin/sing-box";
@@ -108,6 +115,7 @@ test("路由：嗅探 → 私有地址直连 → 模式规则 → final 节点�
     ],
     final: SELECTOR_TAG,
     default_domain_resolver: "local",
+    find_process: true,
   });
   assert.deepEqual(config.dns, { servers: [{ type: "local", tag: "local" }] });
   assert.equal(config.http_clients, undefined, "不分流时不需要下载任何东西");
@@ -195,6 +203,139 @@ for (const chinaRules of [false, true]) {
       assert.equal(everyProtocol.nodes.length, 15);
       const nodes = [...jmsNodes, ...everyProtocol.nodes];
       const { status, output } = singBoxCheck(buildConfig(options({ nodes, chinaRules, selected: jmsNodes[1].name })));
+      assert.equal(status, 0, output);
+      assert.doesNotMatch(output, /WARN|ERROR|FATAL|deprecated/i, output);
+    },
+  );
+}
+
+// MARK: - 增强模式（TUN）与导入的 Surge 规则（jarvis-mac specs/20261028-111714-proxy-tun-orb-traffic-page-rules T-7 / T-9）
+
+/** 一份合成的 Surge 配置（主机与 IP 都是编的）。 */
+const surgeProfile = `[General]
+dns-server = 180.184.1.1, system
+tun-excluded-routes = 203.0.113.7/32
+bypass-tun = 192.168.0.0/16
+always-real-ip = *.msftconnecttest.com, stun.*.*
+skip-proxy = 127.0.0.1, localhost, *
+[Proxy Group]
+Proxies = select, Auto, DIRECT
+Auto = url-test, a, url=http://x
+[Rule]
+DOMAIN-SUFFIX,google.com,Proxies
+DOMAIN,ad.example.com,REJECT
+PROCESS-NAME,Telegram,Telegram
+IP-CIDR,91.108.4.0/22,Telegram,no-resolve
+RULE-SET,https://rules.example.com/ForceProxy.list,Proxies
+IP-CIDR,10.10.0.0/16,DIRECT
+GEOIP,CN,DIRECT
+FINAL,Proxies
+[Host]
+router.example.lan = 192.168.1.1
+intra.example.com = server:10.0.0.53
+`;
+const surge = convertSurgeProfile(surgeProfile, "synthetic.conf", 1);
+const ruleSets = { [surge.ruleSets[0].tag]: convertSurgeList("DOMAIN-SUFFIX,force.example\nIP-CIDR,192.0.2.0/24,no-resolve\n", "rule-set") };
+const pageRules = [
+  { id: "domain_suffix:github.com", kind: "domain_suffix", value: "github.com", policy: "direct", createdAt: 1 },
+  { id: "domain_suffix:x.example.com", kind: "domain_suffix", value: "x.example.com", policy: "group:Telegram", createdAt: 1 },
+];
+
+/** 宿主的网络助手会填进去的 TUN 段（扩展的配置里不许有它，check 时补上演一遍宿主）。 */
+const hostTun = (routes) => ({ type: "tun", tag: "tun-in", address: ["172.19.0.1/30", "fdfe:dcba:9876::1/126"], mtu: 9000, auto_route: true, strict_route: true, stack: "mixed", route_exclude_address: routes });
+
+test("TUN：不写 tun 入站（宿主填）、DNS 劫持排第一、出站绑网卡、按进程分流开着", () => {
+  const config = buildConfig(options({ kernel: "tunnel" }));
+  assert.deepEqual(config.inbounds, [{ type: "mixed", tag: "mixed-in", listen: "127.0.0.1", listen_port: 7890 }], "系统代理与终端命令仍指向它");
+  assert.deepEqual(config.route.rules.slice(0, 2), [{ action: "sniff" }, { protocol: "dns", action: "hijack-dns" }]);
+  assert.equal(config.route.auto_detect_interface, true);
+  assert.equal(config.route.find_process, true);
+  assert.equal(config.route.default_domain_resolver, "dns-direct", "不用系统解析器：它的查询会绕进 TUN 再被劫持回来");
+  assert.deepEqual(config.experimental.cache_file, { enabled: true, store_fakeip: true });
+  const servers = Object.fromEntries(config.dns.servers.map((server) => [server.tag, server]));
+  assert.deepEqual(servers["dns-direct"], { type: "udp", tag: "dns-direct", server: "223.5.5.5" });
+  assert.deepEqual(servers["dns-proxy"], { type: "https", tag: "dns-proxy", server: "1.1.1.1", detour: SELECTOR_TAG });
+  assert.deepEqual(servers["dns-fakeip"], { type: "fakeip", tag: "dns-fakeip", inet4_range: fakeIPRanges.inet4, inet6_range: fakeIPRanges.inet6 });
+  assert.deepEqual(config.dns.rules.at(-1), { query_type: ["A", "AAAA"], action: "route", server: "dns-fakeip" });
+  assert.equal(config.dns.final, "dns-proxy");
+  assert.ok(!JSON.stringify(config).includes('"output"'), "不写日志文件");
+  assert.ok(!/_path"|"path"/.test(JSON.stringify(config)), "不带任何文件路径（宿主守卫会拒）");
+});
+
+test("TUN 真实 IP：没有 fakeip 服务器与假 IP 规则，cache 不存假 IP", () => {
+  const config = buildConfig(options({ kernel: "tunnel", dnsMode: "realip" }));
+  assert.ok(!config.dns.servers.some((server) => server.type === "fakeip"));
+  assert.ok(!config.dns.rules.some((rule) => rule.server === "dns-fakeip"));
+  assert.deepEqual(config.experimental.cache_file, { enabled: true });
+});
+
+test("always-real-ip 的写法：*. 是后缀，别处有 * 的是正则，其余是完整域名", () => {
+  assert.deepEqual(realIPMatch(["*.msftconnecttest.com", "time.apple.com", "stun.*.*", "*"]), {
+    domain: ["time.apple.com"],
+    domain_suffix: ["msftconnecttest.com"],
+    domain_regex: ["^stun\\.[^.]+\\.[^.]+$"],
+  });
+});
+
+test("导入的 Surge 规则：页面规则在最前、导入的规则替代内置分流、resolve 插在第一条要解析的 IP 规则之前、FINAL", () => {
+  const config = buildConfig(options({ chinaRules: true, surge, ruleSets, pageRules }));
+  const rules = config.route.rules;
+  const tags = groupTags(surge, jmsNodes);
+  assert.deepEqual(rules.slice(4, 6), [
+    { domain_suffix: ["github.com"], action: "route", outbound: DIRECT_TAG },
+    { domain_suffix: ["x.example.com"], action: "route", outbound: tags.get("Telegram") },
+  ]);
+  const after = rules.slice(6);
+  assert.deepEqual(after[0], { domain_suffix: ["google.com"], action: "route", outbound: "Proxies" });
+  assert.deepEqual(after[1], { domain: ["ad.example.com"], action: "reject" });
+  assert.deepEqual(after[2], { process_name: ["Telegram"], action: "route", outbound: "Telegram" });
+  assert.deepEqual(after[3], { ip_cidr: ["91.108.4.0/22"], action: "route", outbound: "Telegram" }, "no-resolve 的不触发解析");
+  assert.deepEqual(after[4], { rule_set: [surge.ruleSets[0].tag], action: "route", outbound: "Proxies" }, "规则集里的 IP 规则都带 no-resolve：不触发");
+  assert.deepEqual(after[5], { action: "resolve" });
+  assert.deepEqual(after[6], { ip_cidr: ["10.10.0.0/16"], action: "route", outbound: DIRECT_TAG });
+  assert.deepEqual(after[7], { rule_set: ["geoip-cn"], action: "route", outbound: DIRECT_TAG });
+  assert.equal(config.route.final, "Proxies");
+  assert.ok(!rules.some((rule) => rule.rule_set?.[0] === "geosite-cn"), "导入的配置自带分流：内置的不加");
+  assert.deepEqual(
+    config.route.rule_set.map((set) => [set.type, set.tag]),
+    [["remote", "geoip-cn"], ["inline", surge.ruleSets[0].tag]],
+  );
+  const proxies = config.outbounds.find((outbound) => outbound.tag === "Proxies");
+  assert.deepEqual(proxies, { type: "selector", tag: "Proxies", outbounds: ["Auto", DIRECT_TAG, SELECTOR_TAG, URLTEST_TAG], default: "Auto", interrupt_exist_connections: true });
+  assert.ok(config.dns.rules.some((rule) => rule.server === "dns-hosts"), "[Host] 的 IP 进 hosts");
+  assert.ok(config.dns.servers.some((server) => server.type === "udp" && server.server === "10.0.0.53"), "server:IP 单开一台");
+});
+
+test("没拉到的外部规则集：引用它的那条规则这一次跳过，配置照样起得来", () => {
+  const config = buildConfig(options({ surge }));
+  assert.ok(!config.route.rules.some((rule) => rule.rule_set?.[0]?.startsWith("surge-")));
+  assert.ok(!(config.route.rule_set ?? []).some((set) => set.type === "inline"));
+});
+
+test("不进 TUN 的路由与系统代理例外：默认局域网段 + 导入的；单独一个 * 不要", () => {
+  assert.deepEqual(tunnelExcludeRoutes(surge), ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "203.0.113.7/32"]);
+  assert.deepEqual(tunnelExcludeRoutes(null), ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10"]);
+  assert.deepEqual(systemProxyBypass(surge), ["127.0.0.1", "localhost"]);
+});
+
+test("TUN 用导入的 dns-server（system 不算），ipv6 = false 时只要 IPv4", () => {
+  const config = buildConfig(options({ kernel: "tunnel", surge: { ...surge, general: { ...surge.general, ipv6: false } } }));
+  assert.equal(config.dns.servers.find((server) => server.tag === "dns-direct").server, "180.184.1.1");
+  assert.equal(config.dns.strategy, "ipv4_only");
+});
+
+for (const [label, overrides] of [
+  ["TUN fake-ip + 导入的规则", { kernel: "tunnel", surge, ruleSets, pageRules, chinaRules: true }],
+  ["TUN 真实 IP + 内置分流", { kernel: "tunnel", dnsMode: "realip", chinaRules: true, pageRules }],
+  ["系统代理 + 导入的规则", { surge, ruleSets, pageRules }],
+]) {
+  test(
+    `sing-box check 通过且没有弃用警告（${label}）`,
+    { skip: existsSync(SING_BOX) ? false : `本机没有 ${SING_BOX}（brew install sing-box）` },
+    () => {
+      const config = buildConfig(options({ nodes: [...jmsNodes, ...everyProtocol.nodes], ...overrides }));
+      if (overrides.kernel === "tunnel") config.inbounds.unshift(hostTun(tunnelExcludeRoutes(overrides.surge)));
+      const { status, output } = singBoxCheck(config);
       assert.equal(status, 0, output);
       assert.doesNotMatch(output, /WARN|ERROR|FATAL|deprecated/i, output);
     },

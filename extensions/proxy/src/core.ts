@@ -1,11 +1,24 @@
 /**
- * 「代理」的动作：开、关、切模式、切节点、测速、更新订阅、读流量——前台页面与后台会话（菜单栏、指令）共用这一份。
+ * 「代理」的动作：开、关、切模式、切节点、测速、更新订阅、读流量、增强模式、策略组、页面规则、导入 Surge 配置——
+ * 前台页面与后台会话（菜单栏、指令）共用这一份。
+ *
+ * 内核有两种（jarvis-mac `specs/20261028-111714-proxy-tun-orb-traffic-page-rules` T-7）：系统代理模式跑用户态常驻进程（`jarvis.daemon`），
+ * 增强模式跑宿主网络助手里的 root 内核（`jarvis.tunnel`）。两者都是同一个 sing-box、同一套 Clash API；切节点、测速、读连接只经 {@link ProxyCore.clash}，
+ * 它按存储里记着的那一个内核发请求，上层不分是哪一种。同一时刻只跑一个：两个都要监听同一个本地端口。
  *
  * 两个会话各有一个 `ProxyCore`，内存互不相通（P-7）。所以这里**不把任何要跨会话看到的东西只放在内存里**：
  * 常驻进程与系统代理每次现问宿主（`daemon.status`、`systemProxy.status`），其余（节点、选择、延迟、控制口 secret、失败）
  * 一律落 `jarvis.storage`，另一个会话下一次读就看得见。内存里只留「这个会话正在做什么」（`busy`）与刚测出、还没落盘的延迟。
  */
-import { jarvis, sleep, type DaemonResponse, type DaemonStatus, type SystemProxyStatus } from "@fusionseek/jarvis-extension-sdk";
+import {
+  jarvis,
+  sleep,
+  type BrowserActiveTab,
+  type DaemonResponse,
+  type DaemonStatus,
+  type SystemProxyStatus,
+  type TunnelStatus,
+} from "@fusionseek/jarvis-extension-sdk";
 import {
   DAEMON_ID,
   delayConcurrency,
@@ -19,21 +32,47 @@ import {
   type ConnectionsSnapshot,
 } from "./clash.js";
 import { dedupeNodeNames, SELECTOR_TAG, URLTEST_TAG, type ProxyNode } from "./nodes.js";
-import { buildConfig, clashModeNames, terminalProxyCommand, type ProxyMode } from "./singbox-config.js";
+import { normalizePageRules, pageDomains, removePageRule, upsertPageRule, urlHost, type PageRule, type PolicyRef, type SeenConnection } from "./rules.js";
+import {
+  buildConfig,
+  clashModeNames,
+  groupTags,
+  memberTag,
+  systemProxyBypass,
+  terminalProxyCommand,
+  tunnelExcludeRoutes,
+  type ConfigOptions,
+  type KernelKind,
+  type ProxyMode,
+} from "./singbox-config.js";
 import {
   describeFailure,
   isRuleSetFailure,
+  memberTitle,
   normalizePreferences,
   normalizeSelection,
   phaseOf,
   requiredCapability,
+  runningKernel,
+  wantsTunnel,
   type FailureRecord,
+  type GroupView,
+  type PageView,
   type Phase,
   type ProxyPreferences,
   type Selection,
+  type TunCondition,
 } from "./status.js";
+import { convertSurgeList, convertSurgeProfile, convertedCount, type ConvertedList, type SurgeImport } from "./surge.js";
 import {
+  chunkItems,
   chunkNodes,
+  digest,
+  ruleSetChunkKey,
+  splitHeadlessRules,
+  surgeRuleChunkKey,
+  type RuleSetRecord,
+  type StoredSurge,
   headerValue,
   nextRecord,
   nodeChunkKey,
@@ -65,13 +104,32 @@ const readyTimeoutMs = 30_000;
 const requestTimeoutSeconds = 10;
 
 /** 全部能力：页面上「授权」一次问完。 */
-export const allCapabilities = ["process.daemon", "system.proxy", "network.https", "terminal.run", "notifications.post", "clipboard.write"] as const;
+export const allCapabilities = [
+  "process.daemon",
+  "system.proxy",
+  "network.tunnel",
+  "network.https",
+  "terminal.run",
+  "notifications.post",
+  "clipboard.write",
+  "browser.activeTab",
+  "files.pick",
+] as const;
+
+/** 增强模式要的能力。 */
+export const tunnelCapability = "network.tunnel";
 
 /** 一次读到的全部事实。 */
 export interface Snapshot {
   granted: string[];
   preferences: ProxyPreferences;
   daemon: DaemonStatus | null;
+  /** `tunnel.status`（授权了增强模式才问）；没授权、读不出为 `null`。 */
+  tunnel: TunnelStatus | null;
+  /** 在跑的内核；没在跑为 `null`。 */
+  kernel: KernelKind | null;
+  /** 增强模式此刻的状况（菜单那一项与面板那一行）。 */
+  tun: TunCondition;
   proxy: SystemProxyStatus | null;
   nodes: ProxyNode[];
   subscriptions: SubscriptionRecord[];
@@ -83,6 +141,17 @@ export interface Snapshot {
   control: ControlRecord | null;
   failure: FailureRecord | null;
   phase: Phase;
+  pageRules: PageRule[];
+  /** 导入的 Surge 配置（规则另外存）；没导入为 `null`。 */
+  surge: StoredSurge | null;
+  /** 导入配置里那些外部规则集拉没拉到。 */
+  ruleSetRecords: RuleSetRecord[];
+  /** 偏好「规则集地址」里填了哪些。 */
+  ruleSetURLs: string[];
+  /** 导入的策略组（`useSurgeRules` 关着时为空）。 */
+  groups: GroupView[];
+  /** 此刻的规则摘要：与 `control.rulesDigest` 不同 = 重新载入才用得上。 */
+  rulesDigest: string;
 }
 
 /** 一个动作的结果：给页面的那一行提示与静默指令的横幅。 */
@@ -152,6 +221,14 @@ async function remove(key: string): Promise<void> {
   }
 }
 
+/** 一份配置要的、与节点无关的那几样（规则、导入、规则集、策略组选择），以及它们的摘要。 */
+interface RuleInputs {
+  pageRules: PageRule[];
+  surge: SurgeImport | null;
+  ruleSets: Record<string, ConvertedList>;
+  digest: string;
+}
+
 export class ProxyCore {
   /** 这个会话正在做的事；`null` = 闲着。 */
   busy: string | null = null;
@@ -191,14 +268,35 @@ export class ProxyCore {
     }
   }
 
-  /** 偏好里的订阅地址（进钥匙串的 `urlList`，只能单独读）。 */
-  async subscriptionURLs(): Promise<string[]> {
+  /**
+   * 一项 `urlList` 偏好此刻的地址（进钥匙串的只能单独读，交回数组；不进的可能是数组或 JSON 串）。
+   * @param key 偏好的 key。
+   * @returns 去掉空白的 https 地址。
+   */
+  private async urlList(key: string): Promise<string[]> {
     try {
-      const value = await jarvis.preferences.get<unknown>("subscriptions");
+      let value = await jarvis.preferences.get<unknown>(key);
+      if (typeof value === "string") {
+        try {
+          value = JSON.parse(value);
+        } catch {
+          value = [];
+        }
+      }
       return Array.isArray(value) ? value.filter((url): url is string => typeof url === "string" && /^https:\/\//i.test(url.trim())).map((url) => url.trim()) : [];
     } catch {
       return [];
     }
+  }
+
+  /** 偏好里的订阅地址（进钥匙串的 `urlList`，只能单独读）。 */
+  subscriptionURLs(): Promise<string[]> {
+    return this.urlList("subscriptions");
+  }
+
+  /** 偏好「规则集地址」里的地址：导入的配置里 `RULE-SET` 的地址，用户亲手贴进来的才去拉（宿主只放行这些主机）。 */
+  ruleSetURLs(): Promise<string[]> {
+    return this.urlList("ruleSets");
   }
 
   /** 订阅记录。 */
@@ -224,7 +322,7 @@ export class ProxyCore {
     return dedupeNodeNames(all);
   }
 
-  /** 用户选的模式与节点（未按节点列表校正）。 */
+  /** 用户选的模式、节点、增强模式与策略组（未按节点列表校正）。 */
   async selection(): Promise<Selection> {
     return normalizeSelection(await read(storageKeys.selection));
   }
@@ -242,6 +340,82 @@ export class ProxyCore {
     return value && typeof value.secret === "string" ? value : null;
   }
 
+  /** 页面规则。 */
+  async pageRules(): Promise<PageRule[]> {
+    return normalizePageRules(await read(storageKeys.pageRules));
+  }
+
+  /** 导入的 Surge 配置（不含规则）。 */
+  async storedSurge(): Promise<StoredSurge | null> {
+    const value = await read<StoredSurge>(storageKeys.surge);
+    return value && value.version === 1 ? value : null;
+  }
+
+  /** 导入的 Surge 配置（含规则）；没导入为 `null`。 */
+  async surgeImport(): Promise<SurgeImport | null> {
+    const stored = await this.storedSurge();
+    if (!stored) return null;
+    const rules: SurgeImport["rules"] = [];
+    for (let index = 0; index < stored.ruleChunks; index += 1) {
+      const chunk = await read<SurgeImport["rules"]>(surgeRuleChunkKey(index));
+      if (Array.isArray(chunk)) rules.push(...chunk);
+    }
+    const { ruleChunks: _chunks, ...rest } = stored;
+    return { ...rest, rules };
+  }
+
+  /** 外部规则集的记录。 */
+  async ruleSetRecords(): Promise<RuleSetRecord[]> {
+    const value = await read<Record<string, RuleSetRecord>>(storageKeys.ruleSets);
+    return value && typeof value === "object" ? Object.values(value) : [];
+  }
+
+  /** 拉到了的外部规则集的内容。 */
+  async ruleSetContents(records?: RuleSetRecord[]): Promise<Record<string, ConvertedList>> {
+    const out: Record<string, ConvertedList> = {};
+    for (const record of records ?? (await this.ruleSetRecords())) {
+      if (record.chunks === 0) continue;
+      const rules: ConvertedList["rules"] = [];
+      for (let index = 0; index < record.chunks; index += 1) {
+        const chunk = await read<ConvertedList["rules"]>(ruleSetChunkKey(record.tag, index));
+        if (Array.isArray(chunk)) rules.push(...chunk);
+      }
+      out[record.tag] = { rules, hasIP: record.hasIP, total: record.total, skipped: record.skipped };
+    }
+    return out;
+  }
+
+  /**
+   * 一份配置里与节点无关的输入，与它们的摘要。
+   * @param preferences 偏好。
+   * @returns 输入。
+   */
+  private async ruleInputs(preferences: ProxyPreferences): Promise<RuleInputs> {
+    const pageRules = await this.pageRules();
+    const surge = preferences.useSurgeRules ? await this.surgeImport() : null;
+    const ruleSets = surge ? await this.ruleSetContents() : {};
+    const digestText = JSON.stringify({ pageRules: pageRules.map((rule) => [rule.id, rule.policy]), surge: surge ? [surge.importedAt, surge.sourceName] : null, sets: Object.keys(ruleSets).map((tag) => [tag, ruleSets[tag].total]), dns: preferences.dnsMode, stack: preferences.tunStack });
+    return { pageRules, surge, ruleSets, digest: digest(digestText) };
+  }
+
+  /**
+   * 导入的策略组（菜单与面板画它）。
+   * @param surge 导入结果（不含规则也行）。
+   * @param nodes 节点。
+   * @param selection 选择。
+   * @returns 组。
+   */
+  groupViews(surge: Pick<SurgeImport, "groups"> | null, nodes: readonly ProxyNode[], selection: Selection): GroupView[] {
+    if (!surge) return [];
+    const tags = groupTags(surge, nodes);
+    return surge.groups.map((group) => {
+      const tag = tags.get(group.name) ?? group.name;
+      const members = [...new Set(group.members.map((member) => memberTag(member, tags)))].filter((member) => member !== tag).map((member) => ({ tag: member, title: memberTitle(member) }));
+      const chosen = selection.groups[group.name];
+      return { name: group.name, tag, members, selected: chosen && members.some((member) => member.tag === chosen) ? chosen : (members[0]?.tag ?? SELECTOR_TAG) };
+    });
+  }
+
   /**
    * 读全部事实。
    * @param context 事件里带来的授权与偏好（菜单栏、指令）；省略时现问。
@@ -251,21 +425,34 @@ export class ProxyCore {
     const granted = context.granted ?? (await this.granted());
     const preferences = await this.preferences(context.preferences);
     const records = await this.records();
-    const [nodes, selection, latency, control, failure, subscriptionCount] = await Promise.all([
+    const [nodes, selection, latency, control, failure, subscriptionCount, pageRules, storedSurge, ruleSetRecords, ruleSetURLs, rules] = await Promise.all([
       this.nodes(records),
       this.selection(),
       this.latency(),
       this.control(),
       read<FailureRecord>(storageKeys.failure),
       this.subscriptionURLs().then((urls) => urls.length),
+      this.pageRules(),
+      this.storedSurge(),
+      this.ruleSetRecords(),
+      this.ruleSetURLs(),
+      this.ruleInputs(preferences),
     ]);
     let daemon: DaemonStatus | null = null;
+    let tunnel: TunnelStatus | null = null;
     let proxy: SystemProxyStatus | null = null;
     if (granted.includes(requiredCapability)) {
       try {
         daemon = await jarvis.daemon.status(DAEMON_ID, preferences.singBoxPath || undefined);
       } catch {
         daemon = null;
+      }
+    }
+    if (granted.includes(tunnelCapability)) {
+      try {
+        tunnel = await jarvis.tunnel.status(preferences.singBoxPath || undefined);
+      } catch {
+        tunnel = null;
       }
     }
     if (granted.includes("system.proxy")) {
@@ -278,10 +465,21 @@ export class ProxyCore {
     const members = new Set([URLTEST_TAG, ...nodes.map((node) => node.name)]);
     const effective = members.has(selection.node) ? selection : { ...selection, node: URLTEST_TAG };
     const failed = failure && typeof failure.message === "string" ? failure : null;
+    const kernel = runningKernel(daemon, tunnel);
     return {
       granted,
       preferences,
       daemon,
+      tunnel,
+      kernel,
+      tun: {
+        granted: granted.includes(tunnelCapability),
+        wanted: wantsTunnel(selection, preferences),
+        active: kernel === "tunnel",
+        helper: tunnel?.helper.state ?? null,
+        matchesInstalled: tunnel?.kernel.matchesInstalled ?? false,
+        blocker: tunnel?.blocker?.message ?? null,
+      },
       proxy,
       nodes,
       subscriptions: records,
@@ -290,12 +488,18 @@ export class ProxyCore {
       latency,
       control,
       failure: failed,
-      phase: phaseOf({ granted, daemon, nodeCount: nodes.length, failure: failed }),
+      phase: phaseOf({ granted, daemon, tunnel, nodeCount: nodes.length, failure: failed }),
+      pageRules,
+      surge: storedSurge,
+      ruleSetRecords,
+      ruleSetURLs,
+      groups: preferences.useSurgeRules ? this.groupViews(storedSurge, nodes, selection) : [],
+      rulesDigest: rules.digest,
     };
   }
 
   /**
-   * 发一个 Clash API 请求。
+   * 发一个 Clash API 请求：发往存储里记着的那一个内核（系统代理模式经 `daemon.request`，增强模式经 `tunnel.request`）。
    * @param method 方法。
    * @param path 路径。
    * @param body 请求体（对象，转 JSON）。
@@ -307,20 +511,50 @@ export class ProxyCore {
     const headers: { Authorization?: string; "Content-Type"?: string } = {};
     if (control) headers.Authorization = `Bearer ${control.secret}`;
     if (body !== undefined) headers["Content-Type"] = "application/json";
-    return jarvis.daemon.request({
-      id: DAEMON_ID,
-      method,
-      path,
-      headers,
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-      timeout,
-    });
+    const request = { method, path, headers, ...(body !== undefined ? { body: JSON.stringify(body) } : {}), timeout };
+    if ((control?.kernel ?? "daemon") === "tunnel") return jarvis.tunnel.request(request);
+    return jarvis.daemon.request({ id: DAEMON_ID, ...request });
+  }
+
+  // MARK: 内核
+
+  /** 一个内核此刻在不在跑。 */
+  private async kernelRunning(kind: KernelKind): Promise<boolean> {
+    try {
+      return kind === "tunnel" ? (await jarvis.tunnel.status()).state === "running" : (await jarvis.daemon.status(DAEMON_ID)).state === "running";
+    } catch {
+      return false;
+    }
+  }
+
+  /** 内核此刻在不在跑（任一个）。 */
+  async isRunning(): Promise<boolean> {
+    if (await this.kernelRunning("daemon")) return true;
+    const granted = await this.granted();
+    return granted.includes(tunnelCapability) && (await this.kernelRunning("tunnel"));
+  }
+
+  /** 此刻在跑的内核；都没在跑为 `null`。 */
+  async activeKernel(): Promise<KernelKind | null> {
+    if (await this.kernelRunning("daemon")) return "daemon";
+    const granted = await this.granted();
+    if (granted.includes(tunnelCapability) && (await this.kernelRunning("tunnel"))) return "tunnel";
+    return null;
+  }
+
+  /** 一个内核最近 500 行输出。 */
+  private async kernelLogs(kind: KernelKind): Promise<string[]> {
+    try {
+      return kind === "tunnel" ? await jarvis.tunnel.logs() : await jarvis.daemon.logs(DAEMON_ID);
+    } catch {
+      return [];
+    }
   }
 
   // MARK: 开与关
 
   /**
-   * 开启：查装没装 → 有没有节点 → 生成配置 → 起内核 → 等它就绪 → 把模式与节点重新放回去 → 设系统代理。
+   * 开启：查装没装 → 有没有节点 → 生成配置 → 起内核（系统代理模式或增强模式）→ 等它就绪 → 把模式、节点、策略组放回去 → 设系统代理。
    * @param context 事件里带来的授权与偏好。
    * @returns 结果。
    */
@@ -329,14 +563,21 @@ export class ProxyCore {
     const granted = context.granted ?? (await this.granted());
     if (!granted.includes(requiredCapability)) return { ok: false, message: "还没有授权「代理」在后台运行 sing-box" };
     const preferences = await this.preferences(context.preferences);
-    this.setBusy("正在开启");
+    const selection = await this.selection();
+    const kernel: KernelKind = wantsTunnel(selection, preferences) ? "tunnel" : "daemon";
+    if (kernel === "tunnel" && !granted.includes(tunnelCapability)) {
+      return { ok: false, message: "还没有授权增强模式（TUN）：打开「代理」点授权，或在菜单里关掉增强模式" };
+    }
+    this.setBusy(kernel === "tunnel" ? "正在开启增强模式" : "正在开启");
     try {
       const executable = preferences.singBoxPath || undefined;
-      const status = await jarvis.daemon.status(DAEMON_ID, executable);
-      if (status.state === "running") {
-        const proxy = await this.applySystemProxy(granted, preferences.systemProxy, (await this.control())?.mixedPort ?? preferences.mixedPort);
+      const running = await this.activeKernel();
+      if (running) {
+        const port = (await this.control())?.mixedPort ?? preferences.mixedPort;
+        const proxy = await this.applySystemProxy(granted, preferences.systemProxy, port);
         return { ok: true, message: proxy ?? "代理已经开着" };
       }
+      const status = await jarvis.daemon.status(DAEMON_ID, executable);
       if (status.executable === "") {
         return { ok: false, message: preferences.singBoxPath ? `设置里填的 sing-box 路径不可用：${preferences.singBoxPath}` : "没有找到 sing-box：先在「代理」里安装" };
       }
@@ -345,32 +586,42 @@ export class ProxyCore {
         // 填了订阅却还没拉过（刚装好、刚填完）：先拉一次再开，省得用户先点「更新订阅」再点「开启」。
         this.busy = null;
         await this.updateSubscriptions({ granted, restartIfChanged: false });
-        this.setBusy("正在开启");
+        this.setBusy(kernel === "tunnel" ? "正在开启增强模式" : "正在开启");
         nodes = await this.nodes();
       }
       if (nodes.length === 0) return { ok: false, message: "没有节点：在设置里填订阅地址，再更新订阅" };
 
-      const selection = await this.selection();
       const secret = randomSecret();
       let chinaRules = preferences.chinaRules;
       let fallback = false;
+      const rules = await this.ruleInputs(preferences);
       try {
-        await this.startDaemon(nodes, preferences, selection, secret, chinaRules);
+        await this.startKernel(kernel, nodes, preferences, selection, secret, chinaRules, rules);
       } catch (error) {
-        if (!(chinaRules && isRuleSetFailure(errorLines(error).join("\n")))) throw error;
+        if ((error as { blocked?: boolean }).blocked) throw error;
+        if (!(chinaRules && !rules.surge && isRuleSetFailure(errorLines(error).join("\n")))) throw error;
         // 规则集第一次下载失败时 sing-box 拒绝启动；不分流再起一次——全部流量走节点，总比代理开不了强。
         chinaRules = false;
         fallback = true;
-        await this.startDaemon(nodes, preferences, selection, secret, chinaRules);
+        await this.startKernel(kernel, nodes, preferences, selection, secret, chinaRules, rules);
       }
       await remove(storageKeys.failure);
       await this.applySelection(selection, nodes);
       const proxy = await this.applySystemProxy(granted, preferences.systemProxy, preferences.mixedPort);
-      const parts = [`代理已开启 · 127.0.0.1:${preferences.mixedPort}`];
+      const parts = [kernel === "tunnel" ? "增强模式已开启 · 整机网络经过 sing-box" : `代理已开启 · 127.0.0.1:${preferences.mixedPort}`];
       if (fallback) parts.push("中国大陆规则集下载失败，这次不分流");
       if (proxy) parts.push(proxy);
       return { ok: true, message: parts.join("；") };
     } catch (error) {
+      if ((error as { blocked?: boolean }).blocked) {
+        await this.markStarted();
+        await remove(storageKeys.control);
+        return { ok: false, message: errorMessage(error) };
+      }
+      if ((error as { code?: string }).code === "permission.denied" && kernel === "tunnel") {
+        await remove(storageKeys.control);
+        return { ok: false, message: `${errorMessage(error)}：增强模式要装一次网络助手，再点一次打开、输入管理员密码即可` };
+      }
       const lines = errorLines(error);
       const { message, hint } = describeFailure(lines, preferences);
       const failure: FailureRecord = { at: Date.now(), message, lines: lines.slice(-20), hint };
@@ -383,49 +634,89 @@ export class ProxyCore {
   }
 
   /**
-   * 起内核并等它就绪。远程规则集在 sing-box 的启动阶段下载（`daemon.start` 只等 1 秒），所以「起来了」之后还要等 Clash API 开始答话；
-   * 这期间进程退了，读它的输出当失败抛出——上层据此判断要不要不分流再试一次。
+   * 一份配置。
+   * @param kernel 跑在哪。
+   * @param nodes 节点。
+   * @param preferences 偏好。
+   * @param selection 选择。
+   * @param secret 控制口 secret。
+   * @param chinaRules 这一次分不分流。
+   * @param rules 规则输入。
+   * @returns 配置与它的选项。
    */
-  private async startDaemon(nodes: ProxyNode[], preferences: ProxyPreferences, selection: Selection, secret: string, chinaRules: boolean): Promise<void> {
-    const config = buildConfig({
+  private config(kernel: KernelKind, nodes: ProxyNode[], preferences: ProxyPreferences, selection: Selection, secret: string, chinaRules: boolean, rules: RuleInputs, ports?: { mixedPort: number; controlPort: number }): Record<string, unknown> {
+    const options: ConfigOptions = {
       nodes,
-      mixedPort: preferences.mixedPort,
-      controlPort: preferences.controlPort,
+      mixedPort: ports?.mixedPort ?? preferences.mixedPort,
+      controlPort: ports?.controlPort ?? preferences.controlPort,
       controlSecret: secret,
       mode: selection.mode,
       testURL: preferences.testURL,
       selected: selection.node,
       chinaRules,
-    });
+      kernel,
+      dnsMode: preferences.dnsMode,
+      pageRules: rules.pageRules,
+      surge: rules.surge,
+      ruleSets: rules.ruleSets,
+      groupSelection: selection.groups,
+    };
+    return buildConfig(options);
+  }
+
+  /**
+   * 起内核并等它就绪。远程规则集在 sing-box 的启动阶段下载（宿主只等 1–1.5 秒），所以「起来了」之后还要等 Clash API 开始答话；
+   * 这期间进程退了，读它的输出当失败抛出——上层据此判断要不要不分流再试一次。增强模式被别的 VPN 拦着时抛 `{ blocked: true }`。
+   */
+  private async startKernel(
+    kernel: KernelKind,
+    nodes: ProxyNode[],
+    preferences: ProxyPreferences,
+    selection: Selection,
+    secret: string,
+    chinaRules: boolean,
+    rules: RuleInputs,
+  ): Promise<void> {
+    const config = this.config(kernel, nodes, preferences, selection, secret, chinaRules, rules);
     const control: ControlRecord = {
+      kernel,
       secret,
       controlPort: preferences.controlPort,
       mixedPort: preferences.mixedPort,
       chinaRules,
-      ruleSetFallback: preferences.chinaRules && !chinaRules,
+      ruleSetFallback: preferences.chinaRules && !chinaRules && !rules.surge,
       testURL: preferences.testURL,
       nodesDigest: nodesDigest(nodes),
+      rulesDigest: rules.digest,
       startedAt: Date.now(),
       starting: true,
     };
     // 先写 secret 再起：后台会话在内核起来的那一刻就可能要调控制口。
     await write(storageKeys.control, control);
-    await jarvis.daemon.start({
-      id: DAEMON_ID,
-      config: JSON.stringify(config),
-      controlPort: preferences.controlPort,
-      ...(preferences.singBoxPath ? { executable: preferences.singBoxPath } : {}),
-    });
+    if (kernel === "tunnel") {
+      const status = await jarvis.tunnel.start({
+        config: JSON.stringify(config),
+        controlPort: preferences.controlPort,
+        ...(preferences.singBoxPath ? { executable: preferences.singBoxPath } : {}),
+        excludeRoutes: tunnelExcludeRoutes(rules.surge),
+        stack: preferences.tunStack,
+        ipv6: rules.surge?.general.ipv6 !== false,
+      });
+      if (status.state !== "running") {
+        throw { blocked: true, message: status.blocker?.message ?? "增强模式没有起来：另一个 VPN 或增强模式正占着网络" };
+      }
+    } else {
+      await jarvis.daemon.start({
+        id: DAEMON_ID,
+        config: JSON.stringify(config),
+        controlPort: preferences.controlPort,
+        ...(preferences.singBoxPath ? { executable: preferences.singBoxPath } : {}),
+      });
+    }
     const deadline = Date.now() + readyTimeoutMs;
     for (;;) {
-      const status = await jarvis.daemon.status(DAEMON_ID);
-      if (status.state !== "running") {
-        let lines: string[] = [];
-        try {
-          lines = (await jarvis.daemon.logs(DAEMON_ID)).slice(-20);
-        } catch {
-          lines = [];
-        }
+      if (!(await this.kernelRunning(kernel))) {
+        const lines = (await this.kernelLogs(kernel)).slice(-20);
         throw { message: "sing-box 启动后退出了", detail: lines.join("\n") || "sing-box 启动后退出了" };
       }
       try {
@@ -450,7 +741,7 @@ export class ProxyCore {
   }
 
   /**
-   * 把模式与「节点选择」放回用户选的样子。`cache.db` 记着上一次的模式与选中项，启动时以它为准，
+   * 把模式、「节点选择」与导入的策略组放回用户选的样子。`cache.db` 记着上一次的模式与选中项，启动时以它为准，
    * 配置里的 `default_mode` / `default` 只管第一次——用户在内核停着的时候改过，不放回去就会被缓存盖掉。
    */
   private async applySelection(selection: Selection, nodes: ProxyNode[]): Promise<void> {
@@ -458,20 +749,26 @@ export class ProxyCore {
       await this.clash("PATCH", "/configs", { mode: clashModeNames[selection.mode] });
       const members = new Set([URLTEST_TAG, ...nodes.map((node) => node.name)]);
       await this.clash("PUT", proxyPath(SELECTOR_TAG), { name: members.has(selection.node) ? selection.node : URLTEST_TAG });
+      const preferences = await this.preferences();
+      const surge = preferences.useSurgeRules ? await this.storedSurge() : null;
+      for (const group of this.groupViews(surge, nodes, selection)) {
+        if (selection.groups[group.name] === undefined) continue;
+        await this.clash("PUT", proxyPath(group.tag), { name: group.selected });
+      }
     } catch (error) {
       jarvis.log.warn("模式与节点没能放回去", errorMessage(error));
     }
   }
 
   /**
-   * 按偏好设系统代理。
+   * 按偏好设系统代理（增强模式下照样设：认系统代理的应用少绕一次 TUN，与 Surge 增强模式相同）。
    * @returns 要告诉用户的一句话（被拦着、别人接管着、没授权）；一切正常为 `null`。
    */
   private async applySystemProxy(granted: string[], wanted: boolean, port: number): Promise<string | null> {
     if (!wanted) return null;
     if (!granted.includes("system.proxy")) return "没有授权修改系统代理，只在本机端口上可用";
     try {
-      const status = await jarvis.systemProxy.enable({ port });
+      const status = await jarvis.systemProxy.enable({ port, bypass: systemProxyBypass(await this.storedSurge()) });
       return status.blocker ? status.blocker.message : null;
     } catch (error) {
       return errorMessage(error);
@@ -479,7 +776,7 @@ export class ProxyCore {
   }
 
   /**
-   * 关闭：先还原系统代理，再停内核（反过来的话中间那一下系统代理指着一个没人监听的端口）。
+   * 关闭：先还原系统代理，再停内核（反过来的话中间那一下系统代理指着一个没人监听的端口）。两个内核都停一次：哪一个在跑都停得掉。
    * @returns 结果。
    */
   async turnOff(): Promise<ActionResult> {
@@ -495,6 +792,13 @@ export class ProxyCore {
         }
       }
       await jarvis.daemon.stop(DAEMON_ID);
+      if (granted.includes(tunnelCapability)) {
+        try {
+          await jarvis.tunnel.stop();
+        } catch (error) {
+          jarvis.log.warn("增强模式没能停下", errorMessage(error));
+        }
+      }
       await remove(storageKeys.failure);
       await remove(storageKeys.control);
       return { ok: true, message: "代理已关闭" };
@@ -506,7 +810,7 @@ export class ProxyCore {
   }
 
   /**
-   * 换一份配置重开（订阅更新过、端口改过）。
+   * 重开（端口改过、换了内核）：会断开现有连接一下。
    * @returns 结果。
    */
   async restart(): Promise<ActionResult> {
@@ -515,7 +819,63 @@ export class ProxyCore {
     return this.turnOn();
   }
 
-  // MARK: 模式、节点、系统代理
+  /**
+   * 重新载入：换一份配置、不断进程（`daemon.reload` / `tunnel.reload`，sing-box 收到 SIGHUP 原进程重载）。节点、规则、测速地址变了都走这条路；
+   * 端口改过、内核要换时只能重开（见 `restartReasons`），这里会转去 {@link restart}。没在跑时什么都不做。
+   * @returns 结果。
+   */
+  async reload(): Promise<ActionResult> {
+    if (this.busy) return { ok: false, message: `${this.busy}，稍等` };
+    const control = await this.control();
+    const kernel = await this.activeKernel();
+    if (!control || !kernel) return { ok: true, message: "" };
+    const preferences = await this.preferences();
+    const selection = await this.selection();
+    const wanted: KernelKind = wantsTunnel(selection, preferences) ? "tunnel" : "daemon";
+    if (control.mixedPort !== preferences.mixedPort || control.controlPort !== preferences.controlPort || wanted !== kernel) return this.restart();
+    this.setBusy("正在重新载入");
+    try {
+      const nodes = await this.nodes();
+      if (nodes.length === 0) return { ok: false, message: "没有节点：先更新订阅" };
+      const rules = await this.ruleInputs(preferences);
+      const chinaRules = preferences.chinaRules;
+      const config = JSON.stringify(this.config(kernel, nodes, preferences, selection, control.secret, chinaRules, rules, { mixedPort: control.mixedPort, controlPort: control.controlPort }));
+      if (kernel === "tunnel") await jarvis.tunnel.reload(config);
+      else await jarvis.daemon.reload({ id: DAEMON_ID, config });
+      await write(storageKeys.control, {
+        ...control,
+        kernel,
+        chinaRules,
+        ruleSetFallback: false,
+        testURL: preferences.testURL,
+        nodesDigest: nodesDigest(nodes),
+        rulesDigest: rules.digest,
+      } satisfies ControlRecord);
+      await this.waitReady(kernel);
+      await this.applySelection(selection, nodes);
+      return { ok: true, message: "已重新载入配置" };
+    } catch (error) {
+      return { ok: false, message: `没能重新载入：${errorMessage(error)}` };
+    } finally {
+      this.setBusy(null);
+    }
+  }
+
+  /** 重载之后等 Clash API 重新答话（sing-box 重载时控制口会关一下），至多 10 秒。 */
+  private async waitReady(kernel: KernelKind): Promise<void> {
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline) {
+      if (!(await this.kernelRunning(kernel))) return;
+      try {
+        if ((await this.clash("GET", "/version", undefined, 2)).status === 200) return;
+      } catch {
+        // 还在重载。
+      }
+      await sleep(300);
+    }
+  }
+
+  // MARK: 模式、节点、策略组、增强模式、系统代理
 
   /**
    * 换出站模式：记下来，开着就当场换。
@@ -550,6 +910,37 @@ export class ProxyCore {
   }
 
   /**
+   * 给导入的一个策略组换组员：记下来，开着就当场换。
+   * @param group 组（Surge 里的名字）。
+   * @param member 组员 tag。
+   */
+  async selectGroupMember(group: GroupView, member: string): Promise<ActionResult> {
+    const selection = await this.selection();
+    await write(storageKeys.selection, { ...selection, groups: { ...selection.groups, [group.name]: member } });
+    if (!(await this.isRunning())) return { ok: true, message: "" };
+    try {
+      const response = await this.clash("PUT", proxyPath(group.tag), { name: member });
+      return response.status < 300 ? { ok: true, message: "" } : { ok: false, message: `「${group.name}」没能切到「${memberTitle(member)}」（${response.status}）` };
+    } catch (error) {
+      return { ok: false, message: `没能切策略组：${errorMessage(error)}` };
+    }
+  }
+
+  /**
+   * 开 / 关增强模式：记下来（以后开启都按它，直到偏好「开启时用增强模式」再被改）；开着就换一个内核重开——
+   * 两个内核都要监听同一个本地端口，不能同时跑。第一次打开时宿主会弹管理员密码框装网络助手。
+   * @param on 开还是关。
+   */
+  async setTun(on: boolean): Promise<ActionResult> {
+    const selection = await this.selection();
+    await write(storageKeys.selection, { ...selection, tun: on });
+    const kernel = await this.activeKernel();
+    if (!kernel) return { ok: true, message: on ? "下次开启代理时用增强模式" : "下次开启代理时用系统代理模式" };
+    if ((kernel === "tunnel") === on) return { ok: true, message: "" };
+    return this.restart();
+  }
+
+  /**
    * 开 / 关系统代理（不改偏好：偏好只决定「开启代理时要不要顺手设」）。
    * @param on 开还是关。
    */
@@ -563,20 +954,63 @@ export class ProxyCore {
       }
       const control = await this.control();
       const port = control?.mixedPort ?? (await this.preferences()).mixedPort;
-      const status = await jarvis.systemProxy.enable({ port });
+      const status = await jarvis.systemProxy.enable({ port, bypass: systemProxyBypass(await this.storedSurge()) });
       return status.blocker ? { ok: false, message: status.blocker.message } : { ok: true, message: `系统代理指向 127.0.0.1:${port}` };
     } catch (error) {
       return { ok: false, message: errorMessage(error) };
     }
   }
 
-  /** 内核此刻在不在跑。 */
-  async isRunning(): Promise<boolean> {
+  // MARK: 页面规则
+
+  /**
+   * 给一个域名定策略（`null` = 删掉它的规则），开着就重新载入——不断连接、不动系统代理。
+   * @param domain 域名（`domain_suffix`：含全部子域名）。
+   * @param policy 策略。
+   * @returns 结果。
+   */
+  async setPageRule(domain: string, policy: PolicyRef | null): Promise<ActionResult> {
+    const rules = await this.pageRules();
+    const id = `domain_suffix:${domain}`;
+    const next = policy === null ? removePageRule(rules, id) : upsertPageRule(rules, { kind: "domain_suffix", value: domain, policy }, Date.now());
+    await write(storageKeys.pageRules, next);
+    const reloaded = await this.reload();
+    if (!reloaded.ok) return reloaded;
+    return { ok: true, message: policy === null ? `删掉了 ${domain} 的规则` : `${domain} 以后${policyLabel(policy)}` };
+  }
+
+  /**
+   * 删一条页面规则（按 id）。
+   * @param id 规则 id。
+   */
+  async removePageRule(id: string): Promise<ActionResult> {
+    await write(storageKeys.pageRules, removePageRule(await this.pageRules(), id));
+    return this.reload();
+  }
+
+  /**
+   * 读「当前页面」：浏览器地址栏 + 这个浏览器的进程最近 30 秒连过的主机。
+   * @param granted 已授予的能力。
+   * @param seen 最近的连接（日志与快照合起来的）。
+   * @returns 读到的东西。
+   */
+  async currentPage(granted: readonly string[], seen: readonly SeenConnection[]): Promise<PageView> {
+    if (!granted.includes("browser.activeTab")) return { browser: null, host: "", status: "notGranted", message: "还没有授权读取浏览器当前页", domains: [] };
+    let tab: BrowserActiveTab = null;
     try {
-      return (await jarvis.daemon.status(DAEMON_ID)).state === "running";
-    } catch {
-      return false;
+      tab = await jarvis.browser.activeTab();
+    } catch (error) {
+      return { browser: null, host: "", status: "unavailable", message: errorMessage(error), domains: [] };
     }
+    if (!tab) return { browser: null, host: "", status: "none", message: "", domains: [] };
+    const host = tab.status === "ok" && tab.url ? urlHost(tab.url) : "";
+    return {
+      browser: tab.browser.name,
+      host,
+      status: tab.status,
+      message: tab.message ?? (tab.status === "denied" ? `在 系统设置 › 隐私与安全性 › 自动化 里允许 Jarvis 控制「${tab.browser.name}」` : tab.status === "unsupported" ? `读不到「${tab.browser.name}」的地址：只能看下面这些连接` : ""),
+      domains: pageDomains(host, tab.browser, seen, Date.now()),
+    };
   }
 
   // MARK: 测速、流量、日志
@@ -635,13 +1069,10 @@ export class ProxyCore {
     }
   }
 
-  /** 内核最近 500 行输出。 */
+  /** 在跑的内核（没在跑就按存储里记着的那一个）最近 500 行输出。 */
   async logs(): Promise<string[]> {
-    try {
-      return await jarvis.daemon.logs(DAEMON_ID);
-    } catch {
-      return [];
-    }
+    const kernel = (await this.activeKernel()) ?? (await this.control())?.kernel ?? "daemon";
+    return this.kernelLogs(kernel);
   }
 
   /**
@@ -663,12 +1094,118 @@ export class ProxyCore {
     }
   }
 
+  // MARK: 导入 Surge 配置与外部规则集
+
+  /**
+   * 导入一份 Surge 配置：转换、存下（规则切块），开着就重新载入；再把「规则集地址」里已经填了的那几个拉一遍。
+   * @param text 文件正文。
+   * @param name 文件名。
+   * @returns 结果。
+   */
+  async importSurge(text: string, name: string): Promise<ActionResult> {
+    let imported: SurgeImport;
+    try {
+      imported = convertSurgeProfile(text, name, Date.now());
+    } catch (error) {
+      return { ok: false, message: errorMessage(error) };
+    }
+    const previous = await this.storedSurge();
+    const blocks = chunkItems(imported.rules);
+    for (let index = 0; index < blocks.length; index += 1) await write(surgeRuleChunkKey(index), blocks[index]);
+    for (let stale = blocks.length; stale < (previous?.ruleChunks ?? 0); stale += 1) await remove(surgeRuleChunkKey(stale));
+    const { rules: _rules, ...rest } = imported;
+    await write(storageKeys.surge, { ...rest, ruleChunks: blocks.length } satisfies StoredSurge);
+    // 不在这份配置里的外部规则集：记录与内容一并删掉。
+    const records = await this.ruleSetRecords();
+    const keep = new Set(imported.ruleSets.map((ref) => ref.tag));
+    const kept: Record<string, RuleSetRecord> = {};
+    for (const record of records) {
+      if (keep.has(record.tag)) kept[record.tag] = record;
+      else for (let index = 0; index < record.chunks; index += 1) await remove(ruleSetChunkKey(record.tag, index));
+    }
+    await write(storageKeys.ruleSets, kept);
+    const pending = imported.ruleSets.length;
+    const parts = [`导入了「${name}」：${convertedCount(imported.report)} / ${imported.report.ruleLines} 条规则转成 sing-box、${imported.groups.length} 个策略组`];
+    const unsupported = imported.report.unsupported.reduce((sum, kind) => sum + kind.count, 0);
+    if (unsupported > 0) parts.push(`${unsupported} 项转不了（见「规则」页）`);
+    const granted = await this.granted();
+    if (pending > 0) {
+      const fetched = granted.includes("network.https") ? await this.updateRuleSets({ reload: false }) : null;
+      parts.push(fetched?.message || `${pending} 个外部规则集要联网拉：把地址贴进 设置 ›「规则集地址」`);
+    }
+    const reloaded = await this.reload();
+    if (!reloaded.ok) parts.push(reloaded.message);
+    return { ok: true, message: parts.join("；") };
+  }
+
+  /** 撤掉导入的 Surge 配置，回到内置规则。 */
+  async clearSurge(): Promise<ActionResult> {
+    const stored = await this.storedSurge();
+    for (let index = 0; index < (stored?.ruleChunks ?? 0); index += 1) await remove(surgeRuleChunkKey(index));
+    for (const record of await this.ruleSetRecords()) for (let index = 0; index < record.chunks; index += 1) await remove(ruleSetChunkKey(record.tag, index));
+    await remove(storageKeys.surge);
+    await remove(storageKeys.ruleSets);
+    const reloaded = await this.reload();
+    return reloaded.ok ? { ok: true, message: "撤掉了导入的 Surge 配置，回到内置规则" } : reloaded;
+  }
+
+  /**
+   * 拉一遍导入配置里的外部规则集——只拉用户贴进「规则集地址」的那些（宿主只放行用户亲手填的主机）。每个各自成败：没拉到的留着上一次的内容。
+   * @param options `reload`：拉完、内容变了且开着就重新载入（默认要）。
+   * @returns 结果；没导入、没有外部规则集为 `{ ok: true, message: "" }`。
+   */
+  async updateRuleSets(options: { reload?: boolean } = {}): Promise<ActionResult> {
+    const surge = await this.storedSurge();
+    if (!surge || surge.ruleSets.length === 0) return { ok: true, message: "" };
+    const allowed = new Set(await this.ruleSetURLs());
+    const previous = new Map((await this.ruleSetRecords()).map((record) => [record.tag, record]));
+    const next: Record<string, RuleSetRecord> = {};
+    let fetched = 0;
+    let waiting = 0;
+    let changed = false;
+    const failures: string[] = [];
+    for (const ref of surge.ruleSets) {
+      const before = previous.get(ref.tag);
+      const base: RuleSetRecord = before ?? { ...ref, fetchedAt: null, attemptedAt: null, error: null, total: 0, skipped: 0, hasIP: false, chunks: 0 };
+      if (!allowed.has(ref.url)) {
+        waiting += 1;
+        next[ref.tag] = { ...base, error: base.chunks > 0 ? base.error : "还没贴进「规则集地址」" };
+        continue;
+      }
+      const now = Date.now();
+      try {
+        const response = await jarvis.net.fetch(ref.url, { method: "GET", headers: { "User-Agent": SUBSCRIPTION_USER_AGENT } });
+        if (response.status < 200 || response.status >= 300) throw new Error(`服务器回了 HTTP ${response.status}`);
+        const list = convertSurgeList(response.text, ref.format);
+        const blocks = chunkItems(splitHeadlessRules(list.rules));
+        for (let index = 0; index < blocks.length; index += 1) await write(ruleSetChunkKey(ref.tag, index), blocks[index]);
+        for (let stale = blocks.length; stale < base.chunks; stale += 1) await remove(ruleSetChunkKey(ref.tag, stale));
+        changed ||= base.total !== list.total || base.chunks !== blocks.length || base.fetchedAt === null;
+        next[ref.tag] = { ...base, fetchedAt: now, attemptedAt: now, error: null, total: list.total, skipped: list.skipped, hasIP: list.hasIP, chunks: blocks.length };
+        fetched += 1;
+      } catch (error) {
+        failures.push(`${ref.host}：${errorMessage(error)}`);
+        next[ref.tag] = { ...base, attemptedAt: now, error: errorMessage(error) };
+      }
+    }
+    await write(storageKeys.ruleSets, next);
+    const parts: string[] = [];
+    if (fetched > 0) parts.push(`拉到 ${fetched} 个外部规则集`);
+    if (waiting > 0) parts.push(`${waiting} 个还没贴进「规则集地址」`);
+    if (failures.length > 0) parts.push(`没拉到：${failures.join("；")}`);
+    if (changed && options.reload !== false) {
+      const reloaded = await this.reload();
+      if (!reloaded.ok) parts.push(reloaded.message);
+    }
+    return { ok: failures.length === 0, message: parts.join("；") };
+  }
+
   // MARK: 订阅
 
   /**
    * 拉一遍偏好里的全部订阅。每条各自成败：失败的那条留着上一次的节点，只记下原因。
-   * 内核开着、节点又真的变了，就重开一次让新节点生效（sing-box 不支持热加载出站）。
-   * @param options 授权（省略时现问）与要不要重开。
+   * 内核开着、节点又真的变了，就重新载入一次让新节点生效（不断进程：`daemon.reload` / `tunnel.reload`）。
+   * @param options 授权（省略时现问）与要不要重新载入。
    * @returns 结果。
    */
   async updateSubscriptions(options: { granted?: string[]; restartIfChanged?: boolean } = {}): Promise<ActionResult> {
@@ -720,8 +1257,8 @@ export class ProxyCore {
         const control = await this.control();
         if (control && control.nodesDigest !== nodesDigest(nodes) && (await this.isRunning())) {
           this.setBusy(null);
-          const restarted = await this.restart();
-          summary = { ok: restarted.ok, message: `${summary.message}；${restarted.ok ? "已重新开启以用上新节点" : restarted.message}` };
+          const reloaded = await this.reload();
+          summary = { ok: reloaded.ok, message: `${summary.message}；${reloaded.ok ? "已重新载入以用上新节点" : reloaded.message}` };
         }
       }
     } catch (error) {
@@ -730,6 +1267,18 @@ export class ProxyCore {
       if (this.busy === "正在更新订阅") this.setBusy(null);
     }
     return summary;
+  }
+
+  /**
+   * 「更新订阅与规则集」：订阅一遍、外部规则集一遍（菜单与自动更新用）。
+   * @param granted 已授予的能力。
+   * @returns 两件事合起来的结果。
+   */
+  async updateAll(granted?: string[]): Promise<ActionResult> {
+    const subscriptions = await this.updateSubscriptions({ granted });
+    const sets = await this.updateRuleSets();
+    const message = [subscriptions.message, sets.message].filter((part) => part.length > 0).join("；");
+    return { ok: subscriptions.ok && sets.ok, message };
   }
 
   /**
@@ -756,4 +1305,12 @@ export class ProxyCore {
       return { ok: false, error: errorMessage(error) };
     }
   }
+}
+
+/** 「以后走代理」「以后直连」这种说法。 */
+function policyLabel(policy: PolicyRef): string {
+  if (policy === "proxy") return "走代理";
+  if (policy === "direct") return "直连";
+  if (policy === "reject") return "一律拒绝";
+  return `走「${policy.slice("group:".length)}」`;
 }

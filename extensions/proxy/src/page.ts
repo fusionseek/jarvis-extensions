@@ -1,8 +1,8 @@
 /**
- * 工具箱那一页与窗口标签（P-9「界面」）。
+ * 工具箱那一页与窗口标签（P-9「界面」；增强模式、策略组、规则页见 jarvis-mac `specs/20261028-111714-proxy-tun-orb-traffic-page-rules` T-10）。
  *
- * 工具箱 368pt 宽、一屏：状态与总开关 → 卡住时的那一屏说明 → 模式 → 节点 → 订阅 → 终端代理命令。
- * 窗口在同样的状态段之下多一排「节点 / 连接 / 日志 / 订阅」四页。
+ * 工具箱 368pt 宽、一屏：状态与总开关（含增强模式）→ 卡住时的那一屏说明 → 模式 → 节点 → 策略组 → 规则 → 订阅 → 终端代理命令。
+ * 窗口在同样的状态段之下多一排「节点 / 连接 / 规则 / 日志 / 订阅」五页。
  *
  * 卡住的五种情形（没授权、没装 sing-box、没有订阅、内核起不来、系统代理被别的工具拦着）各一张 `note`：
  * 拿不到什么、为什么、还剩哪几条路——不是一句红字。整页至多一颗实心主按钮：卡住时它就是那张说明卡上的出路。
@@ -11,10 +11,24 @@ import { ui, type ActionSpec, type Tint, type UINode } from "@fusionseek/jarvis-
 import { formatBytes, formatDelay, formatRate } from "./clash.js";
 import type { Snapshot } from "./core.js";
 import { URLTEST_TAG, type ProxyNode } from "./nodes.js";
+import { pageRuleFor, policyTitle, registrableDomain, type PolicyRef } from "./rules.js";
 import type { Session, WindowView } from "./session.js";
 import { terminalProxyCommand, type ProxyMode } from "./singbox-config.js";
-import { modeHelps, modeTitles, protocolTitles, restartReasons, statusLine, systemProxyCondition } from "./status.js";
+import {
+  memberTitle,
+  modeHelps,
+  modeTitles,
+  protocolTitles,
+  reloadReasons,
+  restartReasons,
+  statusLine,
+  systemProxyCondition,
+  tunSubtitle,
+  wantsTunnel,
+} from "./status.js";
 import { describeUsage, formatAge, nodesDigest } from "./store.js";
+import { convertedCount } from "./surge.js";
+import { shortRate } from "./traffic.js";
 
 /** 工具箱里节点至多列几行：再多就该用搜索或去窗口里看，一屏几百行谁也找不到要的那个。 */
 const toolboxNodeRows = 60;
@@ -24,6 +38,10 @@ const windowNodeRows = 300;
 const connectionRows = 200;
 /** 「日志」那一页给多少行。 */
 const logRows = 200;
+/** 「规则」页列多少条页面规则（一次 render ≤ 500 个节点）。 */
+const pageRuleRows = 120;
+/** 「连接」页顶上列多少条失败的请求。 */
+const failedRows = 20;
 
 /**
  * 整页。
@@ -44,6 +62,7 @@ export function renderPage(session: Session): UINode {
         options: [
           { value: "nodes", title: "节点" },
           { value: "connections", title: "连接" },
+          { value: "rules", title: "规则" },
           { value: "logs", title: "日志" },
           { value: "subscriptions", title: "订阅" },
         ],
@@ -53,7 +72,8 @@ export function renderPage(session: Session): UINode {
     children.push(...windowView(session, snapshot));
   } else {
     if (snapshot.nodes.length > 0) children.push(modeSection(session, snapshot), nodesSection(session, snapshot, toolboxNodeRows));
-    children.push(subscriptionsSection(session, snapshot, false), commandSection(snapshot));
+    if (snapshot.groups.length > 0) children.push(groupsSection(session, snapshot));
+    children.push(rulesSummarySection(session, snapshot), subscriptionsSection(session, snapshot, false), commandSection(snapshot));
   }
   return ui.scroll({ children });
 }
@@ -68,7 +88,7 @@ function statusSection(session: Session, snapshot: Snapshot): UINode {
     ui.toggle({
       key: "power",
       title: running ? "代理已开启" : "代理",
-      subtitle: statusLine({ ...snapshot, busy }),
+      subtitle: statusLine({ ...snapshot, busy, kernel: snapshot.kernel }),
       value: running,
       disabled: !canToggle,
       onChange: (on) => void session.toggle(on),
@@ -92,6 +112,30 @@ function statusSection(session: Session, snapshot: Snapshot): UINode {
         value: condition.kind === "active",
         disabled: busy !== null || condition.kind === "notGranted" || condition.kind === "other",
         onChange: (on) => void session.setSystemProxy(on),
+      }),
+    );
+  }
+  if (snapshot.phase !== "notGranted") {
+    const tunActive = snapshot.kernel === "tunnel";
+    const subtitle = tunSubtitle({ ...snapshot.tun, active: tunActive }) ?? "开着时整机网络经过 sing-box，命令行工具与不认系统代理的应用也管得到";
+    children.push(
+      ui.toggle({
+        key: "tun",
+        title: "增强模式（TUN）",
+        subtitle,
+        value: running ? tunActive : snapshot.tun.wanted,
+        disabled: busy !== null || !snapshot.tun.granted || snapshot.phase === "notInstalled",
+        onChange: (on) => void session.setTun(on),
+      }),
+    );
+  }
+  if (running && session.reading) {
+    children.push(
+      ui.text({
+        key: "reading",
+        style: "footnote",
+        tint: session.reading.failed > 0 && session.reading.failed >= session.reading.succeeded ? "alert" : "neutral",
+        text: `有效 ↓ ${shortRate(session.reading.download)}B/s  ↑ ${shortRate(session.reading.upload)}B/s · 10 秒内成功 ${session.reading.succeeded}、失败 ${session.reading.failed}`,
       }),
     );
   }
@@ -217,23 +261,76 @@ function notes(session: Session, snapshot: Snapshot): UINode[] {
           }),
         );
       }
-      const reasons = restartReasons(snapshot.control, snapshot.preferences, nodesDigest(snapshot.nodes));
-      if (reasons.length > 0) {
+      const wantedKernel = wantsTunnel(snapshot.selection, snapshot.preferences) ? "tunnel" : "daemon";
+      const restart = restartReasons(snapshot.control, snapshot.preferences, wantedKernel);
+      const reload = reloadReasons(snapshot.control, snapshot.preferences, nodesDigest(snapshot.nodes), snapshot.rulesDigest);
+      if (restart.length > 0) {
         out.push(
           ui.note({
             key: "restart",
             tint: "blue",
             symbol: "arrow.triangle.2.circlepath",
             title: "重新开启之后生效",
-            body: `${reasons.join("、")}；在跑的这一份还是旧的。重新开启会断开现有连接一下。`,
+            body: `${restart.join("、")}；在跑的这一份还是旧的。重新开启会断开现有连接一下。`,
             actions: [action("restart", "重新开启", () => void session.restart(), { disabled: session.core.busy !== null })],
+          }),
+        );
+      } else if (reload.length > 0) {
+        out.push(
+          ui.note({
+            key: "reload",
+            tint: "blue",
+            symbol: "arrow.clockwise",
+            title: "重新载入之后生效",
+            body: `${reload.join("、")}；在跑的这一份还是旧的。重新载入不断开连接、不动系统代理。`,
+            actions: [action("reload", "重新载入", () => void session.reload(), { disabled: session.core.busy !== null })],
           }),
         );
       }
       break;
     }
   }
+  out.push(...tunNotes(session, snapshot));
   return out;
+}
+
+/** 增强模式要说的几件事：没授权、被别的 VPN 拦着、要输管理员密码。 */
+function tunNotes(session: Session, snapshot: Snapshot): UINode[] {
+  if (snapshot.phase === "notGranted" || snapshot.phase === "notInstalled") return [];
+  const wanted = wantsTunnel(snapshot.selection, snapshot.preferences);
+  if (!wanted || snapshot.kernel === "tunnel") return [];
+  if (!snapshot.tun.granted) {
+    return [
+      ui.note({
+        key: "tun-not-granted",
+        tint: "alert",
+        symbol: "lock.shield",
+        title: "增强模式还没有授权",
+        body: "增强模式以管理员身份运行 sing-box、接管整机网络：命令行工具和不认系统代理的应用也会经过它。第一次打开时还要你输一次管理员密码，装上 Jarvis 的网络助手。",
+        actions: [
+          { id: "grant-tun", title: "授权", onPress: () => void session.grantTunnel() },
+          { id: "tun-off", title: "改用系统代理模式", onPress: () => void session.setTun(false) },
+        ],
+      }),
+    ];
+  }
+  if (snapshot.tun.blocker) {
+    return [
+      ui.note({
+        key: "tun-blocked",
+        tint: "alert",
+        symbol: "hand.raised",
+        title: "增强模式被别的 VPN 拦着",
+        body: `${snapshot.tun.blocker}\n两个 TUN 同时接管网络会互相抢路由。先关掉它，再打开这里的增强模式；或者改用系统代理模式。`,
+        actions: [{ id: "tun-off", title: "改用系统代理模式", onPress: () => void session.setTun(false) }],
+      }),
+    ];
+  }
+  const subtitle = tunSubtitle({ ...snapshot.tun, active: false });
+  if (subtitle && snapshot.phase !== "running") {
+    return [ui.note({ key: "tun-password", tint: "blue", symbol: "key", title: "增强模式要一次管理员授权", body: `${subtitle}。系统会弹出密码框，那是 macOS 自己的窗口。网络助手可以在 设置 · 扩展 ·「代理」里卸掉。` })];
+  }
+  return [];
 }
 
 // MARK: - 模式与节点
@@ -329,6 +426,206 @@ function nodesSection(session: Session, snapshot: Snapshot, limit: number): UINo
   });
 }
 
+// MARK: - 策略组
+
+function groupsSection(session: Session, snapshot: Snapshot): UINode {
+  return ui.section({
+    key: "groups",
+    title: "策略组 · GROUPS",
+    trailing: snapshot.surge ? `来自 ${snapshot.surge.sourceName}` : undefined,
+    children: snapshot.groups.map((group) =>
+      ui.picker({
+        key: `group:${group.name}`,
+        label: group.name,
+        value: group.selected,
+        layout: "full",
+        options: group.members.map((member) => ({ value: member.tag, title: memberTitle(member.title) })),
+        onChange: (value) => void session.selectGroupMember(group, value),
+      }),
+    ),
+  });
+}
+
+// MARK: - 规则
+
+/** 工具箱里那一段：数字与两个入口（完整的在窗口「规则」页）。 */
+function rulesSummarySection(session: Session, snapshot: Snapshot): UINode {
+  const parts = [`${snapshot.pageRules.length} 条页面规则`];
+  if (snapshot.surge) parts.push(snapshot.preferences.useSurgeRules ? `Surge 配置「${snapshot.surge.sourceName}」` : `导入了 Surge 配置（设置里关着）`);
+  else parts.push(snapshot.preferences.chinaRules ? "内置：局域网与中国大陆直连" : "内置：只有局域网直连");
+  return ui.section({
+    key: "rules-summary",
+    title: "规则 · RULES",
+    actions: [
+      { id: "import", title: "导入 Surge 配置", symbol: "square.and.arrow.down", help: "挑一份 Surge 的 .conf，把规则、策略组与 TUN 相关的设置转成 sing-box", onPress: () => void session.importSurge() },
+    ],
+    children: [
+      ui.row({ key: "rules-open", symbol: "list.bullet.rectangle", title: "规则与当前页面", subtitle: parts.join(" · "), accessory: "chevron", onPress: () => session.openWindow("rules") }),
+    ],
+  });
+}
+
+/** 一个域名可选的策略（chip 一排）。 */
+function policyChips(session: Session, snapshot: Snapshot, keyPrefix: string, domain: string): UINode {
+  const rule = pageRuleFor(snapshot.pageRules, domain);
+  const policies: PolicyRef[] = ["proxy", "direct", "reject", ...snapshot.groups.map((group) => `group:${group.name}` as PolicyRef)];
+  const chips: UINode[] = policies.map((policy) =>
+    ui.chip({
+      key: `${keyPrefix}:${policy}`,
+      title: policyTitle(policy),
+      selected: rule?.policy === policy,
+      disabled: session.core.busy !== null,
+      onPress: () => void session.setPageRule(domain, rule?.policy === policy ? null : policy),
+    }),
+  );
+  return ui.stack({ key: `${keyPrefix}:chips`, axis: "horizontal", spacing: "tight", children: chips });
+}
+
+function currentPageSection(session: Session, snapshot: Snapshot): UINode {
+  const page = session.currentPage;
+  const children: UINode[] = [];
+  if (!page) {
+    children.push(ui.text({ key: "page-hint", style: "footnote", text: "读前台浏览器（Safari、Chrome、Edge、Arc、Brave）当前标签的地址，再加上它最近 30 秒连过的域名，一键给它们定「走代理 / 直连 / 拒绝」。第一次读某个浏览器时系统会问一次「自动化」授权。" }));
+  } else {
+    if (page.status !== "ok") children.push(ui.text({ key: "page-status", style: "footnote", tint: "alert", text: page.message || "读不到地址" }));
+    else children.push(ui.text({ key: "page-where", style: "footnote", text: `${page.browser ?? "浏览器"} · ${page.host}` }));
+    for (const [index, domain] of page.domains.entries()) {
+      const parts = [`${domain.connections} 条连接`];
+      if (domain.failed > 0) parts.push(`${domain.failed} 失败`);
+      if (domain.route) parts.push(`此刻 ${memberTitle(domain.route)}`);
+      if (domain.hosts.length > 0) parts.push(domain.hosts.join("、"));
+      children.push(
+        ui.row({ key: `page-domain:${index}`, symbol: domain.isPage ? "globe" : "link", title: domain.domain, subtitle: parts.join(" · "), ...(domain.failed > 0 ? { tint: "alert" as Tint } : {}) }),
+        policyChips(session, snapshot, `page-policy:${index}`, domain.domain),
+      );
+    }
+    if (page.domains.length === 0 && page.status === "ok") children.push(ui.text({ key: "page-empty", style: "footnote", text: "这一页还没有经过代理的连接：代理开着时刷新一下页面再读。" }));
+  }
+  return ui.section({
+    key: "current-page",
+    title: "当前页面 · PAGE",
+    actions: [{ id: "read-page", title: page ? "重读" : "读取当前页面", symbol: "safari", disabled: session.core.busy !== null, onPress: () => void session.readPage() }],
+    children,
+  });
+}
+
+function pageRulesSection(session: Session, snapshot: Snapshot): UINode {
+  const shown = snapshot.pageRules.slice(0, pageRuleRows);
+  const now = Date.now();
+  const children: UINode[] = [
+    ui.list({
+      key: "page-rules",
+      children: shown.map((rule) =>
+        ui.row({
+          key: `page-rule:${rule.id}`,
+          symbol: rule.policy === "reject" ? "nosign" : rule.policy === "direct" ? "arrow.right" : "point.3.connected.trianglepath.dotted",
+          title: rule.value,
+          subtitle: `${rule.kind === "domain_suffix" ? "含子域名" : "只这一个"} · ${policyTitle(rule.policy)}${rule.createdAt ? ` · ${formatAge(rule.createdAt, now)}` : ""}`,
+          actions: [
+            ...(["proxy", "direct", "reject"] as const)
+              .filter((policy) => policy !== rule.policy)
+              .map((policy) => ({ id: policy, title: policyTitle(policy), onPress: () => void session.setPageRule(rule.value, policy) })),
+            { id: "delete", title: "删除", symbol: "trash", tint: "danger" as Tint, onPress: () => void session.removePageRule(rule.id) },
+          ],
+        }),
+      ),
+      emptyState: ui.empty({ key: "no-page-rules", symbol: "list.bullet.rectangle", title: "还没有页面规则", hint: "在菜单栏「当前页面」「最近请求」里，或上面那一段，给网站定走代理还是直连。" }),
+    }),
+  ];
+  if (snapshot.pageRules.length > shown.length) children.push(ui.text({ key: "page-rules-more", style: "footnote", text: `另有 ${snapshot.pageRules.length - shown.length} 条没列出来` }));
+  return ui.section({ key: "page-rules-section", title: "页面规则 · PAGE RULES", trailing: `${snapshot.pageRules.length} 条 · 排在所有规则之前`, children });
+}
+
+function surgeSection(session: Session, snapshot: Snapshot): UINode {
+  const surge = snapshot.surge;
+  const busy = session.core.busy !== null;
+  const actions: ActionSpec[] = [{ id: "import", title: surge ? "重新导入" : "导入 Surge 配置", symbol: "square.and.arrow.down", disabled: busy, onPress: () => void session.importSurge() }];
+  if (!surge) {
+    return ui.section({
+      key: "surge",
+      title: "SURGE 配置 · IMPORT",
+      actions,
+      children: [
+        ui.text({
+          key: "surge-hint",
+          style: "footnote",
+          text: "挑一份 Surge 的 .conf：[Rule] 里的域名、IP、GEOIP、进程、逻辑规则与外部规则集，[Proxy Group] 的策略组，[General] 里 TUN 相关的几项（tun-excluded-routes、bypass-tun、always-real-ip、dns-server、skip-proxy）与 [Host] 都会转成 sing-box。USER-AGENT、URL Rewrite、MITM、Script 转不了，导入后逐类列出来。节点仍然来自订阅。",
+        }),
+      ],
+    });
+  }
+  actions.push({ id: "clear", title: "撤掉", symbol: "trash", tint: "danger", disabled: busy, onPress: () => void session.clearSurge() });
+  const report = surge.report;
+  const children: UINode[] = [
+    ui.readout({ key: "surge-rules", label: "规则", value: `${convertedCount(report)} / ${report.ruleLines} 条转成 sing-box（合并成 ${report.compiledRules} 条）` }),
+    ui.readout({ key: "surge-groups", label: "策略组", value: surge.groups.length > 0 ? surge.groups.map((group) => group.name).join("、") : "没有" }),
+    ui.readout({
+      key: "surge-tun",
+      label: "TUN",
+      value: `不进 TUN 的路由 ${surge.general.tunExcludedRoutes.length + surge.general.bypassTun.length} 条 · 真实 IP 域名 ${surge.general.alwaysRealIP.length} 个 · DNS ${surge.general.dnsServers.join("、") || "默认"}`,
+    }),
+  ];
+  if (!snapshot.preferences.useSurgeRules) {
+    children.push(ui.text({ key: "surge-off", style: "footnote", tint: "alert", text: "设置里「使用导入的 Surge 规则」关着：此刻用的是内置规则。" }));
+  }
+  if (surge.ruleSets.length > 0) {
+    const records = new Map(snapshot.ruleSetRecords.map((record) => [record.tag, record]));
+    const allowed = new Set(snapshot.ruleSetURLs);
+    const missing = surge.ruleSets.filter((ref) => !allowed.has(ref.url)).map((ref) => ref.url);
+    children.push(
+      ui.list({
+        key: "rule-sets",
+        children: surge.ruleSets.map((ref) => {
+          const record = records.get(ref.tag);
+          const name = ref.url.split("/").pop() || ref.host;
+          const subtitle = !allowed.has(ref.url)
+            ? "没贴进「规则集地址」：这一组规则暂时跳过"
+            : record?.error
+              ? `没拉到：${record.error}`
+              : record?.fetchedAt
+                ? `${record.total} 条 · 拉于${formatAge(record.fetchedAt, Date.now())}${record.skipped > 0 ? ` · ${record.skipped} 条转不了` : ""}`
+                : "还没拉";
+          return ui.row({ key: `rule-set:${ref.tag}`, symbol: record?.fetchedAt ? "checklist" : "exclamationmark.triangle", title: name, subtitle, ...(record?.fetchedAt ? {} : { tint: "amber" as Tint }) });
+        }),
+      }),
+    );
+    if (missing.length > 0) {
+      children.push(
+        ui.text({ key: "rule-sets-help", style: "footnote", text: `${missing.length} 个外部规则集要联网拉，地址来自你挑的文件——Jarvis 只放行你亲手填进设置的地址。复制下面这些，贴进 设置 · 扩展 ·「代理」·「规则集地址」（一次贴多行会拆成多条）。` }),
+        ui.copy({ key: "rule-sets-copy", text: missing.join("\n"), label: "复制这些地址", variant: "chip" }),
+      );
+    }
+    actions.push({ id: "update-sets", title: "拉规则集", symbol: "arrow.clockwise", disabled: busy || missing.length === surge.ruleSets.length, onPress: () => void session.updateRuleSets() });
+  }
+  if (report.unsupported.length > 0) {
+    children.push(
+      ui.list({
+        key: "surge-unsupported",
+        children: report.unsupported.map((kind) =>
+          ui.row({
+            key: `unsupported:${kind.kind}`,
+            symbol: "xmark.circle",
+            title: `${kind.kind} · ${kind.count} 项`,
+            subtitle: kind.samples.length > 0 ? `${kind.reason}：${kind.samples.slice(0, 2).join("；")}` : kind.reason,
+          }),
+        ),
+      }),
+    );
+  }
+  return ui.section({ key: "surge", title: "SURGE 配置 · IMPORT", trailing: `${surge.sourceName} · 导入于${formatAge(surge.importedAt, Date.now())}`, actions, children });
+}
+
+function builtinRulesSection(snapshot: Snapshot): UINode {
+  const lines = ["局域网（私有地址、localhost、.local）一律直连", "出站模式「全局」「直连」排在页面规则之前"];
+  if (!snapshot.surge || !snapshot.preferences.useSurgeRules) lines.push(snapshot.preferences.chinaRules ? "中国大陆的域名与 IP 直连（geosite-cn、geoip-cn）" : "「中国大陆直连」关着：除局域网外都走节点");
+  lines.push(snapshot.kernel === "tunnel" ? "增强模式：DNS 由 sing-box 答（fake-ip / 真实 IP 见设置），always-real-ip 的域名给真实地址" : "其余走「节点选择」");
+  return ui.section({ key: "builtin-rules", title: "内置 · BUILT-IN", children: lines.map((line, index) => ui.text({ key: `builtin:${index}`, style: "footnote", text: `· ${line}` })) });
+}
+
+function rulesView(session: Session, snapshot: Snapshot): UINode[] {
+  return [currentPageSection(session, snapshot), pageRulesSection(session, snapshot), surgeSection(session, snapshot), builtinRulesSection(snapshot)];
+}
+
 // MARK: - 订阅
 
 function subscriptionsSection(session: Session, snapshot: Snapshot, detailed: boolean): UINode {
@@ -419,16 +716,57 @@ function windowView(session: Session, snapshot: Snapshot): UINode[] {
   switch (session.view) {
     case "connections":
       return [connectionsSection(session, snapshot)];
+    case "rules":
+      return rulesView(session, snapshot);
     case "logs":
       return [logsSection(session)];
     case "subscriptions":
       return [subscriptionsSection(session, snapshot, true), commandSection(snapshot)];
     default:
-      return snapshot.nodes.length > 0 ? [modeSection(session, snapshot), nodesSection(session, snapshot, windowNodeRows)] : [];
+      return snapshot.nodes.length > 0
+        ? [modeSection(session, snapshot), nodesSection(session, snapshot, windowNodeRows), ...(snapshot.groups.length > 0 ? [groupsSection(session, snapshot)] : [])]
+        : [];
   }
 }
 
+/** 一条连接 / 请求上的「加规则」那几个动作（按可注册域名）。 */
+function ruleActions(session: Session, host: string): ActionSpec[] {
+  const domain = registrableDomain(host.replace(/:\d+$/, ""));
+  if (!domain) return [];
+  return (["proxy", "direct", "reject"] as const).map((policy) => ({ id: policy, title: `${domain} ${policyTitle(policy)}`, onPress: () => void session.setPageRule(domain, policy) }));
+}
+
 function connectionsSection(session: Session, snapshot: Snapshot): UINode {
+  const failures = session.meter.recent(Date.now(), 200).filter((attempt) => attempt.outcome === "failed").slice(0, failedRows);
+  const failedSection =
+    failures.length > 0
+      ? ui.section({
+          key: "failed-section",
+          title: "失败 · FAILED",
+          tint: "alert",
+          trailing: `最近 ${failures.length} 条`,
+          children: [
+            ui.list({
+              key: "failed",
+              children: failures.map((attempt) =>
+                ui.row({
+                  key: `failed:${attempt.id}`,
+                  symbol: "xmark.octagon",
+                  tint: "alert",
+                  title: attempt.port ? `${attempt.host}:${attempt.port}` : attempt.host,
+                  subtitle: [attempt.reason, attempt.process.split("/").pop() ?? ""].filter((part) => part.length > 0).join(" · "),
+                  actions: ruleActions(session, attempt.host),
+                }),
+              ),
+            }),
+          ],
+        })
+      : null;
+  const live = connectionsList(session, snapshot);
+  return failedSection ? ui.stack({ key: "connections-stack", children: [failedSection, live] }) : live;
+}
+
+function connectionsList(session: Session, snapshot: Snapshot): UINode {
   const data = session.connections;
   const list = data ? [...data.connections].sort((a, b) => b.start - a.start).slice(0, connectionRows) : [];
   const trailing = data ? `${data.connections.length} 条 · ↓ ${formatBytes(data.downloadTotal)}  ↑ ${formatBytes(data.uploadTotal)}` : undefined;
@@ -444,9 +782,10 @@ function connectionsSection(session: Session, snapshot: Snapshot): UINode {
             key: `conn:${connection.id}`,
             symbol: connection.chains.includes("direct") ? "arrow.right" : "point.3.connected.trianglepath.dotted",
             title: connection.host || "（没有主机名）",
-            subtitle: [connection.chains[0] ?? "", connection.network, `↓ ${formatBytes(connection.download)} ↑ ${formatBytes(connection.upload)}`, connection.rule]
+            subtitle: [connection.chains[0] ?? "", connection.network, `↓ ${formatBytes(connection.download)} ↑ ${formatBytes(connection.upload)}`, connection.rule, connection.process.split("/").pop() ?? ""]
               .filter((part) => part.length > 0)
               .join(" · "),
+            actions: ruleActions(session, connection.host),
           }),
         ),
         emptyState: ui.empty({

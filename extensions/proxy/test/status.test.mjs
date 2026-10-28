@@ -20,6 +20,9 @@ const {
   nodeItemId,
   menuText,
   restartReasons,
+  countMenuItems,
+  maximumMenuItems,
+  reloadReasons,
   maximumMenuNodes,
 } = await loadSource();
 
@@ -36,8 +39,12 @@ test("偏好：缺的、类型不对的、越界的回到 manifest 默认", () =
   assert.equal(prefs.updateInterval, "daily");
   assert.equal(prefs.showSpeed, false);
   assert.equal(prefs.singBoxPath, "/usr/local/bin/sing-box");
-  assert.deepEqual(normalizeSelection({ mode: "enhanced", node: 3 }), { mode: "rule", node: "自动选择" });
-  assert.deepEqual(normalizeSelection({ mode: "global", node: "香港" }), { mode: "global", node: "香港" });
+  assert.deepEqual(normalizeSelection({ mode: "enhanced", node: 3 }), { mode: "rule", node: "自动选择", tun: null, groups: {} });
+  assert.deepEqual(normalizeSelection({ mode: "global", node: "香港", tun: true, groups: { Apple: "direct", bad: 3 } }), { mode: "global", node: "香港", tun: true, groups: { Apple: "direct" } });
+  assert.equal(prefs.tun, false);
+  assert.equal(prefs.dnsMode, "fakeip");
+  assert.equal(normalizePreferences({ dnsMode: "realip", tunStack: "gvisor" }).tunStack, "gvisor");
+  assert.equal(normalizePreferences({ tunStack: "lwip" }).tunStack, "mixed");
 });
 
 test("处在哪一步：授权 > 在跑 > 没装 > 没节点 > 失败 > 关着", () => {
@@ -192,11 +199,58 @@ test("菜单项 id 的往返", () => {
   assert.match(nodeItemId(299), /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/, "符合 bridge schema 的 menuBarItemID");
 });
 
-test("要不要重开：端口、节点、分流改过；规则集下载失败那一次不算", () => {
+test("要不要重开：只有端口与内核；节点、分流、规则走重新载入；规则集下载失败那一次不算", () => {
   const prefs = normalizePreferences({});
-  const control = { secret: "s", controlPort: 19090, mixedPort: 7890, chinaRules: true, ruleSetFallback: false, testURL: prefs.testURL, nodesDigest: "d", startedAt: 1, starting: false };
-  assert.deepEqual(restartReasons(null, prefs, "d"), []);
-  assert.deepEqual(restartReasons(control, prefs, "d"), []);
-  assert.deepEqual(restartReasons(control, normalizePreferences({ mixedPort: 7891, chinaRules: false }), "e"), ["订阅更新过", "本地端口改过", "中国大陆直连改过"]);
-  assert.deepEqual(restartReasons({ ...control, chinaRules: false, ruleSetFallback: true }, prefs, "d"), []);
+  const control = { secret: "s", controlPort: 19090, mixedPort: 7890, chinaRules: true, ruleSetFallback: false, testURL: prefs.testURL, nodesDigest: "d", rulesDigest: "r", startedAt: 1, starting: false };
+  assert.deepEqual(restartReasons(null, prefs), []);
+  assert.deepEqual(restartReasons(control, prefs), []);
+  assert.deepEqual(restartReasons(control, normalizePreferences({ mixedPort: 7891 }), "tunnel"), ["本地端口改过", "增强模式打开了"]);
+  assert.deepEqual(restartReasons({ ...control, kernel: "tunnel" }, prefs, "daemon"), ["增强模式关掉了"]);
+  assert.deepEqual(reloadReasons(control, normalizePreferences({ chinaRules: false }), "e", "r2"), ["订阅更新过", "中国大陆直连改过", "规则改过"]);
+  assert.deepEqual(reloadReasons({ ...control, chinaRules: false, ruleSetFallback: true }, prefs, "d", "r"), []);
+});
+
+test("Surge 式菜单：几百个节点、七个策略组、八个页面域名、十二条最近请求，整份仍 ≤ 300 项、至多三层、id 合规、两行标题", () => {
+  const prefs = normalizePreferences({ showSpeed: true });
+  const nodes = Array.from({ length: 400 }, (_, index) => ({ name: `节点 ${index}`, protocol: "vless" }));
+  const groups = Array.from({ length: 7 }, (_, index) => ({ name: `G${index}`, tag: `G${index}`, members: [{ tag: "节点选择", title: "节点选择" }, { tag: "自动选择", title: "自动选择" }, { tag: "direct", title: "直连" }], selected: "节点选择" }));
+  const domains = Array.from({ length: 8 }, (_, index) => ({ domain: `d${index}.example.com`, hosts: [`www.d${index}.example.com`], isPage: index === 0, connections: 3, failed: index % 2, route: "节点选择" }));
+  const recent = Array.from({ length: 12 }, (_, index) => ({ id: String(index), source: "", host: `r${index}.example.com`, port: 443, process: "", startedAt: 0, dialing: true, outcome: index % 3 === 0 ? "failed" : "succeeded", settledAt: 0, reason: "i/o timeout", chains: ["节点选择"] }));
+  const model = buildMenuModel({
+    phase: "running",
+    preferences: prefs,
+    selection: { mode: "rule", node: "自动选择", tun: null, groups: {} },
+    nodes,
+    latency: {},
+    proxy: null,
+    granted: ALL.concat(["network.tunnel", "browser.activeTab"]),
+    autoPick: null,
+    rate: null,
+    failure: null,
+    busy: null,
+    kernel: "tunnel",
+    tun: { granted: true, wanted: true, active: true, helper: "ready", matchesInstalled: true, blocker: null },
+    groups,
+    page: { browser: "Safari", host: "www.d0.example.com", status: "ok", message: "", domains },
+    pageRules: [],
+    recent,
+    reading: { upload: 34 * 1024, download: 1.2 * 1024 * 1024, succeeded: 42, failed: 3 },
+    history: { upload: [1, 2], download: [3, 4] },
+  });
+  assert.ok(countMenuItems(model.items) <= maximumMenuItems, `${countMenuItems(model.items)} 项`);
+  const depth = (items, level = 1) => Math.max(level, ...items.filter((item) => item.kind === "submenu").map((item) => depth(item.items, level + 1)));
+  assert.ok(depth(model.items) <= 3);
+  const ids = [];
+  const walk = (items) => items.forEach((item) => (item.kind === "submenu" ? walk(item.items) : item.id && ids.push(item.id)));
+  walk(model.items);
+  for (const id of ids) assert.match(id, /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/);
+  assert.equal(new Set(ids).size, ids.length, "id 不重");
+  assert.equal(model.title, "↓1.2M\n↑34K");
+  assert.ok(model.title.split("\n").every((line) => line.length <= 10));
+  assert.equal(model.items[0].kind, "chart");
+  assert.equal(model.symbol, "network.badge.shield.half.filled");
+  assert.deepEqual(parseMenuItemId("page:3:g2"), { kind: "page", domain: 3, policy: "g2" });
+  assert.deepEqual(parseMenuItemId("recent:0:clear"), { kind: "recent", request: 0, policy: "clear" });
+  assert.deepEqual(parseMenuItemId("group:1:2"), { kind: "group", group: 1, member: 2 });
+  assert.equal(parseMenuItemId("page:1:g"), null);
 });

@@ -11,7 +11,9 @@
  * 3. **订阅地址是密码**（`urlList` 进钥匙串）：存储里不放地址本身，只放它的散列（认出「还是那一条」）与主机名（给人看是哪一家）。
  */
 import type { ProxyNode } from "./nodes.js";
+import type { KernelKind } from "./singbox-config.js";
 import type { SkippedLine, SubscriptionFormat } from "./subscription.js";
+import type { HeadlessRule, SurgeImport, SurgeRuleSetRef } from "./surge.js";
 
 /** 存储里的键。 */
 export const storageKeys = {
@@ -27,7 +29,107 @@ export const storageKeys = {
   failure: "failure",
   /** `Schedule`：订阅自动更新的日程。 */
   schedule: "schedule",
+  /** `PageRule[]`：用户给网站加的规则，新的在前（SDK 2.10 这一期，T-8）。 */
+  pageRules: "pageRules",
+  /** `StoredSurge`：导入的 Surge 配置，规则另外切块（`surge:rules:<序号>`）。 */
+  surge: "surge",
+  /** `Record<tag, RuleSetRecord>`：导入配置里那些外部规则集拉没拉到，内容另外切块（`ruleset:<tag>:<序号>`）。 */
+  ruleSets: "ruleSets",
 } as const;
+
+/**
+ * 导入的 Surge 规则的一块。
+ * @param index 第几块。
+ * @returns 键。
+ */
+export function surgeRuleChunkKey(index: number): string {
+  return `surge:rules:${index}`;
+}
+
+/**
+ * 一个外部规则集内容的一块。
+ * @param tag 规则集 tag。
+ * @param index 第几块。
+ * @returns 键。
+ */
+export function ruleSetChunkKey(tag: string, index: number): string {
+  return `ruleset:${tag}:${index}`;
+}
+
+/** 存储里的导入结果：规则不在这里（切块存），只留块数。 */
+export type StoredSurge = Omit<SurgeImport, "rules"> & { ruleChunks: number };
+
+/** 一个外部规则集此刻的样子。 */
+export interface RuleSetRecord extends SurgeRuleSetRef {
+  /** 最近一次拉到的时刻；从没拉到为 `null`。 */
+  fetchedAt: number | null;
+  attemptedAt: number | null;
+  /** 最近一次没拉到的原因；拉到了为 `null`。没拉到时内容仍是上一次拉到的那一份。 */
+  error: string | null;
+  /** 认出了几条、跳过几条。 */
+  total: number;
+  skipped: number;
+  /** 里面有 IP 类规则。 */
+  hasIP: boolean;
+  chunks: number;
+}
+
+/**
+ * 把一组任意东西切成每块不超过 `maxBytes`（按 JSON 的 UTF-8 字节数）的几块。一项自己就超过上限时单独成块（不丢）。
+ * @param items 东西。
+ * @param maxBytes 每块上限。
+ * @returns 块。
+ */
+export function chunkItems<T>(items: readonly T[], maxBytes: number = maximumChunkBytes): T[][] {
+  const chunks: T[][] = [];
+  let current: T[] = [];
+  let size = 2;
+  for (const item of items) {
+    const bytes = utf8Length(JSON.stringify(item)) + 1;
+    if (current.length > 0 && size + bytes > maxBytes) {
+      chunks.push(current);
+      current = [];
+      size = 2;
+    }
+    current.push(item);
+    size += bytes;
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks;
+}
+
+/**
+ * 把规则集里过大的一条拆成几条（每条只带一部分值）：规则集里各条之间是「或」，一条 `domain_suffix: [几千个]` 拆成几条，命中结果不变；
+ * 拆完每条都放得进一块。只拆数组字段，几种字段一起的那条按字段各拆各的。
+ * @param rules 规则。
+ * @param maxBytes 每条上限。
+ * @returns 新规则。
+ */
+export function splitHeadlessRules(rules: readonly HeadlessRule[], maxBytes: number = maximumChunkBytes - 1024): HeadlessRule[] {
+  const out: HeadlessRule[] = [];
+  for (const rule of rules) {
+    if (utf8Length(JSON.stringify(rule)) <= maxBytes) {
+      out.push(rule);
+      continue;
+    }
+    const scalars: HeadlessRule = {};
+    const arrays: [string, unknown[]][] = [];
+    for (const [key, value] of Object.entries(rule)) {
+      if (Array.isArray(value)) arrays.push([key, value]);
+      else scalars[key] = value;
+    }
+    // 只有一种字段，或几种都是目标类（「或」）：各自切开；混着别的字段（「与」）的不拆，原样单独成块。
+    const destination = new Set(["domain", "domain_suffix", "domain_keyword", "domain_regex", "ip_cidr"]);
+    if (arrays.length > 1 && !arrays.every(([key]) => destination.has(key))) {
+      out.push(rule);
+      continue;
+    }
+    for (const [key, values] of arrays) {
+      for (const part of chunkItems(values, maxBytes)) out.push({ ...scalars, [key]: part });
+    }
+  }
+  return out;
+}
 
 /**
  * 一块节点的键。
@@ -359,6 +461,8 @@ export function describeUsage(usage: SubscriptionUsage): string {
 
 /** 此刻在跑的那一份内核用的东西（存储 `control`）。 */
 export interface ControlRecord {
+  /** 跑在哪：用户态常驻进程（系统代理模式）或网络助手里的 root 内核（TUN）。旧记录没有这一项 = `daemon`。 */
+  kernel?: KernelKind;
   secret: string;
   controlPort: number;
   mixedPort: number;
@@ -367,8 +471,10 @@ export interface ControlRecord {
   /** 偏好要分流，但规则集下载失败、这一次没分流。 */
   ruleSetFallback: boolean;
   testURL: string;
-  /** 起这一份时的节点摘要：与存储里最新的不同 = 订阅更新过，重开才用得上。 */
+  /** 起这一份时的节点摘要：与存储里最新的不同 = 订阅更新过，重新载入才用得上。 */
   nodesDigest: string;
+  /** 起（或重新载入）这一份时的规则摘要：页面规则、导入的配置、外部规则集、DNS 模式。与此刻的不同 = 重新载入才用得上。 */
+  rulesDigest?: string;
   startedAt: number;
   /** 还在等它就绪：这期间的退出由正在开启的那个会话自己报，后台不另发横幅。 */
   starting: boolean;

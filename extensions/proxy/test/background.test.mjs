@@ -65,7 +65,7 @@ test("start：没有节点时说清楚；更新订阅之后菜单里有 6 个节
   assert.equal(header(), "已关闭");
   assert.equal(host.menuItem("toggle").title, "开启代理");
   const nodes = submenu("节点");
-  assert.equal(nodes.title, "节点 · 自动选择");
+  assert.equal(nodes.title, "节点选择 · 自动选择", "Surge 式：子菜单写组名与此刻选中的组员");
   assert.deepEqual(
     nodes.items.filter((item) => item.kind === "item").map((item) => item.title),
     ["自动选择", ...JMS_NAMES],
@@ -141,7 +141,7 @@ test("菜单里换模式、换节点、测速、复制终端命令", async () =>
   assert.deepEqual(JSON.parse(put.body), { name: JMS_NAMES[2] });
   assert.equal(host.menuItem("node:2").checked, true);
   assert.equal(host.menuItem("node:auto").checked, false);
-  assert.equal(submenu("节点").title, `节点 · ${JMS_NAMES[2]}`);
+  assert.equal(submenu("节点").title, `节点选择 · ${JMS_NAMES[2]}`);
 
   clash.delays = { [JMS_NAMES[0]]: 88, [JMS_NAMES[3]]: 1234 };
   daemons.requests.length = 0;
@@ -328,20 +328,24 @@ test("两条订阅合并：重名的加序号；一条失败时保留它上一�
   assert.equal(storage.get("subscriptions").length, 1);
 });
 
-test("订阅更新后节点变了、内核开着：自动重开用上新节点（系统代理重新接管）", async () => {
+test("订阅更新后节点变了、内核开着：重新载入用上新节点——不断进程、系统代理一直指着它", async () => {
   await reset();
   await menu("start");
   await select("update");
   await select("toggle");
   const digest = storage.get("control").nodesDigest;
-  const before = callsOf(scene, "daemon.start").length;
+  const starts = callsOf(scene, "daemon.start").length;
+  const reloads = daemons.reloads["sing-box"] ?? 0;
+  const disables = callsOf(scene, "systemProxy.disable").length;
   scene.responses[JMS] = { status: 200, headers: {}, text: base64(jmsLinks.slice(0, 3).join("\n")) };
   await select("update");
-  assert.equal(callsOf(scene, "daemon.start").length, before + 1);
+  assert.equal(callsOf(scene, "daemon.start").length, starts, "没有停了再起");
+  assert.equal(daemons.reloads["sing-box"], reloads + 1, "SIGHUP 重载");
+  assert.equal(callsOf(scene, "systemProxy.disable").length, disables, "系统代理没有被还原过");
   assert.notEqual(storage.get("control").nodesDigest, digest);
   assert.equal(lastConfig(scene).outbounds.filter((outbound) => outbound.tag.startsWith("JMS-")).length, 3);
   assert.equal(daemons.systemProxy.owner, "self");
-  assert.match(scene.notifications.at(-1).body, /已重新开启以用上新节点/);
+  assert.match(scene.notifications.at(-1).body, /已重新载入以用上新节点/);
 });
 
 test("自动开启与订阅自动更新：start 时按偏好开启；每 30 秒看一次日程，到点就拉", async () => {
@@ -369,6 +373,16 @@ test("菜单栏速率：开着且偏好要显示时，图标旁每秒刷新上�
   clash.totals = { upload: 10 * 1024, download: 2 * 1024 * 1024 };
   await timers.advance(1000);
   await idle(scene);
-  assert.match(host.latestMenuBar.title ?? "", /^↓[\d.]+M ↑[\d.]+K$/);
-  assert.ok(host.latestMenuBar.title.length <= 16);
+  assert.equal(host.latestMenuBar.title, "↓2M\n↑10K", "两行：下行在上、上行在下，每行 ≤ 10 字");
+  const orb = host.latestOrb;
+  assert.equal(orb.kind, "traffic", "悬浮球那一层跟着推");
+  assert.equal(orb.download, 2 * 1024 * 1024);
+  assert.equal(orb.upload, 10 * 1024);
+  clash.totals = { upload: 20 * 1024, download: 4 * 1024 * 1024 };
+  await timers.advance(1000);
+  await idle(scene);
+  const chart = host.latestMenuBar.items[0];
+  assert.equal(chart.kind, "chart", "两个点以上才画菜单顶部那块曲线");
+  assert.deepEqual(chart.series.map((series) => series.tone), ["download", "upload"]);
+  assert.deepEqual(chart.series[0].values, [2 * 1024 * 1024, 2 * 1024 * 1024]);
 });

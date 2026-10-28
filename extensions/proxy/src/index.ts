@@ -1,6 +1,7 @@
 /**
- * 代理（`proxy`）—— 用你自己装的 sing-box 跑你的订阅：工具箱一页开关与切节点、窗口里看连接与日志、
- * 菜单栏一枚图标随手开关，开着时把系统代理指向它（jarvis-mac `specs/20261028-091917-proxy-extension-menubar-daemon` P-9）。
+ * 代理（`proxy`）—— 用你自己装的 sing-box 跑你的订阅：工具箱一页开关与切节点、窗口里看连接、规则与日志、
+ * 菜单栏一枚图标随手开关，开着时把系统代理指向它（jarvis-mac `specs/20261028-091917-proxy-extension-menubar-daemon` P-9）；
+ * 还有增强模式（TUN）、导入 Surge 配置、当前页面规则、悬浮球上的有效流量与成败（`specs/20261028-111714-proxy-tun-orb-traffic-page-rules`）。
  *
  * 两个会话共用同一份 bundle：
  * - 前台（工具箱、窗口）：`Session`，页面开着时每秒读一次流量；
@@ -25,5 +26,8 @@ defineExtension({
   },
   commands: {
     toggle: (context) => background.command(context),
+    // 菜单栏「导入 Surge 配置」「规则」：窗口命令跑在前台会话——挑文件要用户在场。
+    "import-surge": () => session.command("import-surge"),
+    rules: () => session.command("rules"),
   },
 });

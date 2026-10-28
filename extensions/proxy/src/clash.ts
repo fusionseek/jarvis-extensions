@@ -19,6 +19,17 @@
 export const DAEMON_ID = "sing-box";
 
 /**
+ * Clash API 请求的发送方：系统代理模式经 `daemon.request`，TUN 经 `tunnel.request`（SDK 2.10）。两者形状相同，只差有没有 `id`。
+ */
+export type ClashTransport = (request: {
+  method: "GET" | "PUT" | "PATCH";
+  path: string;
+  headers: { Authorization?: string; "Content-Type"?: string };
+  body?: string;
+  timeout: number;
+}) => Promise<{ status: number; headers: Record<string, string>; text: string }>;
+
+/**
  * 控制口的 secret：32 位十六进制。JavaScriptCore 里没有保证可用的 `crypto.getRandomValues`，用 `Math.random`——
  * 控制口只听 127.0.0.1，secret 挡的是同机别的程序顺手调它，不是要对抗能读这台机器内存的人。
  * @param random 随机源（测试注入）。
@@ -121,6 +132,10 @@ export interface ConnectionInfo {
   download: number;
   /** 建立时刻，Unix 毫秒；读不出为 0。 */
   start: number;
+  /** 本机源地址 `ip:port`（与日志里 `inbound connection from` 那一行对得上）；读不出为空串。 */
+  source: string;
+  /** 进程路径（`route.find_process` 开着时才有；末尾「 (用户名)」已去掉）；读不出为空串。 */
+  process: string;
 }
 
 /** 一份连接快照。 */
@@ -159,9 +174,31 @@ export function parseConnections(response: ClashResponse): ConnectionsSnapshot |
       upload: number(item.upload),
       download: number(item.download),
       start: Number.isFinite(started) ? started : 0,
+      source: sourceOf(string(metadata.sourceIP), string(metadata.sourcePort)),
+      process: processOf(string(metadata.processPath)),
     });
   }
   return { uploadTotal: number(body.uploadTotal), downloadTotal: number(body.downloadTotal), connections };
+}
+
+/**
+ * 源地址写成日志里那种 `ip:port`（IPv6 加方括号）。
+ * @param ip 源 IP。
+ * @param port 源端口。
+ * @returns 地址；缺一样为空串。
+ */
+export function sourceOf(ip: string, port: string): string {
+  if (!ip || !port) return "";
+  return ip.includes(":") ? `[${ip}]:${port}` : `${ip}:${port}`;
+}
+
+/**
+ * sing-box 报的进程路径末尾带「 (用户名)」（`/usr/bin/curl (Fusion)`，实测 1.14.4）：去掉它。
+ * @param value 原文。
+ * @returns 路径。
+ */
+export function processOf(value: string): string {
+  return value.replace(/ \([^()]*\)$/, "");
 }
 
 /** 一次流量读数：累计上下行字节与读的时刻。 */

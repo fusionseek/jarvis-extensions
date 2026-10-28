@@ -16,7 +16,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 export const bundlePath = join(here, "..", "dist", "extension.js");
 
 /** manifest 里的全部能力。 */
-export const ALL = ["process.daemon", "system.proxy", "network.https", "terminal.run", "notifications.post", "clipboard.write"];
+export const ALL = ["process.daemon", "system.proxy", "network.tunnel", "network.https", "terminal.run", "notifications.post", "clipboard.write", "browser.activeTab", "files.pick"];
 
 /** 让微任务与 setImmediate 排空几轮。 */
 export async function flush(rounds = 6) {
@@ -114,7 +114,7 @@ function fakeClash(daemons) {
   };
   const json = (status, body) => ({ status, headers: { "Content-Type": "application/json" }, text: body === undefined ? "" : JSON.stringify(body) });
   daemons.respond = (request) => {
-    const config = JSON.parse(daemons.configs["sing-box"] ?? "{}");
+    const config = JSON.parse((request.id === undefined ? daemons.tunnelConfig : daemons.configs["sing-box"]) ?? "{}");
     const secret = config.experimental?.clash_api?.secret;
     if (request.headers?.Authorization !== `Bearer ${secret}`) return json(401, { message: "Unauthorized" });
     const [path, query = ""] = request.path.split("?");
@@ -164,7 +164,7 @@ function fakeClash(daemons) {
 export async function createProxyHost() {
   const timers = installFakeTimers();
   const storage = memoryStorage();
-  const daemons = fakeDaemons({ daemons: [{ id: "sing-box", config: true }] });
+  const daemons = fakeDaemons({ daemons: [{ id: "sing-box", config: true, reload: true }] });
   const clash = fakeClash(daemons);
   const scene = {
     timers,
@@ -184,6 +184,16 @@ export async function createProxyHost() {
     permissionRequests: [],
     /** 宿主认为不存在的那个路径（`daemon.status` 对它答空串）。 */
     badPath: null,
+    /** `browser.activeTab()` 答什么（SDK 2.10）；`null` = 从没用过浏览器。 */
+    tab: null,
+    /** `files.pick()` 答什么；`null` = 用户取消。 */
+    picked: null,
+    /** 每一次 `files.pick` 的入参。 */
+    picks: [],
+    /** 每一次 `commands.run` 的 id。 */
+    commandsRun: [],
+    /** 偏好里的「规则集地址」。 */
+    ruleSetURLs: [],
   };
   const host = createTestHost({
     async: {
@@ -201,7 +211,16 @@ export async function createProxyHost() {
         return { granted: ids, denied: [] };
       },
       "preferences.all": async () => ({ ...scene.preferences }),
-      "preferences.get": async ({ key }) => (key === "subscriptions" ? [...scene.subscriptions] : scene.preferences[key]),
+      "preferences.get": async ({ key }) => (key === "subscriptions" ? [...scene.subscriptions] : key === "ruleSets" ? [...scene.ruleSetURLs] : scene.preferences[key]),
+      "browser.activeTab": async () => scene.tab,
+      "files.pick": async (params) => {
+        scene.picks.push(params);
+        return scene.picked;
+      },
+      "commands.run": async ({ id }) => {
+        scene.commandsRun.push(id);
+        return null;
+      },
       "preferences.observe": async () => null,
       "preferences.unsubscribe": async () => null,
       "net.fetch": async (params) => {
@@ -249,7 +268,7 @@ export async function idle(scene) {
   while (quiet < 2) {
     await scene.host.settle();
     await flush();
-    const count = scene.host.invocations.length + scene.host.menuBarModels.length;
+    const count = scene.host.invocations.length + scene.host.menuBarModels.length + scene.host.orbModels.length;
     quiet = count === seen ? quiet + 1 : 0;
     seen = count;
   }
@@ -265,7 +284,8 @@ export function clashCalls(scene) {
   return scene.daemons.requests.map((request) => `${request.method} ${decodeURIComponent(request.path.split("?")[0])}`);
 }
 
-/** 最近一次 `daemon.start` 交出去的配置。 */
+/** 最近一次 `daemon.start` / `daemon.reload` 交出去的配置（TUN 在跑时是 `tunnel.start` / `tunnel.reload` 那一份）。 */
 export function lastConfig(scene) {
+  if (scene.daemons.tunnelStatus().state === "running") return JSON.parse(scene.daemons.tunnelConfig);
   return JSON.parse(scene.daemons.configs["sing-box"]);
 }

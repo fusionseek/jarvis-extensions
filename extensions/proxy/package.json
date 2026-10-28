@@ -11,6 +11,6 @@
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
-    "@fusionseek/jarvis-extension-sdk": "^2.9.0"
+    "@fusionseek/jarvis-extension-sdk": "^2.10.0"
   }
 }

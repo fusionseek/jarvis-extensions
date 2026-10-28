@@ -1,9 +1,9 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-28T02:20:22.867Z",
+  "generatedAt": "2026-10-28T04:08:21.102Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "cc7b1867badc3942f43d14e2bfd9a4cfa040b99d"
+    "commit": "2e4a3ef822ad6e9340af9996a78e297e35052d18"
   },
   "extensions": [
     {
@@ -51,10 +51,10 @@
       "path": "extensions/android-apps",
       "bundle": {
         "path": "extensions/android-apps/dist/extension.js",
-        "sha256": "333488fa31ef758f1679ec056aeb156c33aff3683bac7b5bf29bc5599d9132f4",
-        "byteCount": 62153
+        "sha256": "95882f780dfd7ec5191b5c87e6e0157861da9651bd15f9de20a0559f5fd58dfe",
+        "byteCount": 63251
       },
-      "updatedAt": "2026-10-20T21:02:14+08:00"
+      "updatedAt": "2026-10-28T11:14:00+08:00"
     },
     {
       "manifest": {
@@ -390,10 +390,10 @@
       "path": "extensions/code-format",
       "bundle": {
         "path": "extensions/code-format/dist/extension.js",
-        "sha256": "96e46f4e75d19b0bae0a3a08d2e3f3f2eab46d7e68d2dd0714eac5884d474d25",
-        "byteCount": 36469
+        "sha256": "1f695d7a8449c20a897042b57af6a41a950fc49ef7b44e3a53050b0449319f22",
+        "byteCount": 37567
       },
-      "updatedAt": "2026-10-21T07:58:41+08:00"
+      "updatedAt": "2026-10-28T11:14:00+08:00"
     },
     {
       "manifest": {
@@ -430,10 +430,10 @@
       "path": "extensions/code-highlight",
       "bundle": {
         "path": "extensions/code-highlight/dist/extension.js",
-        "sha256": "c23997a9dc2625b84cc0ec1194176fd04602a46072e374669648710b898c7c49",
-        "byteCount": 58692
+        "sha256": "29cb444c450aa45bd42d607f967f71fba2bfe8869ff711256bba06708dbad15a",
+        "byteCount": 59790
       },
-      "updatedAt": "2026-10-21T07:58:41+08:00"
+      "updatedAt": "2026-10-28T11:14:00+08:00"
     },
     {
       "manifest": {
@@ -511,10 +511,10 @@
       "path": "extensions/github-project",
       "bundle": {
         "path": "extensions/github-project/dist/extension.js",
-        "sha256": "0c817a16d484b7c0435dc897b946a4749ef0c1a885f298fa8d7c70beef5ff884",
-        "byteCount": 87309
+        "sha256": "5553f84f6bbf3ecf08cce7fd5924eab8edd3e0d1bf8fb06315576b39ba24946f",
+        "byteCount": 88407
       },
-      "updatedAt": "2026-10-20T21:02:14+08:00"
+      "updatedAt": "2026-10-28T11:14:00+08:00"
     },
     {
       "manifest": {
@@ -652,10 +652,10 @@
       "path": "extensions/http-status",
       "bundle": {
         "path": "extensions/http-status/dist/extension.js",
-        "sha256": "e59b245e04135db8a6437f4587c15e8fd5c73c348814e351392a331c160eba87",
-        "byteCount": 122494
+        "sha256": "60c684123ee3e1680131ec4848693bd3915a28d03d868a833e6c8c397b404e45",
+        "byteCount": 123592
       },
-      "updatedAt": "2026-10-20T21:02:14+08:00"
+      "updatedAt": "2026-10-28T11:14:00+08:00"
     },
     {
       "manifest": {
@@ -706,10 +706,10 @@
       "path": "extensions/mac-apps",
       "bundle": {
         "path": "extensions/mac-apps/dist/extension.js",
-        "sha256": "7d7c840f1ef73019f54fa714ab823efe07f321b693ee2266fcdcd3a4b1a519cb",
-        "byteCount": 39725
+        "sha256": "c615e809c2fefb698e8c318d7ba362fc614d960636a8a479b0ff1d9ce4528e42",
+        "byteCount": 40823
       },
-      "updatedAt": "2026-10-20T21:02:14+08:00"
+      "updatedAt": "2026-10-28T11:14:00+08:00"
     },
     {
       "manifest": {
@@ -830,10 +830,10 @@
       "path": "extensions/mole-clean",
       "bundle": {
         "path": "extensions/mole-clean/dist/extension.js",
-        "sha256": "032d53fb361a5749c1c84f5acf20149c9fa36162204ba243152391143ad65997",
-        "byteCount": 56543
+        "sha256": "79ff9b02a09de254a59381d6423f7d34ee7ad912415ea1db44910c0133816895",
+        "byteCount": 57641
       },
-      "updatedAt": "2026-10-20T21:02:14+08:00"
+      "updatedAt": "2026-10-28T11:14:00+08:00"
     },
     {
       "manifest": {
@@ -842,26 +842,30 @@
         "version": "1.0.0",
         "name": "代理",
         "symbol": "network",
-        "description": "用你自己装的 sing-box 跑你的订阅：菜单栏一枚图标随手开关、切节点、换模式，开着时把系统代理指向它。认 Shadowsocks、VMess、VLESS（含 REALITY）、Trojan、Hysteria2、TUIC 分享链接与 sing-box JSON，局域网与中国大陆直连。",
+        "description": "用你自己装的 sing-box 跑你的订阅：菜单栏随手开关、切节点与策略组，系统代理或增强模式（TUN）接管整机网络；能导入 Surge 配置的规则，给正在看的网页一键加规则，悬浮球上看有效流量与成败。认 SS、VMess、VLESS（含 REALITY）、Trojan、Hysteria2、TUIC 与 sing-box JSON。",
         "author": {
           "name": "fusionseek",
           "github": "fusionseek"
         },
         "main": "dist/extension.js",
-        "sdk": "^2.9.0",
+        "sdk": "^2.10.0",
         "minimumJarvisVersion": "3.2.7",
         "capabilities": [
           {
             "id": "process.daemon",
-            "reason": "在后台常驻运行你装好的 sing-box，并经本机控制口切节点、测速"
+            "reason": "在后台常驻运行你装好的 sing-box（系统代理模式），经本机控制口切节点、测速"
           },
           {
             "id": "system.proxy",
             "reason": "开着时把系统代理指向本机的 sing-box，关掉或退出时还原"
           },
           {
+            "id": "network.tunnel",
+            "reason": "增强模式：以管理员身份运行 sing-box 接管整机网络，命令行工具也走它"
+          },
+          {
             "id": "network.https",
-            "reason": "拉取你在设置里填的订阅地址"
+            "reason": "拉取你在设置里填的订阅地址与规则集地址"
           },
           {
             "id": "terminal.run",
@@ -874,11 +878,20 @@
           {
             "id": "clipboard.write",
             "reason": "菜单栏「复制终端代理命令」把 export 那一行放进剪贴板"
+          },
+          {
+            "id": "browser.activeTab",
+            "reason": "读前台浏览器当前标签的地址，给这个网站一键加「走代理 / 直连 / 拒绝」"
+          },
+          {
+            "id": "files.pick",
+            "reason": "导入 Surge 配置时让你挑那份 .conf"
           }
         ],
         "network": {
           "preferenceHosts": [
-            "subscriptions"
+            "subscriptions",
+            "ruleSets"
           ]
         },
         "process": {
@@ -895,9 +908,13 @@
               ],
               "config": {
                 "fileName": "config.json"
-              }
+              },
+              "reload": "SIGHUP"
             }
           ],
+          "tunnel": {
+            "executable": "sing-box"
+          },
           "terminal": [
             {
               "id": "install",
@@ -936,20 +953,22 @@
         },
         "contributes": {
           "toolbox": {
-            "subtitle": "开关代理、换模式、切节点",
+            "subtitle": "开关代理与增强模式、切节点",
             "keywords": [
               "proxy",
               "sing-box",
               "vpn",
+              "tun",
               "订阅",
               "vless",
               "shadowsocks",
               "clash",
+              "surge",
               "测速"
             ]
           },
           "window": {
-            "subtitle": "节点、连接、日志与订阅：sing-box 的完整视图",
+            "subtitle": "节点、连接、规则、日志与订阅：sing-box 的完整视图",
             "keywords": [
               "proxy",
               "vpn",
@@ -960,11 +979,14 @@
             "title": "代理",
             "symbol": "network"
           },
+          "orb": {
+            "title": "代理流量"
+          },
           "commands": [
             {
               "id": "toggle",
               "title": "开关代理",
-              "description": "不带参数切换；/proxy 开、/proxy 关 指定",
+              "description": "不带参数切换；/proxy 开、/proxy 关、/proxy tun、/proxy 系统代理",
               "slash": {
                 "keyword": "proxy",
                 "aliases": [
@@ -972,6 +994,18 @@
                 ]
               },
               "presentation": "silent"
+            },
+            {
+              "id": "import-surge",
+              "title": "导入 Surge 配置",
+              "description": "挑一份 Surge 的 .conf，把规则与策略组转成 sing-box",
+              "presentation": "window"
+            },
+            {
+              "id": "rules",
+              "title": "规则",
+              "description": "打开「代理」窗口的规则页：当前页面、页面规则、导入的 Surge 配置",
+              "presentation": "window"
             }
           ],
           "settings": {
@@ -1010,6 +1044,51 @@
                 "default": true
               },
               {
+                "key": "tun",
+                "type": "toggle",
+                "title": "开启时用增强模式（TUN）",
+                "description": "以管理员身份运行 sing-box 接管整机网络，命令行工具与不认系统代理的应用也走它。第一次打开要输一次管理员密码装网络助手。菜单里拨过之后以那一次为准，直到再改这一项",
+                "default": false
+              },
+              {
+                "key": "dnsMode",
+                "type": "select",
+                "title": "增强模式的 DNS",
+                "description": "fake-ip 与 Surge 增强模式相同：域名规则对每个应用都有效；真实 IP 兼容性更好，但只靠嗅探认域名",
+                "default": "fakeip",
+                "options": [
+                  {
+                    "value": "fakeip",
+                    "title": "fake-ip（推荐）"
+                  },
+                  {
+                    "value": "realip",
+                    "title": "真实 IP"
+                  }
+                ]
+              },
+              {
+                "key": "tunStack",
+                "type": "select",
+                "title": "增强模式的协议栈（高级）",
+                "description": "mixed：TCP 走系统栈、UDP 走 gVisor。遇到个别应用连不上时再换",
+                "default": "mixed",
+                "options": [
+                  {
+                    "value": "mixed",
+                    "title": "mixed（推荐）"
+                  },
+                  {
+                    "value": "system",
+                    "title": "system"
+                  },
+                  {
+                    "value": "gvisor",
+                    "title": "gVisor"
+                  }
+                ]
+              },
+              {
                 "key": "autoStart",
                 "type": "toggle",
                 "title": "启动 Jarvis 时自动开启",
@@ -1022,6 +1101,22 @@
                 "title": "中国大陆直连",
                 "description": "中国大陆的网站与 IP 不经过节点。规则集第一次开启时直连下载（jsDelivr 镜像），之后存在本机",
                 "default": true
+              },
+              {
+                "key": "useSurgeRules",
+                "type": "toggle",
+                "title": "使用导入的 Surge 规则",
+                "description": "导入过 Surge 配置时，用它的规则与策略组代替内置的「中国大陆直连」。关掉回到内置规则，导入的那份留着",
+                "default": true
+              },
+              {
+                "key": "ruleSets",
+                "type": "urlList",
+                "title": "规则集地址",
+                "description": "导入的 Surge 配置里 RULE-SET / DOMAIN-SET 的地址：贴进来的这几条才会去拉（一次贴多行会拆成多条）",
+                "maxItems": 20,
+                "secret": false,
+                "placeholder": "https://"
               },
               {
                 "key": "testURL",
@@ -1079,10 +1174,10 @@
       "path": "extensions/proxy",
       "bundle": {
         "path": "extensions/proxy/dist/extension.js",
-        "sha256": "d33fc44299e54f18db0e6e56d9495b4d31d4ebf69bdf507e35b93d72785df142",
-        "byteCount": 155409
+        "sha256": "3ec363e05693cacf2985d270cd09d1fc68e101950d8b12d31b8d902da0eb525e",
+        "byteCount": 272479
       },
-      "updatedAt": "2026-10-28T02:20:22.540Z"
+      "updatedAt": "2026-10-28T11:14:00+08:00"
     },
     {
       "manifest": {
@@ -1171,10 +1266,10 @@
       "path": "extensions/send-to-phone",
       "bundle": {
         "path": "extensions/send-to-phone/dist/extension.js",
-        "sha256": "66bee9860255b5cd10507a57b011f11fc6127a438d03cb0da8410c96a33dd8d5",
-        "byteCount": 41531
+        "sha256": "caae6318071523c3bf3b805af1a572b89d8d31401d402ff385b27e83e1c9cab5",
+        "byteCount": 42629
       },
-      "updatedAt": "2026-10-20T21:02:14+08:00"
+      "updatedAt": "2026-10-28T11:14:00+08:00"
     },
     {
       "manifest": {
@@ -1410,10 +1505,10 @@
       "path": "extensions/translation",
       "bundle": {
         "path": "extensions/translation/dist/extension.js",
-        "sha256": "f1c0f4cd4a91c8db9c742e19cb441a9b9dd6b5ecb00e64d332f5508638bab407",
-        "byteCount": 86753
+        "sha256": "e82975eb420281f160adb186a65ba93bc02974e6422221a2be58b726805b7914",
+        "byteCount": 87851
       },
-      "updatedAt": "2026-10-20T21:02:14+08:00"
+      "updatedAt": "2026-10-28T11:14:00+08:00"
     }
   ]
 }
