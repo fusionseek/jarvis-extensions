@@ -197,6 +197,11 @@ export interface PreferenceOption {
  * `maxItems` 省略 = 10（上限 20）；`secret` 省略 = `true`：整列进钥匙串（订阅地址里的 token 就是密码），只能经 `preferences.get` 单独读。
  * 被 manifest `network.preferenceHosts` 点名时，这些地址的主机在请求那一刻放行给 `net.fetch`——
  * 只认这种偏好，是因为它的控件由宿主画、值只可能来自用户亲手输入；页面里的输入框扩展自己就能填，宿主分不出是谁写的。没有默认值。
+ *
+ * `executable`（Jarvis 3.2.8 起；SDK 运行时不变，只是类型）是一个外部程序的位置，设置页画成与宿主内置工具路径同构的一行：生效路径与来源（自动发现 / 自定义路径）、
+ * 状态徽标、「选择」「清除」，没找到时「在终端中安装」（跑 `install` 点名的 `process.terminal` 脚本）。`executable` 必须是本扩展
+ * `process.executables` / `daemons` / `tunnel` 里声明过的名字。读回来是字符串：空串 = 自动查找，绝对路径 = 用户选的那一份——
+ * 原样交给 `daemon.start` / `tunnel.start` 的 `executable` 即可。没有默认值（隐式空串）。
  */
 export type Preference =
   | (PreferenceBase<"toggle"> & { default: boolean })
@@ -207,7 +212,8 @@ export type Preference =
   /** 机密：宿主存 Keychain、设置页遮罩显示、只交给这个扩展、不进日志。没有默认值。 */
   | (PreferenceBase<"secret"> & { placeholder?: string })
   | PreferenceBase<"directory">
-  | (PreferenceBase<"urlList"> & { maxItems?: number; secret?: boolean; placeholder?: string });
+  | (PreferenceBase<"urlList"> & { maxItems?: number; secret?: boolean; placeholder?: string })
+  | (PreferenceBase<"executable"> & { executable: string; install?: string });
 
 /** 设置域：设置页「扩展」区段里属于它的那块面板。 */
 export interface SettingsContribution {

@@ -305,6 +305,7 @@ todo 待办 memo note 速记 记 find 查找 diff compare 对比 比较 gitdiff 
 | `secret` | 遮罩输入框 + 「已保存」徽标 + 「清除」 | 无默认；`placeholder`。进**钥匙串**、不进库、不进日志、`preferences.all()` 里没有它 |
 | `directory` | 「选择…」+ 路径 | 无默认 |
 | `urlList`（SDK 2.9） | 一行一条 + 删除 + 「添加一行」；宿主逐条校验，填错的那一行标红不存 | 无默认；`maxItems`（1–20，省略 = 10）、`placeholder`、`secret`（省略 = `true`：整列进钥匙串——订阅地址里的 token 就是密码）。每条必须是带主机名的 `https://` 地址。被 `network.preferenceHosts` 点名时，它们的主机放行给 `net.fetch` |
+| `executable`（Jarvis 3.2.8） | 与宿主内置工具路径同构的一行：生效路径 · 来源（自动发现 / 自定义路径）、状态徽标、「选择」「清除」；没找到时「在终端中安装」 | `executable`（必填：本扩展 `process.executables[].name` / `daemons[].executable` / `tunnel.executable` 之一）、`install`（可选：`process.terminal[].id`）。无默认（隐式空串 = 自动查找）、无占位：路径只能经「选择」挑，文件名必须等于 `executable` |
 
 `key` `^[a-z][a-zA-Z0-9]*$`，≤ 32；`title` ≤ 24 字；`description` ≤ 120 字。
 
@@ -342,6 +343,8 @@ todo 待办 memo note 速记 记 find 查找 diff compare 对比 比较 gitdiff 
 - `system.proxy` ⇒ `process.daemon`：系统代理只能指向这个扩展自己在跑的常驻进程，没有常驻进程可起的扩展申请到了也永远打不开它。
 - 常驻进程：`id` 不重；含 `{` 或 `}` 的参数必须恰好是 `{config}` 或 `{workdir}`；至少用其中一个；用了 `{config}` ⇔ 声明了 `config`。
 - `network.preferenceHosts` 的每一项都是本扩展（设置域或任一服务）声明的 `urlList` 偏好的 key。
+- `executable` 偏好（Jarvis 3.2.8）的 `executable` 是本扩展声明过的外部程序（`process.executables` / `daemons` / `tunnel`），`install` 是 `process.terminal` 里的脚本 id：
+  宿主拿这两个名字去定位、开终端，点名没声明的东西等于在受限执行的声明之外开了口子。
 - 声明了任一项 `git.*` 能力 ⇒ 入驻 Git 域（`contributes.git`）。
 - `inbox.messages` ⇔ 声明 `inbox.post`；`inbox.notifications` ⇔ 声明 `notifications.post`；`inbox: false` 时两项都不能声明。
 - 任一命令带 `hotkey` ⇔ 声明 `hotkeys.register`；两条命令不能用同一个快捷键。
@@ -375,6 +378,7 @@ node scripts/validate.mjs extensions/foo  # 校验一个
 - 实现 `code.format`、或用了 `process.run` 的 `stdin` / `directory` / `output` 的扩展写 `"sdk": "^2.7.0"`。
 - 实现 `code.highlight` 的扩展写 `"sdk": "^2.8.0"`。
 - 入驻菜单栏域、用了 `jarvis.daemon` / `jarvis.systemProxy`、`urlList` 偏好或 `network.preferenceHosts` 的扩展写 `"sdk": "^2.9.0"`。
+- 用了 `executable` 偏好的扩展写 `"minimumJarvisVersion": "3.2.8"` 以上：更早的 Jarvis 不认识这个类型，整份 manifest 读不出来。它只是 manifest 里的一种类型、SDK 运行时没变，`sdk` 照旧写 `^2.10.0`。
 - 常驻进程的 `executable` 不得是解释器（`sh`、`bash`、`zsh`、`python3`、`node`、`osascript`）：`sh {config}` 等于把配置文件当脚本跑，
   「扩展能决定的只有配置文件的内容」就成了「扩展能跑任何东西」。schema 与校验脚本拦不住这一条，靠审核（[13](13-review-checklist.md)）。
   这两项能力**没有声明对象、不要入驻哪个域**：宿主跑的是它自己写死的 adb 命令，扩展只给序列号与包名（[06](06-capabilities.md)「Android 操作域」）。

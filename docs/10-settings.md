@@ -210,6 +210,7 @@ Issue Type / 子 Issue / blocked by 的读写）全在引擎扩展里。先例�
 | `secret` | 遮罩输入 + 「已保存」徽标 + 「清除」 | 回车保存；只写不读，设置页从不回显；存钥匙串（service `ai.fusionseek.jarvis.extension-secret`、account `<扩展 id>.<key>`），不进 SQLite、不进日志 |
 | `directory` | 缩写路径 +「选择…」 | 走 `NSOpenPanel`，只能选目录；存为字符串 |
 | `urlList`（SDK 2.9） | 一行一条 + 删除 + 「添加一行」，至多 `maxItems` 行（省略 = 10，上限 20） | 宿主逐条校验：每条必须是带主机名的 `https://` 地址，填错的那一行标红、不存；`secret` 省略 = `true`：整列进钥匙串，设置页按 `secret` 的方式遮罩，`all()` 与 `onChange` 里都没有它。存的是字符串数组。SDK 2.10 起往一行里**粘贴多行**会按行拆成多条（去空行、去重、超出 `maxItems` 的截掉并提示）——「复制这些地址」再贴进来就是这么用的 |
+| `executable`（Jarvis 3.2.8） | 与设置页「APK 扫描工具链」同构的一行：左标题 + 说明，下面一行**生效路径 · 来源**（自动发现 / 自定义路径），右端状态徽标（已就绪 / 未找到 / 路径无效）+「选择」+（选过才有）「清除」 | 判定与常驻进程、TUN 起内核用的是同一份（空值按名字在 Homebrew、`~/.local/bin` 等固定位置里找；选过的路径坏了**报坏、不回落**自动查找；文件名必须等于 `executable`）。「选择」走 `NSOpenPanel`（显示隐藏文件），文件名不对或不可执行的不存、就地说原因。没找到且写了 `install` 时一行问题 +「在终端中安装」：跑 manifest 里那段 `process.terminal` 脚本——这是用户在宿主界面上亲手点的，不看 `terminal.run` 的运行时授权。不轮询安装结果：Jarvis 回到前台时重查一次。存为字符串，空串 = 自动查找 |
 
 写入之后宿主立刻告诉此刻活着的前台与后台会话：`preferencesChanged` 事件，SDK 里是 `jarvis.preferences.onChange`。
 默认值来自 manifest；库里没有那一项时读默认。**用户改过的值在扩展更新后保留**；manifest 里删掉的 key 留着不读，
@@ -230,6 +231,13 @@ await jarvis.system.openExtensionSettings();                 // 页面里一颗�
 `urlList`（SDK 2.9）读回来是字符串数组；它没有默认值，没填过时按空处理。它存在的理由是联网：manifest `network.preferenceHosts` 点名它之后，
 用户在这里填的地址的主机就放行给 `net.fetch`（[06](06-capabilities.md)「`network.https`」）。只认这种偏好，是因为它的控件由宿主画、
 值只可能来自用户亲手输入——页面里的输入框扩展自己就能填，宿主分不出是谁写的。订阅地址里的 token 就是密码，所以默认进钥匙串。
+
+`executable`（Jarvis 3.2.8）读回来是字符串：空串 = 让宿主自动查找，非空 = 用户选的那一份的绝对路径。原样交给要它的能力即可，不必自己判断：
+
+```ts
+const { singBoxPath } = await jarvis.preferences.all();
+await jarvis.daemon.start({ id: "sing-box", config, ...(singBoxPath ? { executable: singBoxPath } : {}) }); // 空串时宿主按名字找
+```
 
 ```ts
 const subscriptions = (await jarvis.preferences.get<string[] | undefined>("subscriptions")) ?? []; // 默认 secret：只能 get 单独读
@@ -254,6 +262,7 @@ for (const url of subscriptions) await jarvis.net.fetch(url);                   
 - `number` 越界是夹取不是拒绝；需要更严的范围就把 `minimum` / `maximum` 写严。
 - `secret` 没有默认值、`all()` 里没有它：只能 `get(key)` 单独读。`urlList` 默认同理（`secret: false` 才进 `all()`）。
 - `network.preferenceHosts` 只认 `urlList`：点名一个 `text` 偏好，校验脚本与宿主都拒。
+- `executable` 偏好没有输入框：想让用户手填路径就用 `text`（但那样设置页看不出找没找到）。它点名的程序与安装脚本都必须在 manifest 里声明过。
 - 设置 › 扩展 的快捷键行只列注册上了的；这一版不能改键。
 
 ## Related Links

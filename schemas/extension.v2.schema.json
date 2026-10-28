@@ -718,7 +718,8 @@
             "multiselect",
             "secret",
             "directory",
-            "urlList"
+            "urlList",
+            "executable"
           ]
         },
         "title": {
@@ -919,6 +920,27 @@
                   "maxLength": 40
                 }
               }
+            },
+            {
+              "type": "object",
+              "description": "一个外部程序的位置（Jarvis 3.2.8 起）：设置页由宿主画成与内置工具路径同构的一行——生效路径与来源（自动发现 / 自定义路径）、状态徽标、「选择」「清除」，没找到时「在终端中安装」。值是字符串：空串 = 按名字在固定位置里自动查找，绝对路径 = 用户选的那一份（文件名必须等于 executable）。没有默认值（隐式为空串）、没有占位——路径只能经「选择」挑，不能手打。",
+              "properties": {
+                "type": {
+                  "const": "executable"
+                },
+                "executable": {
+                  "type": "string",
+                  "description": "这一项指的是哪个外部程序：必须是本扩展 process.executables[].name、process.daemons[].executable 或 process.tunnel.executable 之一。",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                },
+                "install": {
+                  "description": "没找到时「在终端中安装」跑哪一段：本扩展 process.terminal[].id。省略 = 只有「选择」。",
+                  "$ref": "#/$defs/identifier"
+                }
+              },
+              "required": [
+                "executable"
+              ]
             }
           ]
         }

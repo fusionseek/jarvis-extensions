@@ -287,6 +287,24 @@ export function checkExtension(dir) {
   checkPreferences(dir, contributes.settings?.preferences ?? [], "preference");
   for (const service of services) checkPreferences(dir, service.preferences ?? [], `服务「${service.id}」的 preference`);
 
+  // executable 偏好（Jarvis 3.2.8）只替声明过的外部程序找路径、只跑声明过的终端脚本：宿主拿这两个名字去定位、开终端，
+  // 点名一个没声明的程序或脚本，设置页那一行就成了绕过受限执行声明的口子。
+  const declaredExecutables = new Set([
+    ...(manifest.process?.executables ?? []).map((e) => e.name),
+    ...(manifest.process?.daemons ?? []).map((d) => d.executable),
+    ...(manifest.process?.tunnel ? [manifest.process.tunnel.executable] : []),
+  ]);
+  const terminalIDs = new Set((manifest.process?.terminal ?? []).map((t) => t.id));
+  for (const p of [...(contributes.settings?.preferences ?? []), ...services.flatMap((s) => s.preferences ?? [])]) {
+    if (p.type !== "executable") continue;
+    if (!declaredExecutables.has(p.executable)) {
+      problem(dir, `executable 偏好「${p.key}」点名的「${p.executable}」不在 process.executables / daemons / tunnel 里`);
+    }
+    if (p.install !== undefined && !terminalIDs.has(p.install)) {
+      problem(dir, `executable 偏好「${p.key}」的 install「${p.install}」不是 process.terminal 里的脚本`);
+    }
+  }
+
   // network.preferenceHosts 只能点名本扩展的 urlList 偏好：那种控件由宿主画、值只可能来自用户亲手输入；
   // 点名别的类型（text 输入框扩展读得到、也就分不清是不是用户填的）或不存在的 key，放行范围就说不清了。
   const preferenceTypes = new Map(
