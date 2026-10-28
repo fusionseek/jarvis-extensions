@@ -1,4 +1,4 @@
-// jarvis-extension bundle · send-to-phone@2.0.8 · sdk 2.8.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · send-to-phone@2.0.9 · sdk 2.9.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -107,7 +107,7 @@
   };
 
   // sdk/src/index.ts
-  var sdkVersion = "2.8.0";
+  var sdkVersion = "2.9.0";
   var Cancellation = class {
     constructor() {
       this.listeners = [];
@@ -208,17 +208,23 @@
     /**
      * 订阅宿主事件。宿主拒绝订阅（没授权、没这个能力）时**不抛到扩展里**：一条被拒的订阅只是收不到事件，
      * 让它变成未处理的 rejection 会把整个上下文拖垮。拒绝记一条 warn 日志。
+     *
+     * `params`（SDK 2.9）是订阅的对象——`daemon.observe` 要说订的是哪一个常驻进程（`{ id }`）。它同时随订阅与退订上线缆，
+     * 宿主据此找到那一个进程的订阅者表，不必反查 token 属于谁；不给时线缆上只有 `{ token }`，与 2.8 一字不差。
      */
-    subscribe(namespace, method, listener) {
+    subscribe(namespace, method, listener, params = {}) {
       const token = this.token(namespace, method);
       this.listen(token, listener);
-      this.invoke(namespace, method, { token }).catch((error) => {
+      this.invoke(namespace, method, { ...params, token }).catch((error) => {
         this.forget(token);
         this.log("warn", `\u8BA2\u9605 ${namespace}.${method} \u88AB\u5BBF\u4E3B\u62D2\u7EDD`, error instanceof Error ? error.message : String(error));
       });
+      let active = true;
       return () => {
+        if (!active) return;
+        active = false;
         this.forget(token);
-        this.invoke(namespace, "unsubscribe", { token }).catch(() => void 0);
+        this.invoke(namespace, "unsubscribe", { ...params, token }).catch(() => void 0);
       };
     }
     log(level, message, data) {
@@ -368,6 +374,40 @@
         }
       );
     }
+    /**
+     * 菜单栏事件落到 `defineExtension({ menuBar })` 的回调。与命令同一种收尾：回调抛错只记 error 日志——
+     * 一次点选失败不该把后台会话拖垮，菜单还要接着用。
+     */
+    handleMenuBar(event) {
+      const handlers = this.definition?.menuBar;
+      if (!handlers) {
+        this.log("error", "manifest \u5165\u9A7B\u4E86\u83DC\u5355\u680F\u57DF\uFF0C\u4F46 defineExtension \u91CC\u6CA1\u6709 menuBar \u7684\u5B9E\u73B0\u3002", void 0);
+        return;
+      }
+      const context = { granted: event.granted, preferences: event.preferences };
+      let work;
+      try {
+        switch (event.event) {
+          case "start":
+            work = handlers.start?.(context);
+            break;
+          case "open":
+            work = handlers.open?.(context);
+            break;
+          case "select":
+            work = handlers.select(context, event.itemId);
+            break;
+          default:
+            return;
+        }
+      } catch (error) {
+        work = Promise.reject(error);
+      }
+      void Promise.resolve(work).then(
+        () => this.requestUpdate(),
+        (error) => this.log("error", `\u83DC\u5355\u680F\u7684 ${event.event} \u629B\u51FA\u4E86\u5F02\u5E38`, error instanceof Error ? error.message : String(error))
+      );
+    }
     dispatch(json) {
       const event = JSON.parse(json);
       const definition = this.definition;
@@ -425,6 +465,10 @@
           this.subscriptions.get(event.token)?.(event.payload);
           return;
         }
+        case "menuBar": {
+          this.handleMenuBar(event.menuBar);
+          return;
+        }
         case "preferencesChanged":
         case "permissionsChanged": {
           this.requestUpdate();
@@ -464,7 +508,10 @@
     git: namespaced("git"),
     android: namespaced("android"),
     apps: namespaced("apps"),
-    system: namespaced("system")
+    system: namespaced("system"),
+    menuBar: namespaced("menuBar"),
+    daemon: namespaced("daemon"),
+    systemProxy: namespaced("systemProxy")
   };
   var sync = {
     text: syncNamespaced("text"),
@@ -547,6 +594,10 @@
       warn: (message, data) => runtime.log("warn", message, data),
       error: (message, data) => runtime.log("error", message, data)
     },
+    // 菜单栏域（SDK 2.9）：模型原样就是线缆上的 params，校验与上限在宿主。
+    menuBar: {
+      update: (model) => call.menuBar("update", model)
+    },
     text: {
       base64: {
         encode: (text2, options) => sync.text("base64.encode", { text: text2, ...options }),
@@ -601,6 +652,21 @@
     },
     terminal: {
       run: (scriptId) => call.terminal("run", { id: scriptId })
+    },
+    // 常驻进程（SDK 2.9）：入参原样上线缆，占位符展开、控制口校验都在宿主。
+    daemon: {
+      start: (request) => call.daemon("start", request),
+      stop: (id) => call.daemon("stop", { id }),
+      status: (id, executable) => call.daemon("status", executable === void 0 ? { id } : { id, executable }),
+      logs: (id) => call.daemon("logs", { id }),
+      request: (request) => call.daemon("request", request),
+      observe: (id, listener) => runtime.subscribe("daemon", "observe", listener, { id })
+    },
+    // 系统代理（SDK 2.9）：主机由宿主写死 127.0.0.1，扩展只给端口与例外。
+    systemProxy: {
+      status: () => call.systemProxy("status"),
+      enable: (request) => call.systemProxy("enable", request),
+      disable: () => call.systemProxy("disable")
     },
     git: {
       repositories: () => call.git("repositories"),

@@ -1,0 +1,479 @@
+/**
+ * 「代理」此刻处在哪一步、该怎么说、菜单栏画什么（纯函数，不碰宿主）。
+ *
+ * 工具箱、窗口与菜单栏三处界面读同一份判断：此刻是没授权、没装、没订阅、关着、开着还是起不来。
+ * 判断写在这里而不是各处视图里，是为了三处永远说同一句话——菜单栏说「开着」、面板说「起不来」的那种不一致，
+ * 用户只会以为两处有一处坏了。
+ */
+import type { DaemonStatus, MenuBarItem, MenuBarModel, SystemProxyStatus } from "@fusionseek/jarvis-extension-sdk";
+import { compactRate, formatDelay, type TrafficRate } from "./clash.js";
+import { URLTEST_TAG, type ProxyProtocol } from "./nodes.js";
+import { clashModeNames, type ProxyMode } from "./singbox-config.js";
+import { updateIntervals, type ControlRecord, type UpdateInterval } from "./store.js";
+
+// MARK: - 偏好
+
+/** 偏好（`contributes.settings`，`subscriptions` 进钥匙串、不在这里）。 */
+export interface ProxyPreferences {
+  mixedPort: number;
+  controlPort: number;
+  /** 开启时设为系统代理。 */
+  systemProxy: boolean;
+  /** 启动 Jarvis 时自动开启。 */
+  autoStart: boolean;
+  /** 中国大陆直连。 */
+  chinaRules: boolean;
+  testURL: string;
+  /** sing-box 路径；空 = 宿主自动定位。 */
+  singBoxPath: string;
+  updateInterval: UpdateInterval;
+  /** 菜单栏显示速率。 */
+  showSpeed: boolean;
+}
+
+/** 与 manifest 里的默认值逐项相同：宿主没给（旧版本宿主、还没写过偏好）时按它算。 */
+export const defaultPreferences: Readonly<ProxyPreferences> = {
+  mixedPort: 7890,
+  controlPort: 19090,
+  systemProxy: true,
+  autoStart: false,
+  chinaRules: true,
+  testURL: "https://www.gstatic.com/generate_204",
+  singBoxPath: "",
+  updateInterval: "daily",
+  showSpeed: false,
+};
+
+/**
+ * 把宿主给的偏好读成完整、合法的一份：缺的、类型不对的、越界的一律回到默认。
+ * @param raw `preferences.all()` 或事件里带的偏好。
+ * @returns 偏好。
+ */
+export function normalizePreferences(raw: Record<string, unknown> | undefined): ProxyPreferences {
+  const source = raw ?? {};
+  const port = (value: unknown, fallback: number): number =>
+    typeof value === "number" && Number.isInteger(value) && value >= 1024 && value <= 65535 ? value : fallback;
+  const flag = (value: unknown, fallback: boolean): boolean => (typeof value === "boolean" ? value : fallback);
+  const text = (value: unknown, fallback: string): string => (typeof value === "string" ? value.trim() : fallback);
+  const testURL = text(source.testURL, defaultPreferences.testURL);
+  const interval = source.updateInterval;
+  return {
+    mixedPort: port(source.mixedPort, defaultPreferences.mixedPort),
+    controlPort: port(source.controlPort, defaultPreferences.controlPort),
+    systemProxy: flag(source.systemProxy, defaultPreferences.systemProxy),
+    autoStart: flag(source.autoStart, defaultPreferences.autoStart),
+    chinaRules: flag(source.chinaRules, defaultPreferences.chinaRules),
+    // sing-box 的测速只认 https（`http://` 开头的地址会被它丢掉、换成默认地址）：填错了就用默认，免得读数与填的对不上。
+    testURL: /^https:\/\/\S+$/i.test(testURL) ? testURL : defaultPreferences.testURL,
+    singBoxPath: text(source.singBoxPath, ""),
+    updateInterval: updateIntervals.includes(interval as UpdateInterval) ? (interval as UpdateInterval) : defaultPreferences.updateInterval,
+    showSpeed: flag(source.showSpeed, defaultPreferences.showSpeed),
+  };
+}
+
+// MARK: - 选择
+
+/** 用户选的出站模式与节点（存储 `selection`）。 */
+export interface Selection {
+  mode: ProxyMode;
+  /** 「节点选择」选中的组员：节点名或「自动选择」。 */
+  node: string;
+}
+
+export const defaultSelection: Readonly<Selection> = { mode: "rule", node: URLTEST_TAG };
+
+/**
+ * @param raw 存储里读出来的值。
+ * @returns 合法的选择。
+ */
+export function normalizeSelection(raw: unknown): Selection {
+  const value = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+  const mode = Object.prototype.hasOwnProperty.call(clashModeNames, value.mode as string) ? (value.mode as ProxyMode) : defaultSelection.mode;
+  const node = typeof value.node === "string" && value.node.length > 0 ? value.node : defaultSelection.node;
+  return { mode, node };
+}
+
+/** 出站模式的中文名。 */
+export const modeTitles: Readonly<Record<ProxyMode, string>> = { rule: "规则", global: "全局", direct: "直连" };
+
+/** 出站模式的一句话说明。 */
+export const modeHelps: Readonly<Record<ProxyMode, string>> = {
+  rule: "局域网与中国大陆直连，其余走所选节点",
+  global: "除局域网外全部走所选节点",
+  direct: "全部直连，代理开着也不经过节点",
+};
+
+/** 协议的短名（节点行的说明里用）。 */
+export const protocolTitles: Readonly<Record<ProxyProtocol, string>> = {
+  shadowsocks: "Shadowsocks",
+  vmess: "VMess",
+  vless: "VLESS",
+  trojan: "Trojan",
+  hysteria2: "Hysteria2",
+  tuic: "TUIC",
+};
+
+// MARK: - 处在哪一步
+
+/** 需要用户点头的能力：没有它就什么都做不了。 */
+export const requiredCapability = "process.daemon";
+
+/**
+ * 此刻处在哪一步：
+ * - `notGranted`：没授权常驻进程；
+ * - `notInstalled`：找不到 sing-box（填的路径坏了也算）；
+ * - `noNodes`：没有节点（没填订阅、或一条都没拉下来）；
+ * - `running`：内核在跑；
+ * - `failed`：上一次起不来或意外退出了，还没被用户关掉 / 重新开启；
+ * - `stopped`：关着。
+ */
+export type Phase = "notGranted" | "notInstalled" | "noNodes" | "running" | "failed" | "stopped";
+
+/** 存储里的失败记录。 */
+export interface FailureRecord {
+  at: number;
+  /** 一句话。 */
+  message: string;
+  /** 内核输出的最后几行（至多 20 行）。 */
+  lines: string[];
+  /** 下一步怎么办；没有为空串。 */
+  hint: string;
+}
+
+/** 判断用的事实。 */
+export interface PhaseInput {
+  granted: readonly string[];
+  /** `daemon.status`；读不出为 `null`。 */
+  daemon: DaemonStatus | null;
+  nodeCount: number;
+  failure: FailureRecord | null;
+}
+
+/**
+ * @param input 事实。
+ * @returns 处在哪一步。
+ */
+export function phaseOf(input: PhaseInput): Phase {
+  if (!input.granted.includes(requiredCapability)) return "notGranted";
+  if (input.daemon?.state === "running") return "running";
+  if (input.daemon && input.daemon.executable === "") return "notInstalled";
+  if (input.nodeCount === 0) return "noNodes";
+  if (input.failure || input.daemon?.state === "exited") return "failed";
+  return "stopped";
+}
+
+// MARK: - 失败怎么说
+
+/**
+ * sing-box 起不来是不是因为规则集第一次下载失败（`route/rule/rule_set_remote.go`：「initial rule-set: <tag>」）。
+ * 是的话不分流再起一次就能用。
+ * @param text 错误与输出。
+ * @returns 是不是。
+ */
+export function isRuleSetFailure(text: string): boolean {
+  return /initial rule-set/i.test(text);
+}
+
+/**
+ * 从内核的输出里读出「为什么起不来 / 为什么连不上」与下一步。按常见程度排：端口被占、规则集、版本太旧、REALITY 握手。
+ * @param lines 输出的最后几行。
+ * @param preferences 偏好（说清是哪个端口）。
+ * @returns 一句话与下一步。
+ */
+export function describeFailure(lines: readonly string[], preferences: ProxyPreferences): { message: string; hint: string } {
+  const text = lines.join("\n");
+  const last = lastMeaningfulLine(lines);
+  const portMatch = /listen tcp [^:\s]*:(\d+).*address already in use/i.exec(text) ?? /:(\d+): bind: address already in use/i.exec(text);
+  if (portMatch || /address already in use/i.test(text)) {
+    const port = portMatch ? Number(portMatch[1]) : null;
+    const which = port === preferences.controlPort ? "控制端口" : port === preferences.mixedPort ? "本地端口" : "端口";
+    return {
+      message: port ? `${which} ${port} 被别的程序占着` : "端口被别的程序占着",
+      hint: `在设置里换一个${which === "端口" ? "本地端口或控制端口" : which}，或者先关掉占着它的程序。`,
+    };
+  }
+  if (isRuleSetFailure(text)) {
+    return { message: "中国大陆分流规则集下载失败", hint: "检查网络后重试；或者在设置里关掉「中国大陆直连」，不分流运行。" };
+  }
+  if (/unknown field|unknown (?:transport|obfs|outbound|inbound) type|decode config/i.test(text)) {
+    return { message: "sing-box 不认识这份配置", hint: "装着的 sing-box 可能太旧（需要 1.12 以上）。在终端里运行 brew upgrade sing-box 之后重试。" };
+  }
+  if (/reality/i.test(text) && /(handshake|verif|invalid|processed invalid connection|EOF)/i.test(text)) {
+    return {
+      message: "REALITY 握手失败",
+      hint: "sing-box 版本太旧时连不上新的 REALITY 服务端。在终端里运行 brew upgrade sing-box 之后重试；仍不行就换一个节点。",
+    };
+  }
+  return { message: last || "sing-box 没能启动", hint: "" };
+}
+
+/**
+ * 最后一行有内容的输出，去掉时间戳与颜色码前缀，给横幅与菜单用。
+ * @param lines 输出。
+ * @returns 一行；没有为空串。
+ */
+export function lastMeaningfulLine(lines: readonly string[]): string {
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index]
+      .replace(/\u001b\[[0-9;]*m/g, "")
+      .replace(/^[+-]\d{4} \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\s+/, "")
+      .trim();
+    if (line.length > 0) return line;
+  }
+  return "";
+}
+
+// MARK: - 要不要重开
+
+/**
+ * 在跑的那一份与此刻的偏好、节点有哪些不一样（sing-box 不支持热加载出站与端口，只能重开）。
+ * @param control 在跑的那一份。
+ * @param preferences 此刻的偏好。
+ * @param digestNow 存储里最新节点的摘要。
+ * @returns 不一样的地方（给人看）；一样为空数组。
+ */
+export function restartReasons(control: ControlRecord | null, preferences: ProxyPreferences, digestNow: string): string[] {
+  if (!control) return [];
+  const reasons: string[] = [];
+  if (control.nodesDigest !== digestNow) reasons.push("订阅更新过");
+  if (control.mixedPort !== preferences.mixedPort) reasons.push("本地端口改过");
+  if (control.controlPort !== preferences.controlPort) reasons.push("控制端口改过");
+  if (control.testURL !== preferences.testURL) reasons.push("延迟测试地址改过");
+  // 规则集下载失败、这一次没分流的不算：那不是用户改的，重开也未必下得下来。
+  if (control.chinaRules !== preferences.chinaRules && !control.ruleSetFallback) reasons.push("中国大陆直连改过");
+  return reasons;
+}
+
+// MARK: - 指令参数
+
+/** `/proxy` 后面那段字的意思。 */
+export type ToggleIntent = "on" | "off" | "toggle";
+
+/**
+ * `/proxy`（切换）、`/proxy 开`、`/proxy 关`。
+ * @param argument 指令后面那段字。
+ * @returns 意思；认不出为 `null`。
+ */
+export function parseToggleArgument(argument: string | undefined): ToggleIntent | null {
+  const value = (argument ?? "").trim().toLowerCase();
+  if (value === "") return "toggle";
+  if (/^(开|开启|打开|启动|on|start|enable)$/.test(value)) return "on";
+  if (/^(关|关闭|停止|停|off|stop|disable)$/.test(value)) return "off";
+  return null;
+}
+
+// MARK: - 系统代理说什么
+
+/** 系统代理此刻的状况（开着的时候才有意义）。 */
+export type SystemProxyCondition =
+  /** 指着我们。 */
+  | { kind: "active" }
+  /** 被别的工具拦着（Surge 增强模式这一类），带它的原话。 */
+  | { kind: "blocked"; message: string }
+  /** 另一个扩展接管着。 */
+  | { kind: "other"; message: string }
+  /** 没授权修改系统代理。 */
+  | { kind: "notGranted" }
+  /** 没指向我们（偏好里关着，或用户在菜单里关了）。 */
+  | { kind: "off" };
+
+/**
+ * @param proxy `systemProxy.status`；读不出为 `null`。
+ * @param granted 已授予的能力。
+ * @returns 状况。
+ */
+export function systemProxyCondition(proxy: SystemProxyStatus | null, granted: readonly string[]): SystemProxyCondition {
+  if (!granted.includes("system.proxy")) return { kind: "notGranted" };
+  if (!proxy) return { kind: "off" };
+  if (proxy.blocker) return { kind: "blocked", message: proxy.blocker.message };
+  if (proxy.owner === "other") return { kind: "other", message: `系统代理已由「${proxy.otherName ?? "另一个扩展"}」接管` };
+  if (proxy.owner === "self") return { kind: "active" };
+  return { kind: "off" };
+}
+
+// MARK: - 菜单栏
+
+/** 菜单里节点子菜单至多列几个：整份模型 ≤ 300 项，留出其余条目的位置。 */
+export const maximumMenuNodes = 250;
+
+/** 菜单栏要的事实。 */
+export interface MenuInput {
+  phase: Phase;
+  preferences: ProxyPreferences;
+  selection: Selection;
+  nodes: readonly { name: string; protocol: ProxyProtocol }[];
+  /** 节点名 → 毫秒（`null` = 超时）。没测过的不在里面。 */
+  latency: Readonly<Record<string, number | null>>;
+  proxy: SystemProxyStatus | null;
+  granted: readonly string[];
+  /** 「自动选择」此刻选中的节点；不知道为 `null`。 */
+  autoPick: string | null;
+  /** 速率；没开「菜单栏显示速率」或算不出为 `null`。 */
+  rate: TrafficRate | null;
+  failure: FailureRecord | null;
+  /** 正在做的事（开启中、测速中……）；没有为 `null`。 */
+  busy: string | null;
+}
+
+/**
+ * 菜单项的文字至多 80 字。剪掉不补「…」：仓库主人定过，按钮与菜单项的文字结尾不带省略号。
+ * @param text 原文。
+ * @returns 至多 80 个码元。
+ */
+export function menuText(text: string): string {
+  if (text.length <= 80) return text;
+  let cut = text.slice(0, 80);
+  if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1);
+  return cut;
+}
+
+/**
+ * 节点在菜单里的 id：`node:<序号>`（名字里有中文、空格，进不了 id 的字符集）。`node:auto` 是「自动选择」。
+ * @param index 在节点列表里的序号；`-1` = 自动选择。
+ * @returns id。
+ */
+export function nodeItemId(index: number): string {
+  return index < 0 ? "node:auto" : `node:${index}`;
+}
+
+/** 菜单里一项被点了，是哪一类。 */
+export type MenuAction =
+  | { kind: "toggle" }
+  | { kind: "systemProxy" }
+  | { kind: "mode"; mode: ProxyMode }
+  | { kind: "node"; index: number }
+  | { kind: "test" }
+  | { kind: "update" }
+  | { kind: "copy" }
+  | { kind: "install" };
+
+/**
+ * @param id 菜单项 id。
+ * @returns 动作；不认识为 `null`。
+ */
+export function parseMenuItemId(id: string): MenuAction | null {
+  switch (id) {
+    case "toggle":
+    case "systemProxy":
+    case "test":
+    case "update":
+    case "copy":
+    case "install":
+      return { kind: id };
+  }
+  const mode = /^mode:(rule|global|direct)$/.exec(id);
+  if (mode) return { kind: "mode", mode: mode[1] as ProxyMode };
+  if (id === "node:auto") return { kind: "node", index: -1 };
+  const node = /^node:(\d+)$/.exec(id);
+  if (node) return { kind: "node", index: Number(node[1]) };
+  return null;
+}
+
+/**
+ * 状态行（菜单里的段标题、面板里的那一句）。
+ * @param input 事实。
+ * @returns 一句话。
+ */
+export function statusLine(input: Pick<MenuInput, "phase" | "preferences" | "selection" | "busy" | "failure">): string {
+  if (input.busy) return input.busy;
+  switch (input.phase) {
+    case "notGranted":
+      return "还没授权：打开「代理」点授权";
+    case "notInstalled":
+      return input.preferences.singBoxPath ? "设置里填的 sing-box 路径不可用" : "没有找到 sing-box";
+    case "noNodes":
+      return "没有节点：在设置里填订阅地址";
+    case "running":
+      return `已开启 · ${modeTitles[input.selection.mode]} · 127.0.0.1:${input.preferences.mixedPort}`;
+    case "failed":
+      return menuText(`出错了：${input.failure?.message ?? "sing-box 退出了"}`);
+    default:
+      return "已关闭";
+  }
+}
+
+/**
+ * 菜单栏模型。宿主在末尾自己追加「打开「代理」」与「「代理」的设置」，这里不写它们。
+ * @param input 事实。
+ * @returns 模型。
+ */
+export function buildMenuModel(input: MenuInput): MenuBarModel {
+  const running = input.phase === "running";
+  const symbol = running ? "network" : input.phase === "failed" ? "exclamationmark.triangle" : "network.slash";
+  const items: MenuBarItem[] = [{ kind: "header", title: menuText(statusLine(input)) }];
+
+  if (input.phase === "notInstalled") {
+    if (!input.preferences.singBoxPath && input.granted.includes("terminal.run")) {
+      items.push({ kind: "item", id: "install", title: "在终端中安装 sing-box", symbol: "terminal" });
+    }
+  } else if (input.phase !== "notGranted" && input.phase !== "noNodes") {
+    items.push({
+      kind: "item",
+      id: "toggle",
+      title: running ? "关闭代理" : "开启代理",
+      symbol: running ? "stop.circle" : "play.circle",
+      enabled: input.busy === null,
+    });
+  }
+
+  const condition = systemProxyCondition(input.proxy, input.granted);
+  const proxySubtitle =
+    condition.kind === "blocked" || condition.kind === "other"
+      ? condition.message
+      : condition.kind === "notGranted"
+        ? "没有授权修改系统代理"
+        : undefined;
+  items.push({ kind: "separator" });
+  items.push({
+    kind: "item",
+    id: "systemProxy",
+    title: "系统代理",
+    ...(proxySubtitle ? { subtitle: menuText(proxySubtitle) } : {}),
+    checked: running && condition.kind === "active",
+    enabled: running && input.busy === null && condition.kind !== "notGranted" && condition.kind !== "other",
+  });
+  items.push({
+    kind: "submenu",
+    title: `出站模式 · ${modeTitles[input.selection.mode]}`,
+    items: (Object.keys(modeTitles) as ProxyMode[]).map((mode) => ({
+      kind: "item" as const,
+      id: `mode:${mode}`,
+      title: modeTitles[mode],
+      subtitle: modeHelps[mode],
+      checked: input.selection.mode === mode,
+    })),
+  });
+
+  if (input.nodes.length > 0) {
+    const shown = input.nodes.slice(0, maximumMenuNodes);
+    const autoSubtitle = input.autoPick && running ? `此刻：${input.autoPick}` : "按延迟自动挑最快的";
+    const nodeItems: MenuBarItem[] = [
+      { kind: "item", id: nodeItemId(-1), title: URLTEST_TAG, subtitle: menuText(autoSubtitle), checked: input.selection.node === URLTEST_TAG },
+      { kind: "separator" },
+      ...shown.map((node, index) => {
+        const delay = formatDelay(input.latency[node.name]);
+        return {
+          kind: "item" as const,
+          id: nodeItemId(index),
+          title: menuText(node.name),
+          subtitle: delay ? `${protocolTitles[node.protocol]} · ${delay}` : protocolTitles[node.protocol],
+          checked: input.selection.node === node.name,
+        };
+      }),
+    ];
+    if (input.nodes.length > shown.length) {
+      nodeItems.push({ kind: "item", id: "nodes-more", title: `另有 ${input.nodes.length - shown.length} 个节点，在「代理」窗口里看`, enabled: false });
+    }
+    const current = input.selection.node === URLTEST_TAG ? URLTEST_TAG : input.selection.node;
+    items.push({ kind: "submenu", title: menuText(`节点 · ${current}`), items: nodeItems });
+  }
+
+  items.push({ kind: "separator" });
+  items.push({ kind: "item", id: "test", title: "测速", symbol: "speedometer", enabled: running && input.busy === null && input.nodes.length > 0 });
+  items.push({ kind: "item", id: "update", title: "更新订阅", symbol: "arrow.clockwise", enabled: input.busy === null });
+  items.push({ kind: "item", id: "copy", title: "复制终端代理命令", symbol: "doc.on.clipboard", enabled: input.granted.includes("clipboard.write") });
+
+  const model: MenuBarModel = { symbol, items, tooltip: menuText(`代理 · ${statusLine(input)}`) };
+  if (running && input.preferences.showSpeed && input.rate) model.title = compactRate(input.rate);
+  return model;
+}

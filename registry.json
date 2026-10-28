@@ -1,16 +1,16 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-20T23:58:18.796Z",
+  "generatedAt": "2026-10-28T02:20:22.867Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "f1b37c89c7ff9fe92292e51d71919e413b745087"
+    "commit": "cc7b1867badc3942f43d14e2bfd9a4cfa040b99d"
   },
   "extensions": [
     {
       "manifest": {
         "manifestVersion": 2,
         "id": "android-apps",
-        "version": "1.0.4",
+        "version": "1.0.5",
         "name": "手机应用",
         "symbol": "apps.iphone",
         "description": "经 adb 扫描连着的安卓手机上装的全部应用：包名、安装包与数据大小，再一屏一屏读出应用名与图标；点一下把包名交给 APK 扫描或数据导出接着处理。",
@@ -51,8 +51,8 @@
       "path": "extensions/android-apps",
       "bundle": {
         "path": "extensions/android-apps/dist/extension.js",
-        "sha256": "2f0b0eea5092ed808fb2b7fcc6e3cf0dc530d873152d92d64fd676510c5b59a1",
-        "byteCount": 59172
+        "sha256": "333488fa31ef758f1679ec056aeb156c33aff3683bac7b5bf29bc5599d9132f4",
+        "byteCount": 62153
       },
       "updatedAt": "2026-10-20T21:02:14+08:00"
     },
@@ -60,7 +60,7 @@
       "manifest": {
         "manifestVersion": 2,
         "id": "code-format",
-        "version": "1.0.2",
+        "version": "1.0.3",
         "name": "代码格式化",
         "symbol": "wand.and.stars",
         "description": "给 Jarvis 的 Git 加上「格式化」：文件 diff 页里工作区那一份源码，按语言交给你装好的格式化工具——clang-format、swift-format、ktfmt、google-java-format、ruff、shfmt、prettier 等，先看对比，点「写入文件」才改。",
@@ -390,16 +390,16 @@
       "path": "extensions/code-format",
       "bundle": {
         "path": "extensions/code-format/dist/extension.js",
-        "sha256": "60e542f59c8db736cf21cdc386ae1e72c76bc6b741e98ca1a91f61a3ed1a2a8d",
-        "byteCount": 33488
+        "sha256": "96e46f4e75d19b0bae0a3a08d2e3f3f2eab46d7e68d2dd0714eac5884d474d25",
+        "byteCount": 36469
       },
-      "updatedAt": "2026-10-20T21:02:14+08:00"
+      "updatedAt": "2026-10-21T07:58:41+08:00"
     },
     {
       "manifest": {
         "manifestVersion": 2,
         "id": "code-highlight",
-        "version": "1.0.1",
+        "version": "1.0.2",
         "name": "代码高亮",
         "symbol": "paintbrush.pointed",
         "description": "给 Jarvis 的 Git 加上语法高亮：文件 diff 页与 Blame 里的源码按语言切成关键字、类型、字符串、注释、函数这些记号，Jarvis 按记号上色。认得 Java、Kotlin、Swift、C / C++ / Objective-C、C#、Python、Shell、Markdown、JS / TS、JSON、YAML、CSS、HTML / XML、Go、Rust、SQL。",
@@ -430,16 +430,16 @@
       "path": "extensions/code-highlight",
       "bundle": {
         "path": "extensions/code-highlight/dist/extension.js",
-        "sha256": "b8d66aea80833d38083b621425dc4c4636def218d74d870f9948e8db362b4600",
-        "byteCount": 55711
+        "sha256": "c23997a9dc2625b84cc0ec1194176fd04602a46072e374669648710b898c7c49",
+        "byteCount": 58692
       },
-      "updatedAt": "2026-10-20T21:02:07+08:00"
+      "updatedAt": "2026-10-21T07:58:41+08:00"
     },
     {
       "manifest": {
         "manifestVersion": 2,
         "id": "github-project",
-        "version": "1.3.2",
+        "version": "1.3.3",
         "name": "GitHub 项目",
         "symbol": "tablecells",
         "description": "给 Jarvis「项目」接上 GitHub Projects v2：读 Project 的字段、条目、迭代与 Issue 的父子 / 依赖关系，把你在需求、迭代、缺陷页上的修改写回 GitHub。页面与规则由 Jarvis 画，它只负责读写数据。",
@@ -511,8 +511,8 @@
       "path": "extensions/github-project",
       "bundle": {
         "path": "extensions/github-project/dist/extension.js",
-        "sha256": "c3a68cb36a21c4d28a831a40e931d7f48ae9c2ebea91adcaf20311083023757e",
-        "byteCount": 84328
+        "sha256": "0c817a16d484b7c0435dc897b946a4749ef0c1a885f298fa8d7c70beef5ff884",
+        "byteCount": 87309
       },
       "updatedAt": "2026-10-20T21:02:14+08:00"
     },
@@ -520,7 +520,7 @@
       "manifest": {
         "manifestVersion": 2,
         "id": "http-status",
-        "version": "1.0.8",
+        "version": "1.0.9",
         "name": "HTTP 状态码",
         "symbol": "number.circle",
         "description": "输入状态码或关键词，给出这个码的读法、语义、常见成因、怎么处理、相关的码与 RFC 出处。/http 404 或 ⌥⌘/（从剪贴板里抓码）的结果贴着指针原地弹出；也能在工作区窗口里开一枚标签。62 个标准码与 12 个常见非标准码都编在扩展里，不联网。",
@@ -652,8 +652,8 @@
       "path": "extensions/http-status",
       "bundle": {
         "path": "extensions/http-status/dist/extension.js",
-        "sha256": "677f3c5311c91307d180ca1c6bbec002df33d9ed6653ccf48b9f2171e95975c4",
-        "byteCount": 119513
+        "sha256": "e59b245e04135db8a6437f4587c15e8fd5c73c348814e351392a331c160eba87",
+        "byteCount": 122494
       },
       "updatedAt": "2026-10-20T21:02:14+08:00"
     },
@@ -661,7 +661,7 @@
       "manifest": {
         "manifestVersion": 2,
         "id": "mac-apps",
-        "version": "1.0.3",
+        "version": "1.0.4",
         "name": "应用",
         "symbol": "square.grid.3x3",
         "description": "让 Jarvis 的全局搜索认得这台 Mac 上的应用：打字时结果里出现应用，输入 app 空格看按组排开的图标网格，按住图标进编辑态移到废纸篓、右键在访达中显示。工具箱里这一页是它的显示设置：分组、排序、搜索结果里出几条、要不要系统应用。",
@@ -706,8 +706,8 @@
       "path": "extensions/mac-apps",
       "bundle": {
         "path": "extensions/mac-apps/dist/extension.js",
-        "sha256": "924fef02b24f51224e9eec0ad6090410168b1c123f2f42d76ff038e626b52b90",
-        "byteCount": 36744
+        "sha256": "7d7c840f1ef73019f54fa714ab823efe07f321b693ee2266fcdcd3a4b1a519cb",
+        "byteCount": 39725
       },
       "updatedAt": "2026-10-20T21:02:14+08:00"
     },
@@ -715,7 +715,7 @@
       "manifest": {
         "manifestVersion": 2,
         "id": "mole-clean",
-        "version": "1.0.8",
+        "version": "1.0.9",
         "name": "Mole 深度清理",
         "symbol": "bubbles.and.sparkles",
         "description": "给 Jarvis 清理换一台更深的引擎：开着时，晃球、/clean 与工具箱清理改走你装好的 Mole（mo clean），覆盖浏览器、开发工具、云盘、已卸载应用残留等更多类别，并读 Mole 的操作日志逐项显示正在删什么。没装 mo 时可以一键在终端里安装。",
@@ -830,16 +830,265 @@
       "path": "extensions/mole-clean",
       "bundle": {
         "path": "extensions/mole-clean/dist/extension.js",
-        "sha256": "3d176a42555a432cf0b90cf5d2e72ebe87bf953421f71c3018dd5443fdf4859e",
-        "byteCount": 53562
+        "sha256": "032d53fb361a5749c1c84f5acf20149c9fa36162204ba243152391143ad65997",
+        "byteCount": 56543
       },
       "updatedAt": "2026-10-20T21:02:14+08:00"
     },
     {
       "manifest": {
         "manifestVersion": 2,
+        "id": "proxy",
+        "version": "1.0.0",
+        "name": "代理",
+        "symbol": "network",
+        "description": "用你自己装的 sing-box 跑你的订阅：菜单栏一枚图标随手开关、切节点、换模式，开着时把系统代理指向它。认 Shadowsocks、VMess、VLESS（含 REALITY）、Trojan、Hysteria2、TUIC 分享链接与 sing-box JSON，局域网与中国大陆直连。",
+        "author": {
+          "name": "fusionseek",
+          "github": "fusionseek"
+        },
+        "main": "dist/extension.js",
+        "sdk": "^2.9.0",
+        "minimumJarvisVersion": "3.2.7",
+        "capabilities": [
+          {
+            "id": "process.daemon",
+            "reason": "在后台常驻运行你装好的 sing-box，并经本机控制口切节点、测速"
+          },
+          {
+            "id": "system.proxy",
+            "reason": "开着时把系统代理指向本机的 sing-box，关掉或退出时还原"
+          },
+          {
+            "id": "network.https",
+            "reason": "拉取你在设置里填的订阅地址"
+          },
+          {
+            "id": "terminal.run",
+            "reason": "没装 sing-box 时在终端里替你用 Homebrew 安装或更新"
+          },
+          {
+            "id": "notifications.post",
+            "reason": "sing-box 意外退出、/proxy 开关的结果用横幅告诉你"
+          },
+          {
+            "id": "clipboard.write",
+            "reason": "菜单栏「复制终端代理命令」把 export 那一行放进剪贴板"
+          }
+        ],
+        "network": {
+          "preferenceHosts": [
+            "subscriptions"
+          ]
+        },
+        "process": {
+          "daemons": [
+            {
+              "id": "sing-box",
+              "executable": "sing-box",
+              "arguments": [
+                "run",
+                "-c",
+                "{config}",
+                "-D",
+                "{workdir}"
+              ],
+              "config": {
+                "fileName": "config.json"
+              }
+            }
+          ],
+          "terminal": [
+            {
+              "id": "install",
+              "title": "安装或更新 sing-box",
+              "script": [
+                "# Generated by Jarvis to install or upgrade sing-box (https://sing-box.sagernet.org). Safe to delete.",
+                "export PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\"",
+                "printf '\\n=== Jarvis · 安装 sing-box（「代理」用的内核）===\\n\\n'",
+                "if command -v brew >/dev/null 2>&1; then",
+                "    if brew list --formula sing-box >/dev/null 2>&1; then",
+                "        printf '已经装过，用 Homebrew 更新到最新版：\\n  $ %s\\n\\n' 'brew upgrade sing-box'",
+                "        brew upgrade sing-box",
+                "    else",
+                "        printf '用 Homebrew 安装：\\n  $ %s\\n\\n' 'brew install sing-box'",
+                "        brew install sing-box",
+                "    fi",
+                "    status=$?",
+                "else",
+                "    printf '这台 Mac 上没有 Homebrew（brew 命令），没法替你装。还剩两条路：\\n\\n'",
+                "    printf '1. 先装 Homebrew（会要管理员密码），在终端里运行：\\n     %s\\n   装好之后回到「代理」，再点一次「在终端中安装」。\\n\\n' '/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"'",
+                "    printf '2. 从 %s 下载 darwin 版本，解压出 sing-box，\\n   放进 /usr/local/bin，或在「代理」的设置里填它的完整路径。\\n' 'https://github.com/SagerNet/sing-box/releases'",
+                "    status=1",
+                "fi",
+                "printf '\\n'",
+                "if [ \"$status\" -eq 0 ]; then",
+                "    printf '已装好：%s\\n回到「代理」就能开启，它会自己找到 sing-box。\\n' \"$(sing-box version 2>/dev/null | head -n 1)\"",
+                "else",
+                "    printf '没有装上（退出码 %s）。上面是原始输出。\\n' \"$status\"",
+                "fi",
+                "printf '\\n按回车关闭。'",
+                "read -r _",
+                "exit \"$status\""
+              ]
+            }
+          ]
+        },
+        "contributes": {
+          "toolbox": {
+            "subtitle": "开关代理、换模式、切节点",
+            "keywords": [
+              "proxy",
+              "sing-box",
+              "vpn",
+              "订阅",
+              "vless",
+              "shadowsocks",
+              "clash",
+              "测速"
+            ]
+          },
+          "window": {
+            "subtitle": "节点、连接、日志与订阅：sing-box 的完整视图",
+            "keywords": [
+              "proxy",
+              "vpn",
+              "流量"
+            ]
+          },
+          "menuBar": {
+            "title": "代理",
+            "symbol": "network"
+          },
+          "commands": [
+            {
+              "id": "toggle",
+              "title": "开关代理",
+              "description": "不带参数切换；/proxy 开、/proxy 关 指定",
+              "slash": {
+                "keyword": "proxy",
+                "aliases": [
+                  "代理"
+                ]
+              },
+              "presentation": "silent"
+            }
+          ],
+          "settings": {
+            "preferences": [
+              {
+                "key": "subscriptions",
+                "type": "urlList",
+                "title": "订阅地址",
+                "description": "机场给的 https 订阅链接，可以填几条。认分享链接（整段 base64 或逐行）与 sing-box JSON",
+                "maxItems": 10,
+                "placeholder": "https://"
+              },
+              {
+                "key": "mixedPort",
+                "type": "number",
+                "title": "本地端口",
+                "description": "HTTP 与 SOCKS5 共用这一个端口；系统代理与终端代理命令都指向它。改了重新开启后生效",
+                "default": 7890,
+                "minimum": 1024,
+                "maximum": 65535
+              },
+              {
+                "key": "controlPort",
+                "type": "number",
+                "title": "控制端口（高级）",
+                "description": "sing-box 的 Clash API 只在本机这个端口上听，「代理」靠它切节点、测速、读流量。被占用时才需要改",
+                "default": 19090,
+                "minimum": 1024,
+                "maximum": 65535
+              },
+              {
+                "key": "systemProxy",
+                "type": "toggle",
+                "title": "开启时设为系统代理",
+                "description": "关掉时只在本机端口上可用：浏览器要自己配，命令行工具用「复制终端代理命令」",
+                "default": true
+              },
+              {
+                "key": "autoStart",
+                "type": "toggle",
+                "title": "启动 Jarvis 时自动开启",
+                "description": "要「在菜单栏显示」开着：菜单栏图标起来的那一刻开启",
+                "default": false
+              },
+              {
+                "key": "chinaRules",
+                "type": "toggle",
+                "title": "中国大陆直连",
+                "description": "中国大陆的网站与 IP 不经过节点。规则集第一次开启时直连下载（jsDelivr 镜像），之后存在本机",
+                "default": true
+              },
+              {
+                "key": "testURL",
+                "type": "text",
+                "title": "延迟测试地址",
+                "description": "测速与「自动选择」请求的地址，必须是 https",
+                "default": "https://www.gstatic.com/generate_204",
+                "monospaced": true
+              },
+              {
+                "key": "singBoxPath",
+                "type": "text",
+                "title": "sing-box 路径",
+                "description": "留空时在 Homebrew、~/.local/bin 等位置自动找；也可以填可执行文件的完整路径（文件名必须是 sing-box）",
+                "default": "",
+                "placeholder": "留空自动查找",
+                "monospaced": true
+              },
+              {
+                "key": "updateInterval",
+                "type": "select",
+                "title": "订阅自动更新",
+                "description": "在后台按时重新拉订阅；节点变了且代理开着时会重新开启一次",
+                "default": "daily",
+                "options": [
+                  {
+                    "value": "never",
+                    "title": "不自动"
+                  },
+                  {
+                    "value": "6h",
+                    "title": "每 6 小时"
+                  },
+                  {
+                    "value": "daily",
+                    "title": "每天"
+                  }
+                ]
+              },
+              {
+                "key": "showSpeed",
+                "type": "toggle",
+                "title": "菜单栏显示速率",
+                "description": "开着时在图标旁显示上下行速率，每秒刷新",
+                "default": false
+              }
+            ]
+          }
+        },
+        "inbox": {
+          "messages": false,
+          "notifications": true
+        }
+      },
+      "path": "extensions/proxy",
+      "bundle": {
+        "path": "extensions/proxy/dist/extension.js",
+        "sha256": "d33fc44299e54f18db0e6e56d9495b4d31d4ebf69bdf507e35b93d72785df142",
+        "byteCount": 155409
+      },
+      "updatedAt": "2026-10-28T02:20:22.540Z"
+    },
+    {
+      "manifest": {
+        "manifestVersion": 2,
         "id": "send-to-phone",
-        "version": "2.0.8",
+        "version": "2.0.9",
         "name": "发到手机",
         "symbol": "iphone.and.arrow.forward",
         "description": "读一次剪贴板，经 Jarvis 快传把文字或链接推到已配对的手机上；快传没开时给一颗按钮替你打开，发完在 Inbox 留一条消息。/phone 后面跟一段字，不开面板直接发。",
@@ -922,8 +1171,8 @@
       "path": "extensions/send-to-phone",
       "bundle": {
         "path": "extensions/send-to-phone/dist/extension.js",
-        "sha256": "ddf669deeb9019817b0122f9ffdca68726ed9c662d974378cadf29a34f6df953",
-        "byteCount": 38550
+        "sha256": "66bee9860255b5cd10507a57b011f11fc6127a438d03cb0da8410c96a33dd8d5",
+        "byteCount": 41531
       },
       "updatedAt": "2026-10-20T21:02:14+08:00"
     },
@@ -931,7 +1180,7 @@
       "manifest": {
         "manifestVersion": 2,
         "id": "translation",
-        "version": "1.0.8",
+        "version": "1.0.9",
         "name": "截屏翻译",
         "symbol": "translate",
         "description": "按一下快捷键框选屏幕上任意一块，Vision 识别文字、合并段落、检测语言，再经 Google 翻译；译文就贴着选区原地弹出。框到的是一个词时，译文下面还有读音与按词性分行的全部词义。也能翻译剪贴板里的文字或图片，或 /translate 后面跟的一段字。免费端点无需 key，填了 API key 走官方接口。",
@@ -1161,8 +1410,8 @@
       "path": "extensions/translation",
       "bundle": {
         "path": "extensions/translation/dist/extension.js",
-        "sha256": "2e58070800775278f5a0bae7378401f4ed2bcd7a4d6f3618bb0765c5771d6482",
-        "byteCount": 83772
+        "sha256": "f1c0f4cd4a91c8db9c742e19cb441a9b9dd6b5ecb00e64d332f5508638bab407",
+        "byteCount": 86753
       },
       "updatedAt": "2026-10-20T21:02:14+08:00"
     }
