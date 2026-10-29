@@ -1,4 +1,4 @@
-// jarvis-extension bundle · proxy@1.0.2 · sdk 2.10.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · proxy@1.0.3 · sdk 2.10.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -118,7 +118,9 @@
     /** 堆叠柱。 */
     bars: (props) => ({ kind: "bars", ...props }),
     /** 宿主画的偏好控件。 */
-    preference: (props) => ({ kind: "preference", ...props })
+    preference: (props) => ({ kind: "preference", ...props }),
+    /** 窗口一页的页头（jarvis-mac `specs/20261029-082059-proxy-window-desktop-layout` D-2，宿主 ≥ 3.3.1）。 */
+    header: (props) => ({ kind: "header", ...props })
   };
 
   // sdk/src/index.ts
@@ -5390,8 +5392,11 @@
   ];
   var dashboardModeTitles = { direct: "\u76F4\u63A5\u8FDE\u63A5", global: "\u5168\u5C40\u4EE3\u7406", rule: "\u89C4\u5219\u5224\u5B9A" };
   var maximumCards = 120;
+  var subtitleLimit = 120;
   var connectionRows = 200;
+  var processRows = 300;
   var ruleTableRows = 300;
+  var logPanelRows = 200;
   var hourLabels = Array.from({ length: 24 }, (_, hour) => String(hour));
   function renderDashboard(session2, snapshot, loading) {
     const page = snapshot ? pageOf(session2, snapshot) : loading ?? ui.scroll({ children: [] });
@@ -5405,16 +5410,47 @@
     });
   }
   function pageOf(session2, snapshot) {
-    const message = session2.message ? [ui.text({ key: "message", style: "footnote", tint: session2.message.ok ? "live" : "alert", text: session2.message.message })] : [];
     switch (session2.view) {
       case "processes":
-        return ui.scroll({ key: "page:processes", children: [...message, ...processesPage(session2, snapshot)] });
+        return ui.stack({ key: "page:processes", spacing: "loose", children: processesPage(session2, snapshot) });
       case "policies":
-        return ui.scroll({ key: "page:policies", children: [...message, ...policiesPage(session2, snapshot)] });
+        return ui.scroll({ key: "page:policies", children: policiesPage(session2, snapshot) });
       case "rules":
-        return ui.scroll({ key: "page:rules", children: [...message, ...rulesPage(session2, snapshot)] });
+        return ui.scroll({ key: "page:rules", children: rulesPage(session2, snapshot) });
       default:
         return ui.scroll({ key: "page:activity", children: activityPage(session2, snapshot) });
+    }
+  }
+  function clip(text, limit = subtitleLimit) {
+    return text.length <= limit ? text : `${text.slice(0, limit - 1)}\u2026`;
+  }
+  function pageHeader(session2, key, title, status, controls = []) {
+    const message = session2.headerMessage(Date.now());
+    const line = message ? { text: message.message, tint: message.ok ? "live" : "alert" } : status;
+    return layout.header({ key, title, subtitle: clip(line.text), ...line.tint ? { tint: line.tint } : {}, children: controls });
+  }
+  function asPanel(node, title) {
+    if (node.kind !== "section") return node;
+    return { ...node, title: title ?? node.title.replace(/ · [A-Z][A-Z0-9 -]*$/, "") };
+  }
+  function proxyStatus(snapshot) {
+    switch (snapshot.phase) {
+      case "running": {
+        const port = snapshot.control?.mixedPort ?? snapshot.preferences.mixedPort;
+        const parts = ["\u5DF2\u5F00\u542F", `127.0.0.1:${port}`, dashboardModeTitles[snapshot.selection.mode]];
+        if (snapshot.kernel === "tunnel") parts.push("\u589E\u5F3A\u6A21\u5F0F");
+        return { text: parts.join(" \xB7 "), tint: "live" };
+      }
+      case "failed":
+        return { text: "\u6CA1\u5F00\u8D77\u6765\uFF1A\u770B\u300C\u8FDB\u7A0B\u300D\u9875\u7684\u65E5\u5FD7", tint: "alert" };
+      case "notGranted":
+        return { text: "\u8FD8\u6CA1\u6709\u6388\u6743", tint: "alert" };
+      case "notInstalled":
+        return { text: "\u6CA1\u6709\u627E\u5230 sing-box", tint: "alert" };
+      case "noNodes":
+        return { text: "\u8FD8\u6CA1\u6709\u8282\u70B9\uFF1A\u5728\u300C\u7B56\u7565\u300D\u9875\u4E0B\u9762\u586B\u8BA2\u9605\u5730\u5740", tint: "alert" };
+      default:
+        return { text: `\u5DF2\u5173\u95ED \xB7 ${dashboardModeTitles[snapshot.selection.mode]}`, tint: "neutral" };
     }
   }
   function networkText(network) {
@@ -5435,61 +5471,69 @@
     const condition = systemProxyCondition(snapshot.proxy, snapshot.granted);
     const tunActive = snapshot.kernel === "tunnel";
     const canStart = snapshot.phase === "stopped" || snapshot.phase === "failed";
-    const children = [];
-    children.push(
-      ui.stack({
-        key: "activity-title",
-        axis: "horizontal",
-        spacing: "loose",
-        alignment: "center",
-        children: [
-          ui.text({ key: "activity-heading", style: "title", text: "\u6D3B\u52A8" }),
-          ui.toggle({
-            key: "activity-system-proxy",
-            title: "\u7CFB\u7EDF\u4EE3\u7406",
-            subtitle: running ? condition.kind === "active" ? `127.0.0.1:${snapshot.control?.mixedPort ?? snapshot.preferences.mixedPort}` : condition.kind === "off" ? "\u6CA1\u6709\u63A5\u7BA1" : condition.kind === "notGranted" ? "\u6CA1\u6709\u6388\u6743" : "\u88AB\u62E6\u7740" : "\u4EE3\u7406\u5173\u7740",
-            value: running && condition.kind === "active",
-            disabled: busy || condition.kind === "notGranted" || !running && !canStart,
-            onChange: (on) => void session2.activitySystemProxy(on)
-          }),
-          ui.toggle({
-            key: "activity-tun",
-            title: "\u589E\u5F3A\u6A21\u5F0F",
-            subtitle: running ? tunActive ? "\u6574\u673A\u7F51\u7EDC\u7ECF\u8FC7 sing-box" : "\u6CA1\u6709\u63A5\u7BA1" : tunSubtitle({ ...snapshot.tun, active: false }) ?? (snapshot.tun.wanted ? "\u5F00\u542F\u4EE3\u7406\u65F6\u7528" : "\u4EE3\u7406\u5173\u7740"),
-            value: running ? tunActive : wantsTunnel(snapshot.preferences),
-            disabled: busy || !snapshot.tun.granted || snapshot.phase === "notInstalled" || snapshot.phase === "notGranted",
-            onChange: (on) => void session2.activityTun(on)
-          }),
-          ui.iconButton({
-            key: "activity-power",
-            symbol: "power",
-            label: running ? "\u5173\u95ED\u4EE3\u7406" : "\u5F00\u542F\u4EE3\u7406",
-            active: running,
-            disabled: busy || !(running || canStart),
-            onPress: () => void session2.toggle(!running)
-          })
-        ]
-      })
-    );
+    const children = [
+      pageHeader(session2, "activity-header", "\u6D3B\u52A8", busy ? { text: session2.core.busy ?? "", tint: "accent" } : proxyStatus(snapshot), [
+        ui.toggle({
+          key: "activity-system-proxy",
+          title: "\u7CFB\u7EDF\u4EE3\u7406",
+          subtitle: running ? condition.kind === "active" ? `127.0.0.1:${snapshot.control?.mixedPort ?? snapshot.preferences.mixedPort}` : condition.kind === "off" ? "\u6CA1\u6709\u63A5\u7BA1" : condition.kind === "notGranted" ? "\u6CA1\u6709\u6388\u6743" : "\u88AB\u62E6\u7740" : "\u4EE3\u7406\u5173\u7740\uFF1A\u6253\u5F00\u5B83 = \u5F00\u542F\u4EE3\u7406",
+          value: running && condition.kind === "active",
+          disabled: busy || condition.kind === "notGranted" || !running && !canStart,
+          onChange: (on) => void session2.activitySystemProxy(on)
+        }),
+        ui.toggle({
+          key: "activity-tun",
+          title: "\u589E\u5F3A\u6A21\u5F0F",
+          subtitle: running ? tunActive ? "\u6574\u673A\u7F51\u7EDC\u7ECF\u8FC7 sing-box" : "\u6CA1\u6709\u63A5\u7BA1" : tunSubtitle({ ...snapshot.tun, active: false }) ?? (snapshot.tun.wanted ? "\u5F00\u542F\u4EE3\u7406\u65F6\u7528" : "\u4EE3\u7406\u5173\u7740"),
+          value: running ? tunActive : wantsTunnel(snapshot.preferences),
+          disabled: busy || !snapshot.tun.granted || snapshot.phase === "notInstalled" || snapshot.phase === "notGranted",
+          onChange: (on) => void session2.activityTun(on)
+        }),
+        ui.iconButton({
+          key: "activity-power",
+          symbol: "power",
+          label: running ? "\u5173\u95ED\u4EE3\u7406" : "\u5F00\u542F\u4EE3\u7406",
+          active: running,
+          disabled: busy || !(running || canStart),
+          onPress: () => void session2.toggle(!running)
+        })
+      ])
+    ];
     children.push(...notes(session2, snapshot));
-    if (session2.message) children.push(ui.text({ key: "message", style: "footnote", tint: session2.message.ok ? "live" : "alert", text: session2.message.message }));
-    const ip = session2.externalIP;
-    children.push(
-      layout.grid({
-        key: "activity-facts",
-        minimum: 150,
+    children.push(factsStrip(session2, snapshot), layout.grid({ key: "activity-cards", minimum: 180, spacing: "regular", children: activityCards(session2, snapshot) }));
+    children.push(layout.grid({ key: "activity-panels", minimum: 420, spacing: "regular", children: [trafficSection(session2), topSection(session2)] }));
+    return children;
+  }
+  function factsStrip(session2, snapshot) {
+    const running = snapshot.phase === "running";
+    const ip = session2.externalIP?.ip ?? null;
+    const fact = (key, label, value, tint, extra = []) => {
+      const valueText = ui.text({ key: `${key}:value`, style: "body", text: value, lines: 1, ...tint ? { tint } : {} });
+      return ui.stack({
+        key,
         spacing: "tight",
         children: [
-          ui.readout({ key: "fact-network", label: "\u7F51\u7EDC", value: networkText(session2.network) }),
-          ui.readout({ key: "fact-profile", label: "\u5F53\u524D\u914D\u7F6E", value: profileText(snapshot) }),
-          ui.readout({ key: "fact-mode", label: "\u51FA\u7AD9\u6A21\u5F0F", value: dashboardModeTitles[snapshot.selection.mode], tint: running ? "live" : "neutral" }),
-          ui.readout({ key: "fact-ip", label: "\u5916\u90E8 IP", value: ip?.ip ?? "\u2014", ...ip?.ip ? { copy: true } : {} })
+          ui.text({ key: `${key}:label`, style: "footnote", text: label }),
+          extra.length > 0 ? ui.stack({ key: `${key}:line`, axis: "horizontal", spacing: "tight", alignment: "center", children: [valueText, ...extra] }) : valueText
         ]
-      })
-    );
-    children.push(layout.grid({ key: "activity-cards", minimum: 160, spacing: "regular", children: activityCards(session2, snapshot) }));
-    children.push(trafficSection(session2), topSection(session2));
-    return children;
+      });
+    };
+    return ui.card({
+      key: "activity-facts",
+      children: [
+        layout.grid({
+          key: "activity-facts-grid",
+          minimum: 160,
+          spacing: "loose",
+          children: [
+            fact("fact-network", "\u7F51\u7EDC", networkText(session2.network)),
+            fact("fact-profile", "\u5F53\u524D\u914D\u7F6E", profileText(snapshot)),
+            fact("fact-mode", "\u51FA\u7AD9\u6A21\u5F0F", dashboardModeTitles[snapshot.selection.mode], running ? "live" : void 0),
+            fact("fact-ip", "\u5916\u90E8 IP", ip ?? "\u2014", void 0, ip ? [ui.copy({ key: "fact-ip:copy", text: ip, label: "\u590D\u5236\u5916\u90E8 IP", variant: "icon" })] : [])
+          ]
+        })
+      ]
+    });
   }
   function activityCards(session2, snapshot) {
     const running = snapshot.phase === "running";
@@ -5498,16 +5542,20 @@
     const latest = (values) => values.length > 0 ? values[values.length - 1] : 0;
     const upload = session2.reading?.upload ?? latest(session2.history.upload);
     const download = session2.reading?.download ?? latest(session2.history.download);
-    const card = (key, title, value, tint, extra = []) => ui.card({
+    const today = session2.stats?.all;
+    const sum = (values) => (values ?? []).reduce((total, value) => total + value, 0);
+    const card = (key, title, value, tint, footer) => ui.card({
       key,
-      children: [ui.text({ key: `${key}:title`, style: "footnote", text: title }), ui.text({ key: `${key}:value`, style: "readout", tint, text: value }), ...extra]
+      children: [ui.text({ key: `${key}:title`, style: "footnote", text: title }), ui.text({ key: `${key}:value`, style: "metric", tint, text: value, lines: 1 }), ui.spacer(), footer]
     });
-    const chart = (key, tone, values) => values.length > 1 ? [ui.chart({ key, series: [{ tone, values: values.slice(-120) }], label: tone === "upload" ? "\u6700\u8FD1\u4E00\u5206\u949F\u7684\u4E0A\u884C" : "\u6700\u8FD1\u4E00\u5206\u949F\u7684\u4E0B\u884C" })] : [];
+    const caption = (key, text) => ui.text({ key, style: "footnote", text, lines: 1 });
+    const chart = (key, tone, values, fallback) => running && values.length > 1 ? ui.chart({ key, series: [{ tone, values: values.slice(-120) }], label: tone === "upload" ? "\u6700\u8FD1\u4E00\u5206\u949F\u7684\u4E0A\u884C" : "\u6700\u8FD1\u4E00\u5206\u949F\u7684\u4E0B\u884C" }) : caption(key, fallback);
+    const processCount = new Set((session2.connections?.connections ?? []).map((connection) => processName2(connection.process))).size;
     return [
-      card("card-latency", "Internet \u5EF6\u8FDF", running ? delay === void 0 ? "\u6D4B\u91CF\u4E2D" : delay === null ? "\u4E0D\u901A" : `${delay} ms` : "\u2014", running ? delayTintValue : "neutral"),
-      card("card-connections", "\u6D3B\u52A8\u8FDE\u63A5", running && session2.connections ? String(session2.connections.connections.length) : "\u2014", running ? "accent" : "neutral"),
-      card("card-upload", "\u4E0A\u884C", running ? formatRate(upload) : "\u2014", running ? "amber" : "neutral", running ? chart("card-upload:chart", "upload", session2.history.upload) : []),
-      card("card-download", "\u4E0B\u884C", running ? formatRate(download) : "\u2014", running ? "blue" : "neutral", running ? chart("card-download:chart", "download", session2.history.download) : [])
+      card("card-latency", "Internet \u5EF6\u8FDF", running ? delay === void 0 ? "\u6D4B\u91CF\u4E2D" : delay === null ? "\u4E0D\u901A" : `${delay} ms` : "\u2014", running ? delayTintValue : "neutral", caption("card-latency:caption", running ? "\u7ECF\u8FC7\u8282\u70B9\u8BBF\u95EE apple.com\uFF0C\u6BCF 30 \u79D2\u6D4B\u4E00\u6B21" : "\u4EE3\u7406\u5F00\u7740\u65F6\u6D4B")),
+      card("card-connections", "\u6D3B\u52A8\u8FDE\u63A5", running && session2.connections ? String(session2.connections.connections.length) : "\u2014", running ? "accent" : "neutral", caption("card-connections:caption", running && session2.connections ? `${processCount} \u4E2A\u7A0B\u5E8F` : "\u4EE3\u7406\u5F00\u7740\u65F6\u6570")),
+      card("card-upload", "\u4E0A\u884C", running ? formatRate(upload) : "\u2014", running ? "amber" : "neutral", chart("card-upload:chart", "upload", session2.history.upload, today ? `\u4ECA\u5929 ${formatBytes(sum(today.upload))}` : "\u6700\u8FD1\u4E00\u5206\u949F")),
+      card("card-download", "\u4E0B\u884C", running ? formatRate(download) : "\u2014", running ? "blue" : "neutral", chart("card-download:chart", "download", session2.history.download, today ? `\u4ECA\u5929 ${formatBytes(sum(today.download))}` : "\u6700\u8FD1\u4E00\u5206\u949F"))
     ];
   }
   function trafficSection(session2) {
@@ -5517,20 +5565,16 @@
     const caption = buckets ? `\u4ECA\u5929${session2.trafficScope === "proxy" ? "\u7ECF\u8FC7\u8282\u70B9" : "\u4E00\u5171"} \u2193 ${formatBytes(sum(buckets.download))}  \u2191 ${formatBytes(sum(buckets.upload))}` : "\u8FD8\u6CA1\u6709\u7EDF\u8BA1";
     return ui.section({
       key: "traffic",
-      title: "\u6D41\u91CF \xB7 TRAFFIC",
+      title: "\u4ECA\u65E5\u6D41\u91CF",
       trailing: stats ? `\u66F4\u65B0\u4E8E${formatAge(stats.updatedAt, Date.now())}` : void 0,
+      segments: [
+        { value: "all", title: "\u5168\u90E8" },
+        { value: "proxy", title: "\u4EC5\u4EE3\u7406", help: "\u53EA\u7B97\u51FA\u7AD9\u4E0D\u662F\u76F4\u8FDE\u7684\u8FDE\u63A5" }
+      ],
+      segment: session2.trafficScope,
+      segmentLabel: "\u6D41\u91CF\u770B\u54EA\u4E00\u4EFD",
+      onSegment: (value) => session2.setTrafficScope(value),
       children: [
-        ui.segmented({
-          key: "traffic-scope",
-          label: "\u6D41\u91CF\u770B\u54EA\u4E00\u4EFD",
-          layout: "full",
-          value: session2.trafficScope,
-          options: [
-            { value: "all", title: "\u5168\u90E8" },
-            { value: "proxy", title: "\u4EC5\u4EE3\u7406", help: "\u53EA\u7B97\u51FA\u7AD9\u4E0D\u662F\u76F4\u8FDE\u7684\u8FDE\u63A5" }
-          ],
-          onChange: (value) => session2.setTrafficScope(value)
-        }),
         layout.bars({
           key: "traffic-hours",
           labels: hourLabels,
@@ -5553,29 +5597,25 @@
     const rows = stats ? topUsages(stats, category, 10) : [];
     return ui.section({
       key: "top",
-      title: "TOP 10 \xB7 \u4ECA\u5929",
+      title: "Top 10 \xB7 \u4ECA\u5929",
+      segments: [
+        { value: "processes", title: "\u8FDB\u7A0B" },
+        { value: "domains", title: "\u57DF\u540D" },
+        { value: "policies", title: "\u7B56\u7565" }
+      ],
+      segment: category,
+      segmentLabel: "Top 10 \u770B\u54EA\u4E00\u7C7B",
+      onSegment: (value) => session2.setTopCategory(value),
       children: [
-        ui.segmented({
-          key: "top-category",
-          label: "Top 10 \u770B\u54EA\u4E00\u7C7B",
-          layout: "full",
-          value: category,
-          options: [
-            { value: "processes", title: "\u8FDB\u7A0B\u4E0E\u8BBE\u5907" },
-            { value: "domains", title: "\u57DF\u540D" },
-            { value: "policies", title: "\u7B56\u7565" }
-          ],
-          onChange: (value) => session2.setTopCategory(value)
-        }),
         layout.table({
           key: `top-table:${category}`,
           label: "\u4ECA\u5929\u6D41\u91CF\u6700\u591A\u7684\u5341\u4E2A",
           columns: [
-            { title: category === "processes" ? "\u8FDB\u7A0B" : category === "domains" ? "\u57DF\u540D" : "\u7B56\u7565", width: "fill" },
+            { title: category === "processes" ? "\u8FDB\u7A0B\u4E0E\u8BBE\u5907" : category === "domains" ? "\u57DF\u540D" : "\u7B56\u7565", width: "fill" },
             { title: "\u8FDE\u63A5", width: "narrow", alignment: "trailing" },
-            { title: "\u2191", alignment: "trailing" },
-            { title: "\u2193", alignment: "trailing" },
-            { title: "\u5408\u8BA1", alignment: "trailing" }
+            { title: "\u2191", width: "narrow", alignment: "trailing" },
+            { title: "\u2193", width: "narrow", alignment: "trailing" },
+            { title: "\u5408\u8BA1", width: "narrow", alignment: "trailing" }
           ],
           rows: rows.map(([name, usage]) => ({
             cells: [category === "policies" ? policyName(name) : name, String(usage.connections), formatBytes(usage.upload), formatBytes(usage.download), formatBytes(usage.upload + usage.download)]
@@ -5585,164 +5625,236 @@
       ]
     });
   }
+  function processName2(path) {
+    return path.split("/").pop() || "\u2014";
+  }
   function processesPage(session2, snapshot) {
     const running = snapshot.phase === "running";
-    const today = session2.stats?.processes ?? {};
-    const rows = session2.processes.slice(0, 300).map((row) => {
-      const usage = today[row.name];
-      return {
-        cells: [row.name, String(row.connections), formatRate(row.upload), formatRate(row.download), usage ? formatBytes(usage.upload + usage.download) : "\u2014"],
-        ...row.upload + row.download === 0 ? { tint: "neutral" } : {}
-      };
-    });
+    const query = session2.processFilter.trim().toLowerCase();
+    const data = session2.connections;
+    const all = data ? [...data.connections].sort((a, b) => b.start - a.start) : [];
+    const matches = (connection) => !query || connection.host.toLowerCase().includes(query) || processName2(connection.process).toLowerCase().includes(query);
+    const matchedProcesses = new Set(all.filter(matches).map((connection) => processName2(connection.process)));
+    const processes = session2.processes.filter((row) => !query || row.name.toLowerCase().includes(query) || matchedProcesses.has(row.name)).slice(0, processRows);
+    const selected = session2.processSelection;
+    const connections = all.filter((connection) => matches(connection) && (selected === null || processName2(connection.process) === selected)).slice(0, connectionRows);
+    const download = session2.processes.reduce((total, row) => total + row.download, 0);
+    const upload = session2.processes.reduce((total, row) => total + row.upload, 0);
+    const status = running && data ? { text: `${session2.processes.length} \u4E2A\u7A0B\u5E8F \xB7 ${data.connections.length} \u6761\u8FDE\u63A5 \xB7 \u2193 ${formatRate(download)}  \u2191 ${formatRate(upload)}`, tint: "live" } : proxyStatus(snapshot);
     const children = [
-      ui.section({
-        key: "processes",
-        title: "\u8FDB\u7A0B \xB7 PROCESSES",
-        trailing: running && session2.connections ? `${session2.processes.length} \u4E2A\u7A0B\u5E8F \xB7 ${session2.connections.connections.length} \u6761\u8FDE\u63A5` : void 0,
-        children: [
-          layout.table({
-            key: "process-table",
-            label: "\u6BCF\u4E2A\u7A0B\u5E8F\u6B64\u523B\u7684\u901F\u7387",
-            columns: [
-              { title: "\u7A0B\u5E8F", width: "fill" },
-              { title: "\u8FDE\u63A5", width: "narrow", alignment: "trailing" },
-              { title: "\u4E0A\u884C", alignment: "trailing" },
-              { title: "\u4E0B\u884C", alignment: "trailing" },
-              { title: "\u4ECA\u5929", alignment: "trailing" }
-            ],
-            rows,
-            emptyText: running ? "\u6B64\u523B\u6CA1\u6709\u8FDE\u63A5" : "\u4EE3\u7406\u6CA1\u5F00"
-          })
-        ]
-      })
+      pageHeader(session2, "processes-header", "\u8FDB\u7A0B", status, [
+        ui.search({ key: "process-search", value: session2.processFilter, placeholder: "\u641C\u7D22\u7A0B\u5E8F\u6216\u4E3B\u673A", label: "\u641C\u7D22\u7A0B\u5E8F\u6216\u4E3B\u673A", onChange: (value) => session2.searchProcesses(value) })
+      ])
     ];
     const failures = failuresSection(session2);
-    if (failures) children.push(failures);
-    children.push(connectionsSection(session2, snapshot), logsSection(session2));
+    if (failures) children.push(asPanel(failures));
+    children.push(
+      layout.grid({
+        key: "processes-split",
+        minimum: 360,
+        spacing: "regular",
+        weights: [2, 3],
+        fill: true,
+        children: [
+          ui.section({
+            key: "processes",
+            title: "\u7A0B\u5E8F",
+            trailing: query ? `${processes.length} / ${session2.processes.length}` : `${session2.processes.length} \u4E2A`,
+            children: [
+              layout.table({
+                key: "process-table",
+                label: "\u6BCF\u4E2A\u7A0B\u5E8F\u6B64\u523B\u7684\u901F\u7387",
+                scroll: true,
+                ...selected !== null ? { selection: selected } : {},
+                onSelect: (name) => session2.selectProcess(name),
+                columns: [
+                  { title: "\u7A0B\u5E8F", width: "fill" },
+                  { title: "\u8FDE\u63A5", width: "narrow", alignment: "trailing" },
+                  { title: "\u2193", width: "narrow", alignment: "trailing" },
+                  { title: "\u2191", width: "narrow", alignment: "trailing" }
+                ],
+                rows: processes.map((row) => ({
+                  id: row.name,
+                  cells: [row.name, String(row.connections), formatRate(row.download), formatRate(row.upload)],
+                  ...row.upload + row.download === 0 ? { tint: "neutral" } : {}
+                })),
+                emptyText: running ? query ? "\u6CA1\u6709\u5BF9\u5F97\u4E0A\u7684\u7A0B\u5E8F" : "\u6B64\u523B\u6CA1\u6709\u8FDE\u63A5" : "\u4EE3\u7406\u6CA1\u5F00"
+              })
+            ]
+          }),
+          connectionsSection(session2, snapshot, connections, selected)
+        ]
+      }),
+      logsPanel(session2)
+    );
     return children;
   }
-  function connectionsSection(session2, snapshot) {
+  function connectionsSection(session2, snapshot, list2, selected) {
     const data = session2.connections;
-    const list2 = data ? [...data.connections].sort((a, b) => b.start - a.start).slice(0, connectionRows) : [];
-    const trailing = data ? `${data.connections.length} \u6761 \xB7 \u2193 ${formatBytes(data.downloadTotal)}  \u2191 ${formatBytes(data.uploadTotal)}` : void 0;
+    const download = list2.reduce((total, connection) => total + connection.download, 0);
+    const upload = list2.reduce((total, connection) => total + connection.upload, 0);
+    const chain = (chains) => chains.length > 0 ? [...chains].reverse().map(policyName).join(" \u2192 ") : "\u2014";
     return ui.section({
       key: "connections-section",
-      title: "\u8FDE\u63A5 \xB7 CONNECTIONS",
-      ...trailing ? { trailing } : {},
+      title: selected === null ? "\u8FDE\u63A5 \xB7 \u5168\u90E8\u7A0B\u5E8F" : `\u8FDE\u63A5 \xB7 ${selected}`,
+      ...data ? { trailing: `${list2.length} \u6761 \xB7 \u2193 ${formatBytes(download)}  \u2191 ${formatBytes(upload)}` } : {},
+      actions: selected !== null ? [{ id: "show-all", title: "\u5168\u90E8\u7A0B\u5E8F", symbol: "xmark.circle", help: "\u56DE\u5230\u5168\u90E8\u7A0B\u5E8F\u7684\u8FDE\u63A5", onPress: () => session2.selectProcess(selected) }] : [],
       children: [
         layout.table({
           key: "connections",
           label: "\u6B64\u523B\u7684\u8FDE\u63A5",
-          columns: [
-            { title: "\u4E3B\u673A", width: "fill" },
-            { title: "\u7A0B\u5E8F" },
-            { title: "\u7B56\u7565" },
-            { title: "\u89C4\u5219", width: "wide" },
-            { title: "\u2193", alignment: "trailing" },
-            { title: "\u2191", alignment: "trailing" }
-          ],
+          scroll: true,
+          // 全部程序时第二列是程序；选了一个程序时程序是废话，换成规则。
+          columns: [{ title: "\u4E3B\u673A", width: "fill" }, { title: selected === null ? "\u7A0B\u5E8F" : "\u89C4\u5219" }, { title: "\u7B56\u7565" }, { title: "\u2193", width: "narrow", alignment: "trailing" }, { title: "\u2191", width: "narrow", alignment: "trailing" }],
           rows: list2.map((connection) => ({
-            cells: [
-              connection.host || "\uFF08\u6CA1\u6709\u4E3B\u673A\u540D\uFF09",
-              connection.process.split("/").pop() || "\u2014",
-              connection.chains.length > 0 ? [...connection.chains].reverse().map(policyName).join(" \u2192 ") : "\u2014",
-              connection.rule || "\u2014",
-              formatBytes(connection.download),
-              formatBytes(connection.upload)
-            ]
+            cells: [connection.host || "\uFF08\u6CA1\u6709\u4E3B\u673A\u540D\uFF09", selected === null ? processName2(connection.process) : connection.rule || "\u2014", chain(connection.chains), formatBytes(connection.download), formatBytes(connection.upload)]
           })),
-          emptyText: snapshot.phase === "running" ? "\u6B64\u523B\u6CA1\u6709\u8FDE\u63A5\uFF0C\u6BCF\u79D2\u5237\u65B0\u4E00\u6B21" : "\u5F00\u542F\u4E4B\u540E\uFF0C\u7ECF\u8FC7\u4EE3\u7406\u7684\u6BCF\u4E00\u6761\u8FDE\u63A5\u90FD\u4F1A\u5217\u5728\u8FD9\u91CC"
+          emptyText: snapshot.phase === "running" ? selected === null ? "\u6B64\u523B\u6CA1\u6709\u8FDE\u63A5\uFF0C\u6BCF\u79D2\u5237\u65B0\u4E00\u6B21" : `${selected} \u6B64\u523B\u6CA1\u6709\u8FDE\u63A5` : "\u5F00\u542F\u4E4B\u540E\uFF0C\u7ECF\u8FC7\u4EE3\u7406\u7684\u6BCF\u4E00\u6761\u8FDE\u63A5\u90FD\u4F1A\u5217\u5728\u8FD9\u91CC"
         })
       ]
     });
   }
+  function logsPanel(session2) {
+    const tail = session2.logs.slice(-logPanelRows).reverse();
+    let text = tail.join("\n");
+    if (text.length > 19e3) text = text.slice(0, 19e3);
+    return ui.section({
+      key: "logs-section",
+      title: "\u65E5\u5FD7",
+      trailing: `${session2.logs.length} \u884C \xB7 \u6700\u65B0\u7684\u5728\u4E0A`,
+      actions: [{ id: "reload", title: "\u91CD\u8BFB", symbol: "arrow.clockwise", help: "\u91CD\u8BFB sing-box \u6700\u8FD1 500 \u884C\u8F93\u51FA", onPress: () => void session2.showView("processes") }],
+      children: [ui.editor({ key: "log-text", value: text, placeholder: "sing-box \u8FD8\u6CA1\u6709\u8F93\u51FA", label: "sing-box \u65E5\u5FD7", mono: true, readOnly: true, rows: 7 })]
+    });
+  }
+  function policyGroups(session2, snapshot) {
+    const running = snapshot.phase === "running";
+    const selectorPick = snapshot.selection.node === URLTEST_TAG && running && session2.autoPick ? `${URLTEST_TAG} \u2192 ${session2.autoPick}` : snapshot.selection.node;
+    return [
+      { name: SELECTOR_TAG, count: snapshot.nodes.length, selected: selectorPick },
+      ...snapshot.groups.map((group) => ({ name: group.name, count: group.members.length, selected: memberTitle(group.selected) }))
+    ];
+  }
   function policiesPage(session2, snapshot) {
     const running = snapshot.phase === "running";
     const mode = snapshot.selection.mode;
+    const groups = policyGroups(session2, snapshot);
+    const current = groups.find((group) => group.name === session2.policyGroup) ?? groups[0];
+    const status = {
+      text: mode === "direct" ? "\u76F4\u63A5\u8FDE\u63A5\uFF1A\u4E0D\u7ECF\u8FC7\u8282\u70B9\uFF0C\u4E0B\u9762\u7684\u9009\u62E9\u7167\u6837\u8BB0\u7740\uFF0C\u6362\u56DE\u522B\u7684\u6A21\u5F0F\u65F6\u751F\u6548" : `${dashboardModeTitles[mode]} \xB7 ${SELECTOR_TAG} \u2192 ${groups[0].selected}`,
+      tint: running ? "live" : "neutral"
+    };
     const children = [
-      ui.section({
-        key: "policy-mode",
-        title: "\u51FA\u7AD9\u6A21\u5F0F \xB7 MODE",
-        children: [
-          ui.segmented({
-            key: "policy-mode-picker",
-            label: "\u51FA\u7AD9\u6A21\u5F0F",
-            layout: "full",
-            value: mode,
-            options: ["direct", "global", "rule"].map((value) => ({ value, title: dashboardModeTitles[value], help: modeHelps[value] })),
-            onChange: (value) => void session2.setMode(value)
-          }),
-          ui.text({ key: "policy-mode-help", style: "footnote", text: mode === "direct" ? "\u76F4\u63A5\u8FDE\u63A5\u6A21\u5F0F\u4E0B\u4E0D\u7ECF\u8FC7\u8282\u70B9\uFF1A\u4E0B\u9762\u7684\u9009\u62E9\u7167\u6837\u8BB0\u7740\uFF0C\u6362\u56DE\u522B\u7684\u6A21\u5F0F\u65F6\u751F\u6548\u3002" : modeHelps[mode] })
-        ]
-      })
+      pageHeader(session2, "policies-header", "\u7B56\u7565", status, [
+        ui.segmented({
+          key: "policy-mode-picker",
+          label: "\u51FA\u7AD9\u6A21\u5F0F",
+          layout: "compact",
+          value: mode,
+          options: ["direct", "global", "rule"].map((value) => ({ value, title: dashboardModeTitles[value], help: modeHelps[value] })),
+          onChange: (value) => void session2.setMode(value)
+        }),
+        ui.button({
+          key: "test-all",
+          title: "\u5168\u90E8\u6D4B\u901F",
+          symbol: "speedometer",
+          variant: "secondary",
+          size: "bar",
+          help: running ? "\u6D4B\u4E00\u904D\u5168\u90E8\u8282\u70B9\u7684\u5EF6\u8FDF" : "\u4EE3\u7406\u5F00\u7740\u624D\u80FD\u6D4B\u901F",
+          disabled: !running || session2.core.busy !== null,
+          onPress: () => void session2.test()
+        })
+      ])
     ];
     if (snapshot.nodes.length === 0) {
       children.push(ui.empty({ key: "no-nodes", symbol: "server.rack", title: "\u8FD8\u6CA1\u6709\u8282\u70B9", hint: "\u5728\u4E0B\u9762\u300C\u8BA2\u9605\u300D\u91CC\u586B\u8BA2\u9605\u5730\u5740\uFF0C\u62C9\u4E0B\u6765\u5C31\u6709\u4E86\u3002" }));
     } else {
-      let budget = maximumCards;
-      const query = session2.filter.trim().toLowerCase();
-      const matched = query ? snapshot.nodes.filter((node) => node.name.toLowerCase().includes(query) || node.protocol.includes(query)) : snapshot.nodes;
-      const cards = [];
-      const autoSelected = snapshot.selection.node === URLTEST_TAG;
-      cards.push(nodeCard(session2, `node:${URLTEST_TAG}`, URLTEST_TAG, running && autoSelected && session2.autoPick ? `\u6B64\u523B\u7528\u300C${session2.autoPick}\u300D` : "\u6309\u5EF6\u8FDF\u81EA\u52A8\u6311\u6700\u5FEB\u7684", void 0, autoSelected, () => void session2.pickNode(URLTEST_TAG)));
-      budget -= 1;
-      for (const node of matched.slice(0, Math.max(0, budget))) {
-        const delay = snapshot.latency.values[node.name];
-        cards.push(nodeCard(session2, `node:${node.name}`, node.name, [protocolTitles[node.protocol], formatDelay(delay)].filter((part) => part).join(" \xB7 "), delayTint(delay), snapshot.selection.node === node.name, () => void session2.pickNode(node.name)));
-      }
-      budget -= Math.min(matched.length, budget);
-      const selectorChildren = [];
-      if (snapshot.nodes.length > 8) {
-        selectorChildren.push(ui.search({ key: "node-search", value: session2.filter, placeholder: "\u641C\u7D22\u8282\u70B9", label: "\u641C\u7D22\u8282\u70B9", onChange: (value) => session2.search(value) }));
-      }
-      selectorChildren.push(layout.grid({ key: "node-cards", minimum: 150, spacing: "tight", children: cards }));
-      if (matched.length > cards.length - 1) selectorChildren.push(ui.text({ key: "nodes-more", style: "footnote", text: `\u53E6\u6709 ${matched.length - (cards.length - 1)} \u4E2A\u6CA1\u753B\u51FA\u6765\uFF1A\u7528\u641C\u7D22\u627E` }));
-      const tested = snapshot.latency.testedAt ? ` \xB7 \u6D4B\u4E8E${formatAge(snapshot.latency.testedAt, Date.now())}` : "";
       children.push(
-        ui.section({
-          key: "policy-selector",
-          title: `${SELECTOR_TAG} \xB7 ${snapshot.nodes.length} \u4E2A\u8282\u70B9${tested}`,
-          tint: mode === "direct" ? "neutral" : "accent",
-          actions: [
-            {
-              id: "test-all",
-              title: "\u5168\u90E8\u6D4B\u901F",
-              symbol: "speedometer",
-              help: running ? "\u6D4B\u4E00\u904D\u5168\u90E8\u8282\u70B9\u7684\u5EF6\u8FDF" : "\u4EE3\u7406\u5F00\u7740\u624D\u80FD\u6D4B\u901F",
-              disabled: !running || session2.core.busy !== null,
-              onPress: () => void session2.test()
-            }
-          ],
-          children: selectorChildren
+        layout.grid({
+          key: "policies-split",
+          minimum: 240,
+          spacing: "regular",
+          weights: [1, 3],
+          children: [
+            ui.section({
+              key: "policy-groups",
+              title: "\u7B56\u7565\u7EC4",
+              trailing: `${groups.length} \u4E2A`,
+              children: [
+                ui.list({
+                  key: "policy-group-list",
+                  children: groups.map(
+                    (group) => ui.row({
+                      key: `policy-group:${group.name}`,
+                      symbol: group.name === SELECTOR_TAG ? "point.3.connected.trianglepath.dotted" : "square.stack.3d.up",
+                      title: group.name,
+                      subtitle: `${group.count} \u4E2A \xB7 ${group.selected}`,
+                      selected: group.name === current.name,
+                      onPress: () => session2.showPolicyGroup(group.name)
+                    })
+                  )
+                })
+              ]
+            }),
+            current.name === SELECTOR_TAG ? selectorPanel(session2, snapshot) : groupPanel(session2, snapshot, current.name)
+          ]
         })
       );
-      for (const group of snapshot.groups) {
-        if (budget <= 0) break;
-        const members = group.members.slice(0, budget);
-        budget -= members.length;
-        children.push(
-          ui.section({
-            key: `policy-group:${group.name}`,
-            title: group.name,
-            trailing: snapshot.surge ? `\u6765\u81EA ${snapshot.surge.sourceName}` : void 0,
-            children: [
-              layout.grid({
-                key: `group-cards:${group.name}`,
-                minimum: 150,
-                spacing: "tight",
-                children: members.map((member) => {
-                  const delay = snapshot.latency.values[member.tag];
-                  return nodeCard(session2, `group:${group.name}:${member.tag}`, memberTitle(member.title), formatDelay(delay) || (member.tag === DIRECT_TAG ? "\u76F4\u8FDE" : ""), delayTint(delay), group.selected === member.tag, () => void session2.pickGroupMember(group, member.tag));
-                })
-              })
-            ]
-          })
-        );
-      }
     }
-    children.push(subscriptionsSection(session2, snapshot, true), commandSection(snapshot));
+    children.push(
+      layout.grid({
+        key: "policies-bottom",
+        minimum: 300,
+        spacing: "regular",
+        weights: [2, 1],
+        children: [asPanel(subscriptionsSection(session2, snapshot, true)), terminalPanel(snapshot)]
+      })
+    );
     return children;
+  }
+  function selectorPanel(session2, snapshot) {
+    const running = snapshot.phase === "running";
+    const query = session2.filter.trim().toLowerCase();
+    const matched = query ? snapshot.nodes.filter((node) => node.name.toLowerCase().includes(query) || node.protocol.includes(query)) : snapshot.nodes;
+    const autoSelected = snapshot.selection.node === URLTEST_TAG;
+    const cards = [
+      nodeCard(session2, `node:${URLTEST_TAG}`, URLTEST_TAG, running && autoSelected && session2.autoPick ? `\u6B64\u523B\u7528\u300C${session2.autoPick}\u300D` : "\u6309\u5EF6\u8FDF\u81EA\u52A8\u6311\u6700\u5FEB\u7684", void 0, autoSelected, () => void session2.pickNode(URLTEST_TAG))
+    ];
+    for (const node of matched.slice(0, maximumCards - 1)) {
+      const delay = snapshot.latency.values[node.name];
+      cards.push(nodeCard(session2, `node:${node.name}`, node.name, [protocolTitles[node.protocol], formatDelay(delay)].filter((part) => part).join(" \xB7 "), delayTint(delay), snapshot.selection.node === node.name, () => void session2.pickNode(node.name)));
+    }
+    const children = [];
+    if (snapshot.nodes.length > 8) {
+      children.push(ui.search({ key: "node-search", value: session2.filter, placeholder: "\u641C\u7D22\u8282\u70B9", label: "\u641C\u7D22\u8282\u70B9", onChange: (value) => session2.search(value) }));
+    }
+    children.push(layout.grid({ key: "node-cards", minimum: 200, spacing: "tight", children: cards }));
+    if (matched.length > cards.length - 1) children.push(ui.text({ key: "nodes-more", style: "footnote", text: `\u53E6\u6709 ${matched.length - (cards.length - 1)} \u4E2A\u6CA1\u753B\u51FA\u6765\uFF1A\u7528\u641C\u7D22\u627E` }));
+    return ui.section({
+      key: "policy-selector",
+      title: `${SELECTOR_TAG} \xB7 ${snapshot.nodes.length} \u4E2A\u8282\u70B9`,
+      trailing: snapshot.latency.testedAt ? `\u6D4B\u4E8E${formatAge(snapshot.latency.testedAt, Date.now())}` : "\u8FD8\u6CA1\u6D4B\u8FC7",
+      children
+    });
+  }
+  function groupPanel(session2, snapshot, name) {
+    const group = snapshot.groups.find((candidate) => candidate.name === name);
+    if (!group) return selectorPanel(session2, snapshot);
+    return ui.section({
+      key: `policy-group-panel:${group.name}`,
+      title: `${group.name} \xB7 ${group.members.length} \u4E2A`,
+      ...snapshot.surge ? { trailing: `\u6765\u81EA ${snapshot.surge.sourceName}` } : {},
+      children: [
+        layout.grid({
+          key: `group-cards:${group.name}`,
+          minimum: 200,
+          spacing: "tight",
+          children: group.members.slice(0, maximumCards).map((member) => {
+            const delay = snapshot.latency.values[member.tag];
+            return nodeCard(session2, `group:${group.name}:${member.tag}`, memberTitle(member.title), formatDelay(delay) || (member.tag === DIRECT_TAG ? "\u76F4\u8FDE" : ""), delayTint(delay), group.selected === member.tag, () => void session2.pickGroupMember(group, member.tag));
+          })
+        })
+      ]
+    });
   }
   function nodeCard(session2, key, title, detail, tint, selected, onPress) {
     return ui.card({
@@ -5750,19 +5862,32 @@
       ...selected ? { tint: "accent" } : {},
       onPress: session2.core.busy === null ? onPress : void 0,
       children: [
-        ui.text({ key: `${key}:name`, style: selected ? "title" : "body", text: title, lines: 1 }),
+        ui.text({ key: `${key}:name`, style: "title", text: title, lines: 1 }),
         ui.text({ key: `${key}:detail`, style: "footnote", text: selected ? `\u5DF2\u9009 \xB7 ${detail || "\u70B9\u4E00\u4E0B\u6D4B\u901F"}` : detail || "\u70B9\u4E00\u4E0B\u9009\u5B83\u5E76\u6D4B\u901F", lines: 1, ...tint ? { tint } : {} })
       ]
     });
   }
+  function terminalPanel(snapshot) {
+    const command = terminalProxyCommand(snapshot.control?.mixedPort ?? snapshot.preferences.mixedPort);
+    return ui.section({
+      key: "terminal",
+      title: "\u7EC8\u7AEF\u4EE3\u7406",
+      children: [
+        ui.text({ key: "terminal-help", style: "footnote", text: "\u547D\u4EE4\u884C\u5DE5\u5177\u4E0D\u8BFB\u7CFB\u7EDF\u4EE3\u7406\uFF1A\u5728\u7EC8\u7AEF\u91CC\u7C98\u8D34\u8FD9\u4E00\u884C\uFF0C\u8FD9\u4E2A\u7EC8\u7AEF\u91CC\u7684 curl\u3001git\u3001brew \u5C31\u4F1A\u7ECF\u8FC7\u4EE3\u7406\u3002" }),
+        ui.text({ key: "terminal-command", style: "mono", text: command, selectable: true }),
+        ui.copy({ key: "terminal-copy", text: command, label: "\u590D\u5236\u7EC8\u7AEF\u4EE3\u7406\u547D\u4EE4", variant: "chip" })
+      ]
+    });
+  }
   function rulesPage(session2, snapshot) {
-    const children = [];
     const plan = session2.routes;
+    const children = [];
     if (plan) {
       const titles = new Map((snapshot.surge?.ruleSets ?? []).map((ref) => [ref.tag, ref.url.split("/").pop() || ref.host]));
       const rows = ruleRows(plan, session2.ruleHits?.counts ?? {}, titles);
       const shown = rows.length > ruleTableRows ? [...rows.slice(0, ruleTableRows - 1), rows[rows.length - 1]] : rows;
       const total = rows.reduce((sum, row) => sum + row.hits, 0);
+      children.push(pageHeader(session2, "rules-header", "\u89C4\u5219", { text: `${rows.length} \u6761 \xB7 \u672C\u6B21\u5F00\u542F\u4EE5\u6765 ${total} \u6761\u8FDE\u63A5`, tint: snapshot.phase === "running" ? "live" : "neutral" }));
       const tableChildren = [
         layout.table({
           key: "rule-table",
@@ -5782,24 +5907,25 @@
         })
       ];
       if (rows.length > shown.length) tableChildren.push(ui.text({ key: "rule-table-more", style: "footnote", text: `\u53E6\u6709 ${rows.length - shown.length} \u6761\u6CA1\u5217\u51FA\u6765\uFF08\u8868\u91CC\u81F3\u591A ${ruleTableRows} \u884C\uFF09` }));
-      children.push(
-        ui.section({
-          key: "rule-table-section",
-          title: "\u89C4\u5219 \xB7 RULES",
-          trailing: `${rows.length} \u6761 \xB7 \u672C\u6B21\u5F00\u542F\u4EE5\u6765 ${total} \u6761\u8FDE\u63A5`,
-          children: tableChildren
-        })
-      );
+      children.push(ui.section({ key: "rule-table-section", title: "\u751F\u6548\u7684\u89C4\u5219", trailing: `${rows.length} \u6761`, children: tableChildren }));
     } else {
-      children.push(ui.text({ key: "rule-table-loading", style: "footnote", text: "\u6B63\u5728\u8BFB\u53D6\u89C4\u5219" }));
+      children.push(pageHeader(session2, "rules-header", "\u89C4\u5219", { text: "\u6B63\u5728\u8BFB\u53D6\u89C4\u5219", tint: "neutral" }));
     }
-    children.push(currentPageSection(session2, snapshot), pageRulesSection(session2, snapshot), surgeSection(session2, snapshot), builtinRulesSection(snapshot));
+    children.push(
+      layout.grid({
+        key: "rules-tools",
+        minimum: 360,
+        spacing: "regular",
+        children: [asPanel(currentPageSection(session2, snapshot)), asPanel(pageRulesSection(session2, snapshot))]
+      }),
+      asPanel(surgeSection(session2, snapshot), "Surge \u914D\u7F6E"),
+      asPanel(builtinRulesSection(snapshot))
+    );
     return children;
   }
 
   // extensions/proxy/src/page.ts
   var toolboxNodeRows = 60;
-  var logRows = 200;
   var pageRuleRows = 120;
   var failedRows = 20;
   function renderPage(session2) {
@@ -6445,18 +6571,6 @@
       ]
     });
   }
-  function logsSection(session2) {
-    const tail = session2.logs.slice(-logRows);
-    let text = tail.join("\n");
-    if (text.length > 19e3) text = text.slice(text.length - 19e3);
-    return ui.section({
-      key: "logs-section",
-      title: "\u65E5\u5FD7 \xB7 LOGS",
-      trailing: `${session2.logs.length} \u884C`,
-      actions: [{ id: "reload", title: "\u91CD\u8BFB", symbol: "arrow.clockwise", help: "\u91CD\u8BFB sing-box \u6700\u8FD1 500 \u884C\u8F93\u51FA", onPress: () => void session2.showView("processes") }],
-      children: [ui.result({ key: "log-text", mono: true, copy: true, text, empty: "sing-box \u8FD8\u6CA1\u6709\u8F93\u51FA" })]
-    });
-  }
 
   // extensions/proxy/src/session.ts
   var legacyViews = {
@@ -6479,6 +6593,7 @@
       return null;
     }
   }
+  var messageDwell = 6e3;
   var maximumLogLines = 500;
   var installWaitMs = 10 * 60 * 1e3;
   var chartPoints = 60;
@@ -6510,8 +6625,16 @@
       this.processes = [];
       /** 节点搜索框里的字。 */
       this.filter = "";
+      /** 进程页选中的程序；`null` = 右边看全部程序的连接（jarvis-mac `specs/20261029-082059-proxy-window-desktop-layout` D-7）。 */
+      this.processSelection = null;
+      /** 进程页页头搜索框里的字：按程序名或主机筛两张表。 */
+      this.processFilter = "";
+      /** 策略页左栏选中的策略组（「节点选择」或导入的 Surge 策略组名）。 */
+      this.policyGroup = SELECTOR_TAG;
       /** 上一个动作的结果（页面上那一行）。 */
       this.message = null;
+      /** `message` 是什么时候记下的（Unix 毫秒）：窗口页头里成功的那一句只停留 {@link messageDwell}。 */
+      this.messageAt = 0;
       this.rate = null;
       this.connections = null;
       this.logs = [];
@@ -6578,7 +6701,7 @@
     async onPreferencesChanged(changes) {
       if ("ruleSets" in changes && this.snapshot?.granted.includes("network.https")) {
         const result = await this.core.updateRuleSets();
-        if (result.message) this.message = result;
+        if (result.message) this.setMessage(result);
       }
       await this.refresh();
     }
@@ -6601,7 +6724,7 @@
         jarvis.ui.update();
         await pushMenu(snapshot, { autoPick: this.autoPick, rate: null, busy: this.core.busy });
       } catch (error) {
-        this.message = { ok: false, message: `\u8BFB\u4E0D\u51FA\u72B6\u6001\uFF1A${errorMessage2(error)}` };
+        this.setMessage({ ok: false, message: `\u8BFB\u4E0D\u51FA\u72B6\u6001\uFF1A${errorMessage2(error)}` });
         jarvis.ui.update();
       }
     }
@@ -6762,8 +6885,22 @@
       } catch (error) {
         result = { ok: false, message: errorMessage2(error) };
       }
-      this.message = result.message ? result : null;
+      this.setMessage(result.message ? result : null);
       await this.refresh();
+    }
+    setMessage(result) {
+      this.message = result;
+      this.messageAt = Date.now();
+    }
+    /**
+     * 窗口页头此刻要不要写上一个动作的结果（jarvis-mac `specs/20261029-082059-proxy-window-desktop-layout` D-2）：
+     * 出错的一直留到下一个动作；成功的停 {@link messageDwell} 就换回这一页的状态——不然「代理已开启」会一直挡着实时的状态行。
+     * @param now Unix 毫秒。
+     * @returns 要写的那一句；不写为 `null`。
+     */
+    headerMessage(now) {
+      if (!this.message) return null;
+      return !this.message.ok || now - this.messageAt < messageDwell ? this.message : null;
     }
     /** 开 / 关。 */
     toggle(on) {
@@ -6985,6 +7122,32 @@
      */
     search(value) {
       this.filter = value;
+    }
+    /**
+     * 进程页点一个程序（D-7）：右边只看它的连接；再点一次已选中的那一个 = 回到全部。
+     * @param name 程序名（进程表那一行的 id）。
+     */
+    selectProcess(name) {
+      this.processSelection = this.processSelection === name ? null : name;
+      jarvis.ui.update();
+    }
+    /**
+     * 进程页页头的搜索框。
+     * @param value 字。
+     */
+    searchProcesses(value) {
+      this.processFilter = value;
+      jarvis.ui.update();
+    }
+    /**
+     * 策略页左栏换一个策略组（D-7）；节点搜索框随之清空——它搜的是上一组的节点。
+     * @param name 组名。
+     */
+    showPolicyGroup(name) {
+      if (this.policyGroup === name) return;
+      this.policyGroup = name;
+      this.filter = "";
+      jarvis.ui.update();
     }
   };
 

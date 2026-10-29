@@ -1,9 +1,9 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-28T12:20:31.001Z",
+  "generatedAt": "2026-10-29T01:10:38.424Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "d1acfebf513383992f11adbb9d0bb658368e2bd8"
+    "commit": "e565da9dc14c92c488d76b3a809d2f7ede624a0d"
   },
   "extensions": [
     {
@@ -54,7 +54,7 @@
         "sha256": "311d3e6624f491e15cc0735d45b4ddd84798773fcc014cc59a613e6f53869c17",
         "byteCount": 63515
       },
-      "updatedAt": "2026-10-28T13:50:29+08:00"
+      "updatedAt": "2026-10-28T20:47:49+08:00"
     },
     {
       "manifest": {
@@ -393,7 +393,7 @@
         "sha256": "680b38081b7f805212ae1421f6514de03769297d33c959eead12bdf6da7a12d0",
         "byteCount": 37831
       },
-      "updatedAt": "2026-10-28T13:50:29+08:00"
+      "updatedAt": "2026-10-28T20:47:49+08:00"
     },
     {
       "manifest": {
@@ -433,7 +433,7 @@
         "sha256": "bc8dcb217361636cfafc0dc58ba0af5d5047c971a81da32e0dd8954b085d06fb",
         "byteCount": 60056
       },
-      "updatedAt": "2026-10-28T13:50:29+08:00"
+      "updatedAt": "2026-10-28T20:47:49+08:00"
     },
     {
       "manifest": {
@@ -514,7 +514,7 @@
         "sha256": "751d548a87e863136471c2d35cbccbc07488a0e495e783f5e0219d398e21f182",
         "byteCount": 91975
       },
-      "updatedAt": "2026-10-28T13:50:29+08:00"
+      "updatedAt": "2026-10-28T20:47:49+08:00"
     },
     {
       "manifest": {
@@ -655,7 +655,7 @@
         "sha256": "c900b6c1480ef1eaf1ae8ae9903bf55dddf2a6cc0656418a5063a18721fe3318",
         "byteCount": 123857
       },
-      "updatedAt": "2026-10-28T13:50:29+08:00"
+      "updatedAt": "2026-10-28T20:47:49+08:00"
     },
     {
       "manifest": {
@@ -709,7 +709,7 @@
         "sha256": "dc4d1bd2db8250e15bde1f4fe2790d40dd90839c1bca4730f8934bb90d088d3b",
         "byteCount": 41087
       },
-      "updatedAt": "2026-10-28T13:50:29+08:00"
+      "updatedAt": "2026-10-28T20:47:49+08:00"
     },
     {
       "manifest": {
@@ -833,13 +833,13 @@
         "sha256": "78021f8de1c06bc74ec61da50c8c92a3d77bd651ca59dbe3a280ace3cd679130",
         "byteCount": 57906
       },
-      "updatedAt": "2026-10-28T13:50:29+08:00"
+      "updatedAt": "2026-10-28T20:47:49+08:00"
     },
     {
       "manifest": {
         "manifestVersion": 2,
         "id": "proxy",
-        "version": "1.0.2",
+        "version": "1.0.3",
         "name": "代理",
         "symbol": "network",
         "description": "用你自己装的 sing-box 跑你的订阅：菜单栏随手开关、切节点与策略组，系统代理或增强模式（TUN）接管整机网络；能导入 Surge 配置的规则，给正在看的网页一键加规则，悬浮球上看有效流量与成败。认 SS、VMess、VLESS（含 REALITY）、Trojan、Hysteria2、TUIC、AnyTLS 与 sing-box JSON。",
@@ -849,7 +849,7 @@
         },
         "main": "dist/extension.js",
         "sdk": "^2.10.0",
-        "minimumJarvisVersion": "3.2.8",
+        "minimumJarvisVersion": "3.3.1",
         "capabilities": [
           {
             "id": "process.daemon",
@@ -1190,10 +1190,10 @@
       "path": "extensions/proxy",
       "bundle": {
         "path": "extensions/proxy/dist/extension.js",
-        "sha256": "8e1a87d168a3e6da388dc0fe8b97fbcf6e5053b5d701ccd8e82e951fe9d709c6",
-        "byteCount": 331742
+        "sha256": "4c1776a7c77c079ce3624fb42594afdd03ec31d0c3b27b1773c5902a6b42f284",
+        "byteCount": 342277
       },
-      "updatedAt": "2026-10-28T17:44:17+08:00"
+      "updatedAt": "2026-10-28T20:47:49+08:00"
     },
     {
       "manifest": {
@@ -1285,7 +1285,7 @@
         "sha256": "03a9371d0eb297ad80d5f3367ef183e94d9c492c6fd1e287b6dd81a36c7ede25",
         "byteCount": 42894
       },
-      "updatedAt": "2026-10-28T13:50:29+08:00"
+      "updatedAt": "2026-10-28T20:47:49+08:00"
     },
     {
       "manifest": {
@@ -1524,7 +1524,7 @@
         "sha256": "2f477e4b966a67b6107d87aa3cd810932deae78cff46cf0bf2b44a0cd5d0e207",
         "byteCount": 88123
       },
-      "updatedAt": "2026-10-28T13:50:29+08:00"
+      "updatedAt": "2026-10-28T20:47:49+08:00"
     }
   ]
 }

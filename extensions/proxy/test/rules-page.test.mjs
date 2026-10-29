@@ -77,7 +77,8 @@ test("导入 Surge 配置：宿主画打开面板（起点是 Surge 的配置目
   assert.ok(byKey("unsupported:[MITM]"));
   assert.equal(byKey("rule-sets-copy").props.text, RULE_SET, "复制下来贴进设置");
   assert.equal(scene.fetches.filter((fetch) => fetch.url === RULE_SET).length, 0, "没贴进设置的地址不去拉");
-  assert.match(collect(host.latest, (node) => node.key === "message")[0]?.props.text ?? "", /导入了「synthetic.conf」/);
+  // 窗口里上一个动作的结果写在页头状态行里（jarvis-mac specs/20261029-082059-proxy-window-desktop-layout D-2）。
+  assert.match(byKey("rules-header").props.subtitle, /导入了「synthetic.conf」/);
 });
 
 test("贴进「规则集地址」之后拉、转、存；页面上写明条数", async () => {

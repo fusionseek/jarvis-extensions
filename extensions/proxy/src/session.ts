@@ -17,6 +17,7 @@ import type { ProxyMode } from "./singbox-config.js";
 import { describeFailure, requiredCapability, type GroupView, type PageView } from "./status.js";
 import { storageKeys } from "./store.js";
 import { TrafficMeter, type TrafficReading } from "./traffic.js";
+import { SELECTOR_TAG } from "./nodes.js";
 
 /**
  * 窗口左边栏的四页（jarvis-mac `specs/20261028-191224-git-push-error-proxy-dashboard-issue-links` P-3）：活动、进程、策略、规则。
@@ -65,6 +66,9 @@ export function parseExternalIP(text: string): string | null {
   }
 }
 
+/** 窗口页头里成功的那一句停多久：页面一秒一拍，6 秒读得完一句话。 */
+export const messageDwell = 6000;
+
 /** 日志留多少行：与宿主 `daemon.logs` 的 500 行一致。 */
 const maximumLogLines = 500;
 
@@ -101,8 +105,16 @@ export class Session {
   processes: ProcessRate[] = [];
   /** 节点搜索框里的字。 */
   filter = "";
+  /** 进程页选中的程序；`null` = 右边看全部程序的连接（jarvis-mac `specs/20261029-082059-proxy-window-desktop-layout` D-7）。 */
+  processSelection: string | null = null;
+  /** 进程页页头搜索框里的字：按程序名或主机筛两张表。 */
+  processFilter = "";
+  /** 策略页左栏选中的策略组（「节点选择」或导入的 Surge 策略组名）。 */
+  policyGroup: string = SELECTOR_TAG;
   /** 上一个动作的结果（页面上那一行）。 */
   message: ActionResult | null = null;
+  /** `message` 是什么时候记下的（Unix 毫秒）：窗口页头里成功的那一句只停留 {@link messageDwell}。 */
+  messageAt = 0;
   rate: TrafficRate | null = null;
   connections: ConnectionsSnapshot | null = null;
   logs: string[] = [];
@@ -172,7 +184,7 @@ export class Session {
   private async onPreferencesChanged(changes: Record<string, unknown>): Promise<void> {
     if ("ruleSets" in changes && this.snapshot?.granted.includes("network.https")) {
       const result = await this.core.updateRuleSets();
-      if (result.message) this.message = result;
+      if (result.message) this.setMessage(result);
     }
     await this.refresh();
   }
@@ -196,7 +208,7 @@ export class Session {
       jarvis.ui.update();
       await pushMenu(snapshot, { autoPick: this.autoPick, rate: null, busy: this.core.busy });
     } catch (error) {
-      this.message = { ok: false, message: `读不出状态：${errorMessage(error)}` };
+      this.setMessage({ ok: false, message: `读不出状态：${errorMessage(error)}` });
       jarvis.ui.update();
     }
   }
@@ -368,8 +380,24 @@ export class Session {
     } catch (error) {
       result = { ok: false, message: errorMessage(error) };
     }
-    this.message = result.message ? result : null;
+    this.setMessage(result.message ? result : null);
     await this.refresh();
+  }
+
+  private setMessage(result: ActionResult | null): void {
+    this.message = result;
+    this.messageAt = Date.now();
+  }
+
+  /**
+   * 窗口页头此刻要不要写上一个动作的结果（jarvis-mac `specs/20261029-082059-proxy-window-desktop-layout` D-2）：
+   * 出错的一直留到下一个动作；成功的停 {@link messageDwell} 就换回这一页的状态——不然「代理已开启」会一直挡着实时的状态行。
+   * @param now Unix 毫秒。
+   * @returns 要写的那一句；不写为 `null`。
+   */
+  headerMessage(now: number): ActionResult | null {
+    if (!this.message) return null;
+    return !this.message.ok || now - this.messageAt < messageDwell ? this.message : null;
   }
 
   /** 开 / 关。 */
@@ -624,5 +652,34 @@ export class Session {
    */
   search(value: string): void {
     this.filter = value;
+  }
+
+  /**
+   * 进程页点一个程序（D-7）：右边只看它的连接；再点一次已选中的那一个 = 回到全部。
+   * @param name 程序名（进程表那一行的 id）。
+   */
+  selectProcess(name: string): void {
+    this.processSelection = this.processSelection === name ? null : name;
+    jarvis.ui.update();
+  }
+
+  /**
+   * 进程页页头的搜索框。
+   * @param value 字。
+   */
+  searchProcesses(value: string): void {
+    this.processFilter = value;
+    jarvis.ui.update();
+  }
+
+  /**
+   * 策略页左栏换一个策略组（D-7）；节点搜索框随之清空——它搜的是上一组的节点。
+   * @param name 组名。
+   */
+  showPolicyGroup(name: string): void {
+    if (this.policyGroup === name) return;
+    this.policyGroup = name;
+    this.filter = "";
+    jarvis.ui.update();
   }
 }

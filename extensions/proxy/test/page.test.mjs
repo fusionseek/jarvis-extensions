@@ -306,14 +306,24 @@ test("窗口：左边栏活动 / 进程 / 策略 / 规则（jarvis-mac specs/202
   assert.equal(root.children.length, 1, "侧栏下恰好一页");
   assert.equal(root.children[0].kind, "scroll");
 
-  // 活动页：标题行的两个开关；关着时打开「系统代理」= 开启代理。
+  // 活动页（jarvis-mac specs/20261029-082059-proxy-window-desktop-layout D-7）：页头右边两个开关与电源键；关着时打开「系统代理」= 开启代理。
+  const header = byKey("activity-header");
+  assert.equal(header.kind, "header");
+  assert.deepEqual(header.children.map((child) => child.key), ["activity-system-proxy", "activity-tun", "activity-power"]);
   assert.equal(byKey("activity-system-proxy").props.value, false);
   await fire(byKey("activity-system-proxy"), "change", true);
   assert.equal(daemons.status("sing-box").state, "running");
   assert.equal(byKey("activity-system-proxy").props.value, true);
-  assert.equal(byKey("fact-network").props.value, "Wi-Fi · en0");
-  assert.equal(byKey("fact-mode").props.value, "规则判定");
-  assert.match(byKey("fact-profile").props.value, /sub\.example\.com · \d+ 个节点/);
+  assert.equal(byKey("activity-header").props.tint, "live");
+  // 成功的结果在页头停几秒就换回实时状态，不一直挡着状态行。
+  assert.match(byKey("activity-header").props.subtitle, /代理已开启/);
+  await timers.advance(7000);
+  await idle(scene);
+  assert.match(byKey("activity-header").props.subtitle, /^已开启 · 127\.0\.0\.1:\d+ · 规则判定$/);
+  assert.equal(byKey("fact-network:value").props.text, "Wi-Fi · en0");
+  assert.equal(byKey("fact-mode:value").props.text, "规则判定");
+  assert.match(byKey("fact-profile:value").props.text, /sub\.example\.com · \d+ 个节点/);
+  assert.equal(collect(host.latest, (node) => node.kind === "segmented").length, 0, "活动页没有通栏分段：切换在面板头上");
 
   clash.connections = [
     {
@@ -330,10 +340,14 @@ test("窗口：左边栏活动 / 进程 / 策略 / 规则（jarvis-mac specs/202
   await timers.advance(1000);
   await idle(scene);
   assert.equal(byKey("card-connections:value").props.text, "1");
+  assert.equal(byKey("card-connections:value").props.style, "metric");
+  assert.equal(byKey("card-connections:caption").props.text, "1 个程序");
   for (const key of ["traffic-hours", "top-table:processes", "card-latency", "card-upload", "card-download"]) assert.ok(byKey(key), key);
   assert.equal(byKey("traffic-hours").props.labels.length, 24);
   assert.equal(byKey("traffic-hours").props.series[0].values.length, 24);
-  await fire(byKey("top-category"), "change", "domains");
+  assert.deepEqual(byKey("traffic").props.segments.map((segment) => segment.value), ["all", "proxy"]);
+  await fire(byKey("top"), "segment", "domains");
+  assert.equal(byKey("top").props.segment, "domains");
   assert.ok(byKey("top-table:domains"));
 
   // 进程页：每个程序一行；连接表；日志。
@@ -342,20 +356,42 @@ test("窗口：左边栏活动 / 进程 / 策略 / 规则（jarvis-mac specs/202
   clash.connections = [{ ...clash.connections[0], upload: 3072, download: 12288 }];
   await timers.advance(1000);
   await idle(scene);
+  assert.equal(host.latest.children[0].kind, "stack", "进程页不整页滚：两栏撑满、表在自己里面滚");
+  assert.deepEqual(byKey("processes-split").props, { minimum: 360, spacing: "regular", weights: [2, 3], fill: true });
   const processes = byKey("process-table");
+  assert.equal(processes.props.scroll, true);
+  assert.equal(processes.props.rows[0].id, "Safari");
   assert.equal(processes.props.rows[0].cells[0], "Safari");
   assert.equal(processes.props.rows[0].cells[1], "1");
-  assert.equal(processes.props.rows[0].cells[3], "8.0 KB/s", "两份快照之间下行多了 8 KB、隔 1 秒");
-  const connections = byKey("connections");
-  assert.deepEqual(connections.props.rows[0].cells.slice(0, 4), ["www.example.org:443", "Safari", "节点选择 → 自动选择 → JMS-1234567@c95s2.example.com:443", "final"]);
+  assert.equal(processes.props.rows[0].cells[2], "8.0 KB/s", "两份快照之间下行多了 8 KB、隔 1 秒");
+  let connections = byKey("connections");
+  assert.deepEqual(connections.props.rows[0].cells.slice(0, 3), ["www.example.org:443", "Safari", "节点选择 → 自动选择 → JMS-1234567@c95s2.example.com:443"]);
+  // 点一个程序：右边只看它的连接，第二列从「程序」换成「规则」；再点一次回到全部。
+  await fire(processes, "select", "Safari");
+  assert.equal(byKey("process-table").props.selection, "Safari");
+  assert.equal(byKey("connections-section").props.title, "连接 · Safari");
+  connections = byKey("connections");
+  assert.equal(connections.props.columns[1].title, "规则");
+  assert.equal(connections.props.rows[0].cells[1], "final");
+  await fire(byKey("process-table"), "select", "Safari");
+  assert.equal(byKey("process-table").props.selection, undefined);
+  assert.equal(byKey("connections-section").props.title, "连接 · 全部程序");
+  // 搜索：对不上的程序与连接都收起来。
+  await fire(byKey("process-search"), "change", "nothing-matches");
+  assert.equal(byKey("process-table").props.rows.length, 0);
+  assert.equal(byKey("connections").props.rows.length, 0);
+  await fire(byKey("process-search"), "change", "");
   daemons.output("sing-box", ["+0800 2026-10-28 10:00:02 INFO inbound/mixed[mixed-in]: inbound connection to www.example.org:443"]);
   await fire(host.latest, "change", "policies");
   await fire(host.latest, "change", "processes");
-  assert.match(byKey("log-text").props.text, /inbound connection to www\.example\.org:443/);
+  assert.match(byKey("log-text").props.value, /inbound connection to www\.example\.org:443/);
+  assert.equal(byKey("log-text").props.readOnly, true);
 
-  // 策略页：一张卡一个节点；点卡 = 选它并只测它一个；订阅地址由宿主画（preference 节点）。
+  // 策略页：页头里的出站模式是紧凑分段；左栏策略组、右边那一组的节点卡；点卡 = 选它并只测它一个；订阅地址由宿主画（preference 节点）。
   await fire(host.latest, "change", "policies");
-  assert.ok(byKey("policy-mode-picker"));
+  assert.equal(byKey("policy-mode-picker").props.layout, "compact");
+  assert.ok(byKey("policies-header").children.some((child) => child.key === "policy-mode-picker"));
+  assert.equal(byKey("policy-group:节点选择").props.selected, true);
   const nodeCards = collect(byKey("node-cards"), (node) => node.kind === "card");
   assert.ok(nodeCards.length >= 2);
   const target = nodeCards[1];
