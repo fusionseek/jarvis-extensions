@@ -13,7 +13,7 @@
  * （没有界面：服务扩展点、静默命令、菜单栏事件）。两个会话互相看不见对方的内存，共享的只有宿主那边的存储与偏好；
  * 常驻进程与系统代理的状态在宿主手里，两边各自 `status` 读同一份。
  */
-import type { UINode } from "./ui.js";
+import type { FileHandle, UINode } from "./ui.js";
 import type { JarvisErrorShape } from "./capabilities.js";
 import type { CommandPresentation, ServicePoint } from "./manifest.js";
 import type { CodeFormatMethod, CodeFormatRequest, CodeHighlightMethod, CodeHighlightRequest, JunkCleanMethod, LauncherAppsMethod, ProjectEngineMethod, ProjectEngineRequest } from "./services.js";
@@ -222,9 +222,29 @@ export interface MenuBarModel {
   title?: string;
   /** 悬停提示，≤ 80 字。 */
   tooltip?: string;
+  /**
+   * 改哪一枚状态项（SDK 2.11，jarvis-mac `specs/20261029-225323-menubar-manager-p1` N-1）：manifest `contributes.menuBar.items[].id`。
+   * 省略 = 第一枚。每枚各有一份完整的模型（图标、短字、菜单）。
+   */
+  statusItem?: string;
+  /**
+   * 宽度（SDK 2.11）：`"auto"`（默认，随内容）或 0–10000 点。把一枚空白撑宽，它左边的图标就被挤出屏幕——那是扩展的做法，宿主不知道。
+   * 维持它的后台会话一收掉（停用、卸载、更新），宿主把宽度复原成 `"auto"`：扩展不在时，别人的图标不会一直被挤着。
+   */
+  length?: "auto" | number;
+  /** 不画图标也不画字，只占 `length` 那么宽（SDK 2.11）。VoiceOver 仍读 manifest 里这一枚的名字。 */
+  blank?: boolean;
+  /**
+   * 左键做什么（SDK 2.11）：`"menu"`（默认）开菜单；`"event"` 发 `press` 事件（`defineExtension({ menuBar: { press } })`），
+   * 右键与 ⌃ 点仍开菜单，宿主固定的「打开」「设置」两项照旧在。
+   */
+  primaryClick?: "menu" | "event";
   /** ≤ 300 项（含子菜单里的）。 */
   items: MenuBarItem[];
 }
+
+/** 事件发生时按着的修饰键（SDK 2.11）。 */
+export type MenuBarModifier = "command" | "option" | "control" | "shift";
 
 /**
  * 宿主 → 后台会话的 `menuBar` 事件（线缆形状）。SDK 把它拆成 `defineExtension({ menuBar })` 的三个回调。
@@ -234,8 +254,85 @@ export interface MenuBarModel {
  * - `select`：用户点了一项，`itemId` 是扩展自己给的 id。
  */
 export type MenuBarEvent =
-  | { event: "start" | "open"; granted: string[]; preferences: Record<string, unknown> }
-  | { event: "select"; itemId: string; granted: string[]; preferences: Record<string, unknown> };
+  | { event: "start"; granted: string[]; preferences: Record<string, unknown> }
+  | { event: "open"; statusItem?: string; granted: string[]; preferences: Record<string, unknown> }
+  | { event: "select"; itemId: string; statusItem?: string; granted: string[]; preferences: Record<string, unknown> }
+  /** SDK 2.11：`primaryClick: "event"` 的那一枚被左键点了。 */
+  | { event: "press"; statusItem: string; modifiers: MenuBarModifier[]; granted: string[]; preferences: Record<string, unknown> };
+
+// ---------------------------------------------------------------------------
+// 菜单栏管理 P1（SDK 2.11，jarvis-mac `specs/20261029-225323-menubar-manager-p1` N-2…N-4）：`$defs.screenRect` / `screenInfo` /
+// `menuBarPointerEvent` / `menuBarExtra` / `menuBarExtrasChange`。坐标一律是全局坐标：原点在主屏左上角、y 向下。
+// ---------------------------------------------------------------------------
+
+/** 一块矩形（全局坐标）。 */
+export interface ScreenRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** 一块屏（`jarvis.screens.list()`）。 */
+export interface ScreenInfo {
+  /** `CGDirectDisplayID` 的十进制。 */
+  id: string;
+  frame: ScreenRect;
+  /** 去掉菜单栏与程序坞之后的那一块。 */
+  visibleFrame: ScreenRect;
+  /** 这块屏顶上菜单栏那一条的高度。 */
+  menuBarHeight: number;
+  isMain: boolean;
+  scale: number;
+  /** 刘海两侧还能放东西的两块；没有刘海为 `null`。落在两块之间（刘海下面）的菜单栏图标看不见。 */
+  notch: { left: ScreenRect; right: ScreenRect } | null;
+}
+
+/** 菜单栏上的指针事件（`jarvis.menuBar.observePointer`）。只报菜单栏那一条里的事。 */
+export type MenuBarPointerEvent =
+  | { type: "enter" | "exit"; screen: string; x: number; modifiers: MenuBarModifier[] }
+  | {
+      type: "click";
+      screen: string;
+      x: number;
+      modifiers: MenuBarModifier[];
+      button: "left" | "right";
+      /** 落在某一颗菜单栏图标上。 */
+      onItem: boolean;
+      /** 落在前台应用的菜单标题（「文件」「编辑」……）上；宿主还没读到（没有辅助功能权限、刚切换前台）时为 `null`。 */
+      onAppMenu: boolean | null;
+    }
+  | { type: "scroll"; screen: string; x: number; modifiers: MenuBarModifier[]; /** 100 ms 内的累计值，手指 / 滚轮向上为正。 */ deltaY: number };
+
+/** 菜单栏上的一颗图标（`jarvis.menuBarExtras.list()`），任何应用的。 */
+export interface MenuBarExtra {
+  /**
+   * 跨重启尽量不变：有 AX identifier 的 `<bundleId>:<identifier>`；同一应用只有一颗的 `<bundleId>`；有几颗的 `<bundleId>#<序号>`；
+   * 归属认不出来的 `window:<窗口号>`（跨重启不稳定）。Jarvis 自己的状态项是 `<Jarvis bundleId>:<扩展 id>.<状态项 id>`。
+   */
+  id: string;
+  ownerBundleId: string;
+  ownerName: string;
+  /** AX 描述（「Wi‑Fi，已接入，3格」）；第三方大多为空。 */
+  title: string;
+  frame: ScreenRect;
+  /** 在哪块屏的菜单栏上；被挤出所有屏幕的为 `null`。 */
+  screen: string | null;
+  /** 窗口服务器说它此刻在屏幕上：被刘海挡住、被挤出屏幕的为 `false`。 */
+  onScreen: boolean;
+  /** `false` 的是钉死在最右、⌘ 拖不动的系统项（时钟、控制中心）。 */
+  movable: boolean;
+  /** 是调用方自己的哪一枚状态项（manifest `contributes.menuBar.items[].id`）。 */
+  mine?: string;
+  /** 所属应用的图标句柄（交给 `image` / `row.image`）。 */
+  icon?: FileHandle;
+}
+
+/** `jarvis.menuBarExtras.observe` 推来的一次变化：只报有哪些项来了、走了；位置随时在变，要位置就 `list()`。 */
+export interface MenuBarExtrasChange {
+  added: MenuBarExtra[];
+  removed: string[];
+}
 
 // ---------------------------------------------------------------------------
 // 常驻进程（SDK 2.9）：`$defs.daemonID` / `controlPort` / `daemonStartRequest` / `daemonStatus` / `daemonEvent` /

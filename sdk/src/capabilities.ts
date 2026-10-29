@@ -20,8 +20,12 @@ import type {
   DaemonStatus,
   FilesPickRequest,
   FilesPickResult,
+  MenuBarExtra,
+  MenuBarExtrasChange,
   MenuBarModel,
+  MenuBarPointerEvent,
   OrbMeterModel,
+  ScreenInfo,
   SystemProxyEnableRequest,
   SystemProxyStatus,
   TunnelRequest,
@@ -180,6 +184,40 @@ export interface MenuBarAPI {
    * @returns 宿主收下即兑现（不等画完）。
    */
   update(model: MenuBarModel): Promise<void>;
+  /**
+   * 订阅菜单栏上的指针（SDK 2.11，能力 `menuBar.pointer`）：指针进出菜单栏那一条、在那里点击与滚动。
+   *
+   * **只订要的那几种**：宿主只装这几种监听。`enter` / `exit` 要一个随鼠标移动触发的全局监听（每秒上百次唤醒），
+   * 用不着就别订——点击与滚动的监听只在用户点、滚的时候醒。订阅跟着这个会话走。
+   *
+   * @param types 要哪几种（1–4 种）。
+   * @param listener 每来一条调一次。
+   * @returns 退订。
+   */
+  observePointer(types: MenuBarPointerEvent["type"][], listener: (event: MenuBarPointerEvent) => void): Unsubscribe;
+}
+
+/**
+ * 读菜单栏上的项（SDK 2.11，能力 `menuBarExtras.read`，借 Jarvis 的辅助功能权限；没有时报 `permission.unavailable`）。
+ *
+ * 宿主只在菜单栏变了时才问 AX：稳态一次 `list()` 只按已知窗口号读位置（约 0.2 ms），所以要位置时直接调，不必自己缓存。
+ */
+export interface MenuBarExtrasAPI {
+  /** 此刻菜单栏上的全部图标，从左到右。 */
+  list(): Promise<MenuBarExtra[]>;
+  /**
+   * 订阅「有哪些项」的变化（250 ms 合并）。只报来了、走了；位置随时在变（别人的读数一变宽，左边的都挪），要位置就 `list()`。
+   * 有订阅者时宿主每 10 s 兜底看一眼屏幕上的窗口（约 0.6 ms）——用完就退订。
+   */
+  observe(listener: (change: MenuBarExtrasChange) => void): Unsubscribe;
+}
+
+/** 屏幕几何（SDK 2.11，隐式）：每块屏的位置、菜单栏高度、刘海两侧。 */
+export interface ScreensAPI {
+  /** 此刻每块屏，主屏在前。 */
+  list(): Promise<ScreenInfo[]>;
+  /** 屏幕配置变了（接上 / 拔掉显示器、改分辨率）：每次推完整的新列表。 */
+  observe(listener: (screens: ScreenInfo[]) => void): Unsubscribe;
 }
 
 /** 日志级别。 */
@@ -961,6 +999,10 @@ export interface Jarvis {
   readonly log: LogAPI;
   /** SDK 2.9。 */
   readonly menuBar: MenuBarAPI;
+  /** SDK 2.11。 */
+  readonly menuBarExtras: MenuBarExtrasAPI;
+  /** SDK 2.11。 */
+  readonly screens: ScreensAPI;
   readonly text: TextToolsAPI;
   readonly clipboard: ClipboardAPI;
   readonly quickTransfer: QuickTransferAPI;

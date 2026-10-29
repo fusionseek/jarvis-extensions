@@ -28,8 +28,8 @@ const lastCall = () => host.invocations.at(-1);
 const config = (port = 19090, extra = {}) =>
   JSON.stringify({ inbounds: [{ type: "mixed", tag: "mixed-in", listen: "127.0.0.1", listen_port: 7890 }], experimental: { clash_api: { external_controller: `127.0.0.1:${port}`, secret: "s" } }, ...extra });
 
-test("SDK 是 2.10.0；三项新能力的档位", () => {
-  assert.equal(sdkVersion, "2.10.0");
+test("SDK 是 2.11.0；三项新能力的档位", () => {
+  assert.equal(sdkVersion, "2.11.0");
   assert.equal(capabilityTiers["network.tunnel"], "high");
   assert.equal(capabilityTiers["browser.activeTab"], "medium");
   assert.equal(capabilityTiers["files.pick"], "low");

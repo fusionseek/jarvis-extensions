@@ -1,16 +1,16 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-29T11:00:16.413Z",
+  "generatedAt": "2026-10-29T16:28:40.173Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "ba930628a3e892c7dab533d48eec295c6c2dfa89"
+    "commit": "03eeb3d20d373789fd0ce3bbdcfccaa4813f9e77"
   },
   "extensions": [
     {
       "manifest": {
         "manifestVersion": 2,
         "id": "android-apps",
-        "version": "1.0.6",
+        "version": "1.0.7",
         "name": "手机应用",
         "symbol": "apps.iphone",
         "description": "经 adb 扫描连着的安卓手机上装的全部应用：包名、安装包与数据大小，再一屏一屏读出应用名与图标；点一下把包名交给 APK 扫描或数据导出接着处理。",
@@ -51,8 +51,8 @@
       "path": "extensions/android-apps",
       "bundle": {
         "path": "extensions/android-apps/dist/extension.js",
-        "sha256": "311d3e6624f491e15cc0735d45b4ddd84798773fcc014cc59a613e6f53869c17",
-        "byteCount": 63515
+        "sha256": "d11263516c0e024badd53070b4a1a469232b1f236e2dfacba3c6aa4355d2372a",
+        "byteCount": 64385
       },
       "updatedAt": "2026-10-28T20:47:49+08:00"
     },
@@ -60,7 +60,7 @@
       "manifest": {
         "manifestVersion": 2,
         "id": "code-format",
-        "version": "1.0.4",
+        "version": "1.0.5",
         "name": "代码格式化",
         "symbol": "wand.and.stars",
         "description": "给 Jarvis 的 Git 加上「格式化」：文件 diff 页里工作区那一份源码，按语言交给你装好的格式化工具——clang-format、swift-format、ktfmt、google-java-format、ruff、shfmt、prettier 等，先看对比，点「写入文件」才改。",
@@ -390,8 +390,8 @@
       "path": "extensions/code-format",
       "bundle": {
         "path": "extensions/code-format/dist/extension.js",
-        "sha256": "680b38081b7f805212ae1421f6514de03769297d33c959eead12bdf6da7a12d0",
-        "byteCount": 37831
+        "sha256": "8a874ec086b053aae3c21331d8121d140399aaebca56ca720012e2836678bb0b",
+        "byteCount": 38701
       },
       "updatedAt": "2026-10-28T20:47:49+08:00"
     },
@@ -399,7 +399,7 @@
       "manifest": {
         "manifestVersion": 2,
         "id": "code-highlight",
-        "version": "1.0.3",
+        "version": "1.0.4",
         "name": "代码高亮",
         "symbol": "paintbrush.pointed",
         "description": "给 Jarvis 的 Git 加上语法高亮：文件 diff 页与 Blame 里的源码按语言切成关键字、类型、字符串、注释、函数这些记号，Jarvis 按记号上色。认得 Java、Kotlin、Swift、C / C++ / Objective-C、C#、Python、Shell、Markdown、JS / TS、JSON、YAML、CSS、HTML / XML、Go、Rust、SQL。",
@@ -430,8 +430,8 @@
       "path": "extensions/code-highlight",
       "bundle": {
         "path": "extensions/code-highlight/dist/extension.js",
-        "sha256": "bc8dcb217361636cfafc0dc58ba0af5d5047c971a81da32e0dd8954b085d06fb",
-        "byteCount": 60056
+        "sha256": "a7cde6c3310aa793fad34c8060771ff06c6e787ac7546ff065d97017990793e4",
+        "byteCount": 60926
       },
       "updatedAt": "2026-10-28T20:47:49+08:00"
     },
@@ -439,7 +439,7 @@
       "manifest": {
         "manifestVersion": 2,
         "id": "github-project",
-        "version": "1.3.4",
+        "version": "1.3.5",
         "name": "GitHub 项目",
         "symbol": "tablecells",
         "description": "给 Jarvis「项目」接上 GitHub Projects v2：读 Project 的字段、条目、迭代与 Issue 的父子 / 依赖关系，把你在需求、迭代、缺陷页上的修改写回 GitHub。页面与规则由 Jarvis 画，它只负责读写数据。",
@@ -511,8 +511,8 @@
       "path": "extensions/github-project",
       "bundle": {
         "path": "extensions/github-project/dist/extension.js",
-        "sha256": "751d548a87e863136471c2d35cbccbc07488a0e495e783f5e0219d398e21f182",
-        "byteCount": 91975
+        "sha256": "4fcefa305f84cfc7afa197866b5c904e5de13a6171c9fff6e8b173f12f9f03d9",
+        "byteCount": 92845
       },
       "updatedAt": "2026-10-28T20:47:49+08:00"
     },
@@ -520,7 +520,7 @@
       "manifest": {
         "manifestVersion": 2,
         "id": "http-status",
-        "version": "1.0.10",
+        "version": "1.0.11",
         "name": "HTTP 状态码",
         "symbol": "number.circle",
         "description": "输入状态码或关键词，给出这个码的读法、语义、常见成因、怎么处理、相关的码与 RFC 出处。/http 404 或 ⌥⌘/（从剪贴板里抓码）的结果贴着指针原地弹出；也能在工作区窗口里开一枚标签。62 个标准码与 12 个常见非标准码都编在扩展里，不联网。",
@@ -652,8 +652,8 @@
       "path": "extensions/http-status",
       "bundle": {
         "path": "extensions/http-status/dist/extension.js",
-        "sha256": "c900b6c1480ef1eaf1ae8ae9903bf55dddf2a6cc0656418a5063a18721fe3318",
-        "byteCount": 123857
+        "sha256": "92923915f5ca3f9f2bb1aacf72d35d6e63db031bb042d5635a502f4a3c818eef",
+        "byteCount": 124727
       },
       "updatedAt": "2026-10-28T20:47:49+08:00"
     },
@@ -661,7 +661,7 @@
       "manifest": {
         "manifestVersion": 2,
         "id": "mac-apps",
-        "version": "1.0.5",
+        "version": "1.0.6",
         "name": "应用",
         "symbol": "square.grid.3x3",
         "description": "让 Jarvis 的全局搜索认得这台 Mac 上的应用：打字时结果里出现应用，输入 app 空格看按组排开的图标网格，按住图标进编辑态移到废纸篓、右键在访达中显示。工具箱里这一页是它的显示设置：分组、排序、搜索结果里出几条、要不要系统应用。",
@@ -706,16 +706,150 @@
       "path": "extensions/mac-apps",
       "bundle": {
         "path": "extensions/mac-apps/dist/extension.js",
-        "sha256": "dc4d1bd2db8250e15bde1f4fe2790d40dd90839c1bca4730f8934bb90d088d3b",
-        "byteCount": 41087
+        "sha256": "f12a3b278ccb38bd5e02a779c9be4b087098255e80511af5f623d44dd0015747",
+        "byteCount": 41957
       },
       "updatedAt": "2026-10-28T20:47:49+08:00"
     },
     {
       "manifest": {
         "manifestVersion": 2,
+        "id": "menubar",
+        "version": "1.0.0",
+        "name": "菜单栏管理",
+        "symbol": "menubar.rectangle",
+        "description": "把用不着的菜单栏图标收起来：点一下「‹」、点菜单栏空白处、悬停或在上面滚动就露出来，指针离开一会儿自己收回；最不常用的放进「永远隐藏」，⌥ 点才出来。按住 ⌘ 拖动图标越过竖线就换段。菜单栏没变时 Jarvis 不去读它，空闲不占 CPU。",
+        "author": {
+          "name": "fusionseek",
+          "github": "fusionseek"
+        },
+        "main": "dist/extension.js",
+        "sdk": "^2.11.0",
+        "minimumJarvisVersion": "3.3.1",
+        "capabilities": [
+          {
+            "id": "menuBar.pointer",
+            "reason": "悬停、点菜单栏空白处或在上面滚动时露出隐藏的图标；只知道菜单栏那一条上的事"
+          },
+          {
+            "id": "menuBarExtras.read",
+            "reason": "在工具箱页列出每一段里有哪些图标、哪些被刘海挡住"
+          }
+        ],
+        "contributes": {
+          "toolbox": {
+            "subtitle": "收起不常用的菜单栏图标",
+            "keywords": [
+              "menubar",
+              "menu bar",
+              "bartender",
+              "hidden bar",
+              "notch",
+              "刘海",
+              "状态栏"
+            ]
+          },
+          "menuBar": {
+            "title": "菜单栏管理",
+            "symbol": "chevron.left",
+            "preferences": [
+              "clickReveal",
+              "hoverReveal",
+              "scrollReveal",
+              "autoRehide",
+              "alwaysHidden"
+            ],
+            "items": [
+              {
+                "id": "toggle",
+                "title": "显示或收起隐藏的图标",
+                "symbol": "chevron.left",
+                "placement": "trailing"
+              },
+              {
+                "id": "hidden",
+                "title": "隐藏段的分隔竖线",
+                "symbol": "poweron",
+                "placement": "trailing"
+              },
+              {
+                "id": "always",
+                "title": "永远隐藏段的分隔竖线",
+                "symbol": "poweron"
+              }
+            ]
+          },
+          "commands": [
+            {
+              "id": "toggle",
+              "title": "显示或收起菜单栏图标",
+              "description": "在露出隐藏的图标与收起之间切换，与点菜单栏上的「‹」相同",
+              "slash": {
+                "keyword": "menubar",
+                "aliases": [
+                  "菜单栏"
+                ]
+              },
+              "presentation": "silent"
+            }
+          ],
+          "settings": {
+            "preferences": [
+              {
+                "key": "clickReveal",
+                "type": "toggle",
+                "title": "点菜单栏空白处显示",
+                "description": "点菜单栏上没有图标、也不是菜单标题的地方，露出或收起隐藏的图标",
+                "default": true
+              },
+              {
+                "key": "hoverReveal",
+                "type": "toggle",
+                "title": "指针停在菜单栏上时显示",
+                "description": "要一直留意指针的移动，比别的方式多一点点开销；默认关",
+                "default": false
+              },
+              {
+                "key": "scrollReveal",
+                "type": "toggle",
+                "title": "在菜单栏上滚动显示或收起",
+                "description": "向上滚露出，向下滚收起",
+                "default": false
+              },
+              {
+                "key": "autoRehide",
+                "type": "number",
+                "title": "自动收回（秒）",
+                "description": "指针离开菜单栏多少秒后收回；点过某个图标时至少等 20 秒。0 = 不自动收回",
+                "default": 10,
+                "minimum": 0,
+                "maximum": 120
+              },
+              {
+                "key": "alwaysHidden",
+                "type": "toggle",
+                "title": "启用「永远隐藏」段",
+                "description": "最左边那条竖线左边的图标只有 ⌥ 点「‹」时才出来",
+                "default": true
+              }
+            ]
+          }
+        },
+        "inbox": false
+      },
+      "path": "extensions/menubar",
+      "bundle": {
+        "path": "extensions/menubar/dist/extension.js",
+        "sha256": "808bf69d1736e5da5f885111e4c2cf5c6b70c74622a4965974f81de1ff2a55f9",
+        "byteCount": 49347
+      },
+      "updatedAt": "2026-10-29T16:28:40.103Z"
+    },
+    {
+      "manifest": {
+        "manifestVersion": 2,
         "id": "mole-clean",
-        "version": "1.0.10",
+        "version": "1.0.11",
         "name": "Mole 深度清理",
         "symbol": "bubbles.and.sparkles",
         "description": "给 Jarvis 清理换一台更深的引擎：开着时，晃球、/clean 与工具箱清理改走你装好的 Mole（mo clean），覆盖浏览器、开发工具、云盘、已卸载应用残留等更多类别，并读 Mole 的操作日志逐项显示正在删什么。没装 mo 时可以一键在终端里安装。",
@@ -830,8 +964,8 @@
       "path": "extensions/mole-clean",
       "bundle": {
         "path": "extensions/mole-clean/dist/extension.js",
-        "sha256": "78021f8de1c06bc74ec61da50c8c92a3d77bd651ca59dbe3a280ace3cd679130",
-        "byteCount": 57906
+        "sha256": "1f9c22834ff01f56efe9ff660ea750629b3a54ae3b88cce68ed38f69cdc0878d",
+        "byteCount": 58776
       },
       "updatedAt": "2026-10-28T20:47:49+08:00"
     },
@@ -1190,16 +1324,16 @@
       "path": "extensions/proxy",
       "bundle": {
         "path": "extensions/proxy/dist/extension.js",
-        "sha256": "01eb6c52f39d0c35dd5ac10f26ffca90ddbba31d307a2fb42688a82adf9e043f",
-        "byteCount": 342429
+        "sha256": "2715991a4d2e4e9b8784957aaee00918768e48df285b5135233abe9184dd7db7",
+        "byteCount": 343299
       },
-      "updatedAt": "2026-10-29T09:15:34+08:00"
+      "updatedAt": "2026-10-29T19:28:40+08:00"
     },
     {
       "manifest": {
         "manifestVersion": 2,
         "id": "send-to-phone",
-        "version": "2.0.10",
+        "version": "2.0.11",
         "name": "发到手机",
         "symbol": "iphone.and.arrow.forward",
         "description": "读一次剪贴板，经 Jarvis 快传把文字或链接推到已配对的手机上；快传没开时给一颗按钮替你打开，发完在 Inbox 留一条消息。/phone 后面跟一段字，不开面板直接发。",
@@ -1282,8 +1416,8 @@
       "path": "extensions/send-to-phone",
       "bundle": {
         "path": "extensions/send-to-phone/dist/extension.js",
-        "sha256": "03a9371d0eb297ad80d5f3367ef183e94d9c492c6fd1e287b6dd81a36c7ede25",
-        "byteCount": 42894
+        "sha256": "b7fcf9e843e89e2057f9b88e726613ef14fc02676c1c7bbbba402918017d5171",
+        "byteCount": 43764
       },
       "updatedAt": "2026-10-28T20:47:49+08:00"
     },
@@ -1291,7 +1425,7 @@
       "manifest": {
         "manifestVersion": 2,
         "id": "translation",
-        "version": "1.0.10",
+        "version": "1.0.11",
         "name": "截屏翻译",
         "symbol": "translate",
         "description": "按一下快捷键框选屏幕上任意一块，Vision 识别文字、合并段落、检测语言，再经 Google 翻译；译文就贴着选区原地弹出。框到的是一个词时，译文下面还有读音与按词性分行的全部词义。也能翻译剪贴板里的文字或图片，或 /translate 后面跟的一段字。免费端点无需 key，填了 API key 走官方接口。",
@@ -1521,8 +1655,8 @@
       "path": "extensions/translation",
       "bundle": {
         "path": "extensions/translation/dist/extension.js",
-        "sha256": "2f477e4b966a67b6107d87aa3cd810932deae78cff46cf0bf2b44a0cd5d0e207",
-        "byteCount": 88123
+        "sha256": "3f678bb450f7a475c4bc765ecb406749563098be831a7fee406d3a220256b6dd",
+        "byteCount": 88993
       },
       "updatedAt": "2026-10-28T20:47:49+08:00"
     }

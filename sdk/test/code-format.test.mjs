@@ -29,8 +29,8 @@ defineExtension({
   },
 });
 
-test("SDK 是 2.10.0", () => {
-  assert.equal(sdkVersion, "2.10.0");
+test("SDK 是 2.11.0", () => {
+  assert.equal(sdkVersion, "2.11.0");
 });
 
 test("code.format · describe：拿到宿主给的授权，语言清单经 service.resolve 交回", async () => {

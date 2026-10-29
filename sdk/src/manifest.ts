@@ -64,7 +64,17 @@ export type CapabilityID =
    * 本机应用（SDK 2.5）：这台 Mac 装了哪些应用——名字、Bundle ID、位置、分类、最近打开 / 添加时刻。
    * 宿主自己扫三处应用目录，扩展不给路径；打开、删除应用由用户在全局搜索里点，扩展做不了。
    */
-  | "apps.read";
+  | "apps.read"
+  /**
+   * 菜单栏上的指针（SDK 2.11）：指针进出菜单栏那一条、在那里点击与滚动。只报菜单栏带里的事，指针在屏幕别处的位置读不到。
+   * 宿主只装订阅里要的那几种监听：不要 enter / exit 就不装随鼠标移动触发的那一种。
+   */
+  | "menuBar.pointer"
+  /**
+   * 读菜单栏上有哪些图标（SDK 2.11）：任何应用的——归属、说明、位置、在不在屏幕上。借 Jarvis 的辅助功能权限
+   * （macOS 26 起菜单栏图标的窗口一律记在控制中心名下，归属只能经 AX 认）。宿主只在菜单栏变了时才问 AX。
+   */
+  | "menuBarExtras.read";
 
 /** 授权屏按风险分组；一档一个标签，颜色由宿主决定。 */
 export type CapabilityTier = "low" | "medium" | "high";
@@ -80,6 +90,8 @@ export type CapabilityTier = "low" | "medium" | "high";
  * 系统代理改的是整台机器的网络出口，浏览器与大部分应用的流量从此先经过这个扩展起的进程。
  *
  * SDK 2.10：TUN 是高（以管理员身份跑、接管全部流量）；读浏览器当前页是中（你在看什么网站，不出本机）；挑文件是低（用户亲手挑、只给这一份）。
+ *
+ * SDK 2.11：菜单栏上的指针与读菜单栏上的项都是中——看的是用户在菜单栏上的动作与装了哪些菜单栏应用，不出本机、不改任何东西。
  */
 export const capabilityTiers: Readonly<Record<CapabilityID, CapabilityTier>> = {
   "system.openURL": "low",
@@ -98,6 +110,8 @@ export const capabilityTiers: Readonly<Record<CapabilityID, CapabilityTier>> = {
   "android.apps.read": "medium",
   "apps.read": "medium",
   "browser.activeTab": "medium",
+  "menuBar.pointer": "medium",
+  "menuBarExtras.read": "medium",
   "screenshot.capture": "high",
   "network.https": "high",
   "quickTransfer.control": "high",
@@ -278,6 +292,27 @@ export interface MenuBarContribution {
    * 里 1–6 项的 key。宿主把它们从通用偏好里拿出来，画在设置页「在菜单栏显示」那一行下面（图标关着时置灰）。
    */
   preferences?: string[];
+  /**
+   * 这个扩展在菜单栏上的状态项（SDK 2.11，jarvis-mac `specs/20261029-225323-menubar-manager-p1` N-1）：1–4 枚、id 不重复，
+   * 各有自己的模型与菜单（`menuBar.update` 的 `statusItem` 点名改哪一枚）。第一枚在最右，按声明顺序往左排。
+   * 宿主只认 id、名字与图标，不知道它拿来做什么。不写 = 一枚 id 为 `main`、名字与图标取上面的 `title` / `symbol`。
+   */
+  items?: MenuBarStatusItem[];
+}
+
+/** manifest `contributes.menuBar.items[]` 的一枚（SDK 2.11）。 */
+export interface MenuBarStatusItem {
+  /** `^[a-z][a-z0-9-]{0,31}$`。 */
+  id: string;
+  /** 1–20 字：设置页与 VoiceOver 里这一枚的名字（空白时 VoiceOver 也读它）。 */
+  title: string;
+  /** 还没收到模型、或扩展的会话收掉之后画的那枚 SF Symbol。 */
+  symbol: string;
+  /**
+   * 第一次出现在菜单栏哪一端：`leading`（默认，系统的做法）是所有图标的最左端——图标一多就落在刘海下面看不见；
+   * `trailing` 是最右端、紧挨控制中心与时钟，同一个扩展的几枚按声明顺序从右往左排。用户 ⌘ 拖过之后以系统记住的位置为准。
+   */
+  placement?: "leading" | "trailing";
 }
 
 /**
@@ -293,7 +328,7 @@ export interface OrbContribution {
 export interface Contributes {
   toolbox?: ToolboxContribution;
   window?: WindowContribution;
-  /** 菜单栏域（SDK 2.9）。一个扩展至多一枚图标。 */
+  /** 菜单栏域（SDK 2.9）。SDK 2.11 起一个扩展可以有 1–4 枚状态项（`items`）。 */
   menuBar?: MenuBarContribution;
   /** 悬浮球那一层（SDK 2.10）。不是入口。 */
   orb?: OrbContribution;

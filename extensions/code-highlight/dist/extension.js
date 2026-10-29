@@ -1,4 +1,4 @@
-// jarvis-extension bundle · code-highlight@1.0.3 · sdk 2.10.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · code-highlight@1.0.4 · sdk 2.11.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -108,7 +108,7 @@
   };
 
   // sdk/src/index.ts
-  var sdkVersion = "2.10.0";
+  var sdkVersion = "2.11.0";
   var Cancellation = class {
     constructor() {
       this.listeners = [];
@@ -401,6 +401,9 @@
           case "select":
             work = handlers.select(context, event.itemId);
             break;
+          case "press":
+            work = handlers.press?.(context, event.statusItem, event.modifiers);
+            break;
           default:
             return;
         }
@@ -514,6 +517,8 @@
     apps: namespaced("apps"),
     system: namespaced("system"),
     menuBar: namespaced("menuBar"),
+    menuBarExtras: namespaced("menuBarExtras"),
+    screens: namespaced("screens"),
     daemon: namespaced("daemon"),
     systemProxy: namespaced("systemProxy"),
     tunnel: namespaced("tunnel"),
@@ -605,7 +610,18 @@
     },
     // 菜单栏域（SDK 2.9）：模型原样就是线缆上的 params，校验与上限在宿主。
     menuBar: {
-      update: (model) => call.menuBar("update", model)
+      update: (model) => call.menuBar("update", model),
+      // SDK 2.11：订阅自己的命名空间（`menuBarPointer.observe / unsubscribe`）——宿主按 types 只装要的那几种监听。
+      observePointer: (types, listener) => runtime.subscribe("menuBarPointer", "observe", listener, { types: [...new Set(types)] })
+    },
+    // SDK 2.11：菜单栏上的项、屏幕几何。
+    menuBarExtras: {
+      list: () => call.menuBarExtras("list"),
+      observe: (listener) => runtime.subscribe("menuBarExtras", "observe", listener)
+    },
+    screens: {
+      list: () => call.screens("list"),
+      observe: (listener) => runtime.subscribe("screens", "observe", (payload) => listener(payload.screens))
     },
     text: {
       base64: {

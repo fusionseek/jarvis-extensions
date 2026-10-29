@@ -232,17 +232,18 @@ v2 按**域**组织（[01](01-overview.md)）：身份与能力在顶层，入�
 
 #### 菜单栏域：`contributes.menuBar`（SDK 2.9）
 
-`{ "title": "…", "symbol": "…" }`，两个键都必填；一个扩展至多一枚图标。**它是入口**：只入驻菜单栏的扩展也合法。
+`{ "title": "…", "symbol": "…" }`，两个键都必填；SDK 2.11 起可以用 `items` 声明 1–4 枚状态项。**它是入口**：只入驻菜单栏的扩展也合法。
 
 | 字段 | 规则 | 为什么 |
 | --- | --- | --- |
 | `title` | 1–20 字 | 设置 · 扩展 里「在菜单栏显示」那一行与 VoiceOver 读的名字 |
 | `symbol` | SF Symbol，`^[A-Za-z0-9.-]+$` | 还没收到任何模型时（应用刚启动、后台会话还没起来）画它 |
+| `items`（SDK 2.11，可省） | 1–4 枚 `{ id, title, symbol, placement? }`，`id` 为 `^[a-z][a-z0-9-]{0,31}$`、不重复；`placement` 为 `leading`（默认）/ `trailing` | 一个扩展要几枚各自独立的图标（开关、读数、分组用的空白）。宿主只认 id、名字与图标，不知道它们拿来做什么；`menuBar.update` 的 `statusItem` 点名改哪一枚。不写 = 一枚 `main`。系统把新图标放在最左端，图标一多就落在刘海下面——要第一次就看得见的那枚写 `trailing` |
 | `preferences`（SDK 2.10，可省） | 1–6 个不重复的 key，每个必须在 `contributes.settings.preferences` 里声明过 | 这枚图标自己的设置（「菜单栏显示速率」「速率刷新间隔」）：宿主把它们从通用偏好里拿出来，画在设置页「在菜单栏显示」下面、图标关着时置灰——排在授权与十几项偏好之后，用户找不到它 |
 
 入驻了菜单栏域，系统菜单栏上就有这个扩展**自己的**一枚图标（不并进 Jarvis 那枚 sparkles）：仓库主人要「菜单独立」。
 宿主用 `NSStatusItem` + `NSMenu` 画，扩展经 `jarvis.menuBar.update(model)` 推一份声明式模型（[06](06-capabilities.md)、[07](07-ui-components.md)），
-代码跑在后台会话（`defineExtension({ menuBar: { start, open, select } })`）。菜单末尾宿主固定追加「打开「名」」「「名」的设置」：
+代码跑在后台会话（`defineExtension({ menuBar: { start, open, select, press } })`，`press` 是 SDK 2.11 起 `primaryClick: "event"` 那一枚的左键）。菜单末尾宿主固定追加「打开「名」」「「名」的设置」：
 菜单栏图标是扩展唯一常驻在屏幕上的东西，用户必须总能从它回到 Jarvis 管它的地方。用户可以在 设置 · 扩展 里关掉「在菜单栏显示」（[10](10-settings.md)）。
 
 #### 悬浮球那一层：`contributes.orb`（SDK 2.10）

@@ -146,7 +146,7 @@
     },
     "capabilityID": {
       "type": "string",
-      "description": "能力目录见 docs/06-capabilities.md。只列宿主真的做得到的；隐式能力（panel.* / storage.* / preferences.* / text.* / time.* / color.* / window.open / service.* / host.* / log）不在这里声明。git.* 三项是 Git 操作域：声明任一项都要入驻 Git 域（contributes.git），git.hosting.write 还要逐字写出 git.mutations。android.* 两项是 Android 操作域：宿主经自己的 adb 跑它写死的那几条命令（列设备、列应用、读应用名与图标），扩展只给设备序列号与包名、不给参数；android.tools.open 把一个包名交给内置的「APK 扫描」「数据导出」。apps.read 读这台 Mac 装了哪些应用（名字、Bundle ID、位置、分类、最近打开 / 添加时刻）：宿主自己扫三处应用目录，扩展不给路径；打开、删除应用由用户在 Jarvis 全局搜索里点，扩展做不了。 process.daemon 是常驻进程（manifest process.daemons 逐字声明可执行文件与一组参数；宿主托管它的生死、只放行发往它自己控制口的本机请求），system.proxy 把系统代理指向本机 127.0.0.1 的一个端口（要求这个扩展此刻有一个在跑的常驻进程或 TUN 内核；都没了宿主自动还原）——jarvis-mac specs/20261028-091917-proxy-extension-menubar-daemon。SDK 2.10（jarvis-mac specs/20261028-111714-proxy-tun-orb-traffic-page-rules）：network.tunnel 以管理员身份运行 sing-box 接管整机网络（TUN 增强模式，要 manifest process.tunnel；第一次打开时用户输一次管理员密码装上 Jarvis 的网络助手，配置过宿主的守卫、TUN 段由宿主填）；browser.activeTab 读前台（或最近一次激活的）浏览器当前标签的地址与标题（系统「自动化」授权）；files.pick 让用户在宿主画的打开面板里挑一个文件交给扩展读（只拿到文件名与正文，拿不到路径）。",
+      "description": "能力目录见 docs/06-capabilities.md。只列宿主真的做得到的；隐式能力（panel.* / storage.* / preferences.* / text.* / time.* / color.* / window.open / service.* / host.* / log）不在这里声明。git.* 三项是 Git 操作域：声明任一项都要入驻 Git 域（contributes.git），git.hosting.write 还要逐字写出 git.mutations。android.* 两项是 Android 操作域：宿主经自己的 adb 跑它写死的那几条命令（列设备、列应用、读应用名与图标），扩展只给设备序列号与包名、不给参数；android.tools.open 把一个包名交给内置的「APK 扫描」「数据导出」。apps.read 读这台 Mac 装了哪些应用（名字、Bundle ID、位置、分类、最近打开 / 添加时刻）：宿主自己扫三处应用目录，扩展不给路径；打开、删除应用由用户在 Jarvis 全局搜索里点，扩展做不了。 process.daemon 是常驻进程（manifest process.daemons 逐字声明可执行文件与一组参数；宿主托管它的生死、只放行发往它自己控制口的本机请求），system.proxy 把系统代理指向本机 127.0.0.1 的一个端口（要求这个扩展此刻有一个在跑的常驻进程或 TUN 内核；都没了宿主自动还原）——jarvis-mac specs/20261028-091917-proxy-extension-menubar-daemon。SDK 2.10（jarvis-mac specs/20261028-111714-proxy-tun-orb-traffic-page-rules）：network.tunnel 以管理员身份运行 sing-box 接管整机网络（TUN 增强模式，要 manifest process.tunnel；第一次打开时用户输一次管理员密码装上 Jarvis 的网络助手，配置过宿主的守卫、TUN 段由宿主填）；browser.activeTab 读前台（或最近一次激活的）浏览器当前标签的地址与标题（系统「自动化」授权）；files.pick 让用户在宿主画的打开面板里挑一个文件交给扩展读（只拿到文件名与正文，拿不到路径）。 SDK 2.11（jarvis-mac specs/20261029-225323-menubar-manager-p1）：menuBar.pointer 感知指针进出菜单栏那一条、在那里点击与滚动（只报菜单栏带里的事，指针在别处的位置读不到）；menuBarExtras.read 读系统菜单栏上有哪些图标——任何应用的，归属、说明、位置（借 Jarvis 的辅助功能权限）。",
       "enum": [
         "clipboard.read",
         "clipboard.write",
@@ -174,7 +174,9 @@
         "git.hosting.write",
         "android.apps.read",
         "android.tools.open",
-        "apps.read"
+        "apps.read",
+        "menuBar.pointer",
+        "menuBarExtras.read"
       ]
     },
     "capabilityRequest": {
@@ -1020,7 +1022,7 @@
     },
     "menuBar": {
       "type": "object",
-      "description": "菜单栏域（SDK 2.9）：系统菜单栏上属于这个扩展的一枚图标与它的菜单。宿主用 NSStatusItem + NSMenu 画，扩展经 jarvis.menuBar.update 推一份声明式模型；代码跑在后台会话。宿主在菜单末尾固定追加「打开」「设置」两项。用户可以在 设置 · 扩展 里关掉它。",
+      "description": "菜单栏域（SDK 2.9）：系统菜单栏上属于这个扩展的一枚图标与它的菜单。宿主用 NSStatusItem + NSMenu 画，扩展经 jarvis.menuBar.update 推一份声明式模型；代码跑在后台会话。宿主在菜单末尾固定追加「打开」「设置」两项。用户可以在 设置 · 扩展 里关掉它。 SDK 2.11（jarvis-mac specs/20261029-225323-menubar-manager-p1 N-1）：items 声明 1–4 枚状态项，各有自己的模型与菜单（menuBar.update 的 statusItem 点名改哪一枚）；第一枚在最右，按声明顺序往左排。不写 items 等于一枚 main。",
       "required": [
         "title",
         "symbol"
@@ -1049,6 +1051,48 @@
             "type": "string",
             "pattern": "^[a-z][a-zA-Z0-9]*$",
             "maxLength": 32
+          }
+        },
+        "items": {
+          "type": "array",
+          "description": "这个扩展在菜单栏上的状态项（SDK 2.11）：1–4 枚、id 不重复。宿主只认 id、名字与图标，不知道它拿来做什么——开关、读数、分组用的空白都一样。不写 = 一枚 id 为 main、名字与图标取上面的 title / symbol。",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "title",
+              "symbol"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "menuBar.update 的 statusItem、事件里的 statusItem 都用它。",
+                "pattern": "^[a-z][a-z0-9-]{0,31}$"
+              },
+              "title": {
+                "type": "string",
+                "description": "设置页与 VoiceOver 里这一枚的名字（空白时 VoiceOver 也读它）。",
+                "minLength": 1,
+                "maxLength": 20
+              },
+              "symbol": {
+                "type": "string",
+                "description": "还没收到模型、或扩展的会话收掉之后画的那枚 SF Symbol。",
+                "pattern": "^[A-Za-z0-9.-]+$",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "placement": {
+                "enum": [
+                  "leading",
+                  "trailing"
+                ],
+                "description": "第一次出现在菜单栏哪一端（SDK 2.11）：leading（默认，系统的做法）是所有图标的最左端——图标一多就落在刘海下面看不见；trailing 是最右端、紧挨控制中心与时钟，同一个扩展的几枚按声明顺序从右往左排。用户 ⌘ 拖过之后以系统记住的位置为准。"
+              }
+            },
+            "additionalProperties": false
           }
         }
       },

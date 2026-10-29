@@ -1,0 +1,125 @@
+{
+  "manifestVersion": 2,
+  "id": "menubar",
+  "version": "1.0.0",
+  "name": "菜单栏管理",
+  "symbol": "menubar.rectangle",
+  "description": "把用不着的菜单栏图标收起来：点一下「‹」、点菜单栏空白处、悬停或在上面滚动就露出来，指针离开一会儿自己收回；最不常用的放进「永远隐藏」，⌥ 点才出来。按住 ⌘ 拖动图标越过竖线就换段。菜单栏没变时 Jarvis 不去读它，空闲不占 CPU。",
+  "author": {
+    "name": "fusionseek",
+    "github": "fusionseek"
+  },
+  "main": "dist/extension.js",
+  "sdk": "^2.11.0",
+  "minimumJarvisVersion": "3.3.1",
+  "capabilities": [
+    {
+      "id": "menuBar.pointer",
+      "reason": "悬停、点菜单栏空白处或在上面滚动时露出隐藏的图标；只知道菜单栏那一条上的事"
+    },
+    {
+      "id": "menuBarExtras.read",
+      "reason": "在工具箱页列出每一段里有哪些图标、哪些被刘海挡住"
+    }
+  ],
+  "contributes": {
+    "toolbox": {
+      "subtitle": "收起不常用的菜单栏图标",
+      "keywords": [
+        "menubar",
+        "menu bar",
+        "bartender",
+        "hidden bar",
+        "notch",
+        "刘海",
+        "状态栏"
+      ]
+    },
+    "menuBar": {
+      "title": "菜单栏管理",
+      "symbol": "chevron.left",
+      "preferences": [
+        "clickReveal",
+        "hoverReveal",
+        "scrollReveal",
+        "autoRehide",
+        "alwaysHidden"
+      ],
+      "items": [
+        {
+          "id": "toggle",
+          "title": "显示或收起隐藏的图标",
+          "symbol": "chevron.left",
+          "placement": "trailing"
+        },
+        {
+          "id": "hidden",
+          "title": "隐藏段的分隔竖线",
+          "symbol": "poweron",
+          "placement": "trailing"
+        },
+        {
+          "id": "always",
+          "title": "永远隐藏段的分隔竖线",
+          "symbol": "poweron"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "id": "toggle",
+        "title": "显示或收起菜单栏图标",
+        "description": "在露出隐藏的图标与收起之间切换，与点菜单栏上的「‹」相同",
+        "slash": {
+          "keyword": "menubar",
+          "aliases": [
+            "菜单栏"
+          ]
+        },
+        "presentation": "silent"
+      }
+    ],
+    "settings": {
+      "preferences": [
+        {
+          "key": "clickReveal",
+          "type": "toggle",
+          "title": "点菜单栏空白处显示",
+          "description": "点菜单栏上没有图标、也不是菜单标题的地方，露出或收起隐藏的图标",
+          "default": true
+        },
+        {
+          "key": "hoverReveal",
+          "type": "toggle",
+          "title": "指针停在菜单栏上时显示",
+          "description": "要一直留意指针的移动，比别的方式多一点点开销；默认关",
+          "default": false
+        },
+        {
+          "key": "scrollReveal",
+          "type": "toggle",
+          "title": "在菜单栏上滚动显示或收起",
+          "description": "向上滚露出，向下滚收起",
+          "default": false
+        },
+        {
+          "key": "autoRehide",
+          "type": "number",
+          "title": "自动收回（秒）",
+          "description": "指针离开菜单栏多少秒后收回；点过某个图标时至少等 20 秒。0 = 不自动收回",
+          "default": 10,
+          "minimum": 0,
+          "maximum": 120
+        },
+        {
+          "key": "alwaysHidden",
+          "type": "toggle",
+          "title": "启用「永远隐藏」段",
+          "description": "最左边那条竖线左边的图标只有 ⌥ 点「‹」时才出来",
+          "default": true
+        }
+      ]
+    }
+  },
+  "inbox": false
+}

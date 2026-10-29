@@ -24,7 +24,7 @@
  */
 import type { EnvironmentInfo, HostInfo, Jarvis, ProcessHandle, ProcessResult, ProcessRunOptions, Unsubscribe } from "./capabilities.js";
 import { JarvisError } from "./capabilities.js";
-import type { ActivationContext, CommandContext, HostEvent, InvokeResult, HostBridge, CommandSummary, MenuBarEvent, NetworkStatus, ServiceCall, Surface } from "./bridge.js";
+import type { ActivationContext, CommandContext, HostEvent, InvokeResult, HostBridge, CommandSummary, MenuBarEvent, MenuBarModifier, NetworkStatus, ScreenInfo, ServiceCall, Surface } from "./bridge.js";
 import { bridgeProtocolVersion, countNodes, serialize } from "./bridge.js";
 import type { CancelSignal, CodeFormatEngine, CodeFormatRequest, CodeHighlightEngine, CodeHighlightRequest, ServiceContext, ServiceImplementation, JunkCleanEngine, LauncherAppsEngine, ProjectEngine, ProjectEngineRequest } from "./services.js";
 import type { UINode } from "./ui.js";
@@ -59,12 +59,18 @@ export type {
   MenuBarChart,
   MenuBarChartSeries,
   MenuBarEvent,
+  MenuBarExtra,
+  MenuBarExtrasChange,
   MenuBarHeader,
   MenuBarItem,
   MenuBarModel,
+  MenuBarModifier,
+  MenuBarPointerEvent,
   MenuBarSeparator,
   MenuBarSubmenu,
   NetworkStatus,
+  ScreenInfo,
+  ScreenRect,
   OrbMeterModel,
   SerializedNode,
   ServiceCall,
@@ -82,7 +88,7 @@ export type {
 export { bridgeProtocolVersion } from "./bridge.js";
 
 /** SDK 版本。主版本必须与宿主运行时一致。 */
-export const sdkVersion = "2.10.0";
+export const sdkVersion = "2.11.0";
 
 /** 一面的实现：工具箱页面、原地弹窗或窗口标签。 */
 export interface PageDefinition {
@@ -122,6 +128,11 @@ export interface MenuBarDefinition {
   open?(context: MenuBarContext): void | Promise<void>;
   /** 用户点了一项。`itemId` 是扩展自己在模型里给的 id；宿主固定追加的「打开」「设置」两项不走这里。 */
   select(context: MenuBarContext, itemId: string): void | Promise<void>;
+  /**
+   * `primaryClick: "event"` 的那一枚被左键点了（SDK 2.11）。`statusItem` 是 manifest `contributes.menuBar.items[].id`；
+   * `modifiers` 是按着的修饰键（⌥ 点之类）。右键与 ⌃ 点仍开菜单，不走这里。
+   */
+  press?(context: MenuBarContext, statusItem: string, modifiers: MenuBarModifier[]): void | Promise<void>;
 }
 
 /** 按域交出的实现。 */
@@ -478,6 +489,9 @@ class Runtime {
         case "select":
           work = handlers.select(context, event.itemId);
           break;
+        case "press":
+          work = handlers.press?.(context, event.statusItem, event.modifiers);
+          break;
         default:
           // 未知的事件名（宿主比 SDK 新）照「未知 type 忽略」那条规矩处理。
           return;
@@ -609,6 +623,8 @@ const call = {
   apps: namespaced("apps"),
   system: namespaced("system"),
   menuBar: namespaced("menuBar"),
+  menuBarExtras: namespaced("menuBarExtras"),
+  screens: namespaced("screens"),
   daemon: namespaced("daemon"),
   systemProxy: namespaced("systemProxy"),
   tunnel: namespaced("tunnel"),
@@ -713,6 +729,19 @@ export const jarvis: Jarvis = {
   // 菜单栏域（SDK 2.9）：模型原样就是线缆上的 params，校验与上限在宿主。
   menuBar: {
     update: (model) => call.menuBar("update", model),
+    // SDK 2.11：订阅自己的命名空间（`menuBarPointer.observe / unsubscribe`）——宿主按 types 只装要的那几种监听。
+    observePointer: (types, listener) =>
+      runtime.subscribe("menuBarPointer", "observe", listener as (payload: unknown) => void, { types: [...new Set(types)] }),
+  },
+  // SDK 2.11：菜单栏上的项、屏幕几何。
+  menuBarExtras: {
+    list: () => call.menuBarExtras("list"),
+    observe: (listener) => runtime.subscribe("menuBarExtras", "observe", listener as (payload: unknown) => void),
+  },
+  screens: {
+    list: () => call.screens("list"),
+    observe: (listener) =>
+      runtime.subscribe("screens", "observe", (payload) => (listener as (screens: ScreenInfo[]) => void)((payload as { screens: ScreenInfo[] }).screens)),
   },
   text: {
     base64: {

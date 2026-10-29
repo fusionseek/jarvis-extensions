@@ -20,7 +20,7 @@ v2 的目录**只列宿主真的做得到的**：声明得到、调不到的能�
 
 | 属性 | 值 |
 | --- | --- |
-| `sdk.version` | SDK 版本，`2.10.0` |
+| `sdk.version` | SDK 版本，`2.11.0` |
 | `host.version` / `host.channel` | 宿主版本（`CFBundleShortVersionString`）、`release` / `development` |
 | `environment` | `reduceMotion` / `reduceTransparency` / `increaseContrast` / `locale`。界面上的适配由宿主做；这里给出来是让扩展自己的逻辑也能让步 |
 
@@ -107,12 +107,58 @@ manifest `contributes.settings.preferences` 与各服务 `preferences` 里声明
 
 | 规则 | 值 | 为什么 |
 | --- | --- | --- |
-| 合并 | 宿主按 250 ms 合并，只画最后一份 | 挡的是「每帧推一次速率」；菜单栏不是动画画布 |
+| 合并 | 先画、之后合并：距上一次画已过 ≥ 250 ms 的立即画，否则攒到 250 ms 末尾只画最后一份（SDK 2.11） | 挡的是「每帧推一次速率」；菜单栏不是动画画布。但悬停露出图标晚四分之一秒是看得出来的 |
 | 缓存 | 宿主记着最后一份：后台会话空闲被收掉之后图标与菜单照旧在，点开 / 点选时宿主把会话唤醒再发事件 | 图标不能因为扩展的 JS 闲下来就消失或变回默认 |
 | 上限 | 整份 ≤ 300 项（含子菜单里的）、子菜单至多两层、文字 ≤ 80 字；超出的部分宿主丢掉并记警告，不整份拒绝 | 一份超了一项的模型不该让整个菜单变空 |
 | 固定项 | 菜单末尾宿主追加分隔线、「打开「名」」「「名」的设置」，扩展改不掉 | 菜单栏图标是扩展唯一常驻在屏幕上的东西，用户必须总能从它回到 Jarvis 管它的地方 |
 
-事件（`start` / `open` / `select`）落到 `defineExtension({ menuBar })` 的回调，跑在后台会话，见 [12](12-developer-guide.md)。
+事件（`start` / `open` / `select`，2.11 起还有 `press`）落到 `defineExtension({ menuBar })` 的回调，跑在后台会话，见 [12](12-developer-guide.md)。
+
+**几枚状态项（SDK 2.11，jarvis-mac `specs/20261029-225323-menubar-manager-p1` N-1）**：manifest `contributes.menuBar.items: [{ id, title, symbol, placement? }]` 声明 1–4 枚，第一枚在最右、按声明顺序往左排；不写 = 一枚 `main`。
+`placement: "trailing"` 让它第一次出现在最右端、紧挨系统项——系统默认把新图标放在最左端，图标一多就落在刘海下面看不见；用户 ⌘ 拖过之后以系统记住的位置为准。
+模型多四个字段：
+
+| 字段 | 含义 |
+| --- | --- |
+| `statusItem` | 改哪一枚（`items[].id`）；省略 = 第一枚。每枚各有一份完整的模型与菜单 |
+| `length` | `"auto"`（默认，随内容）或 0–10000 点 |
+| `blank` | 不画图标也不画字，只占 `length` 那么宽；VoiceOver 仍读 manifest 里这一枚的名字 |
+| `primaryClick` | `"menu"`（默认）左键开菜单；`"event"` 左键发 `press(context, statusItem, modifiers)`，右键与 ⌃ 点仍开菜单 |
+
+宿主不知道你拿这几枚做什么（开关、读数、分组用的空白都一样）。**兜底**：维持它们的后台会话一收掉（停用、卸载、更新、加载失败），
+宿主把这个扩展所有状态项的 `length` 复原成 `"auto"`、`blank` 复原成假——一块定宽的空白会把别人的图标挤出屏幕，扩展不在时这件事不再发生。
+
+#### `jarvis.menuBar.observePointer` — 菜单栏上的指针（能力 `menuBar.pointer`，中档，SDK 2.11）
+
+`observePointer(types, listener)` → `Unsubscribe`。只报菜单栏那一条里的事；指针在屏幕别处的位置读不到。
+
+| 事件 | 字段 |
+| --- | --- |
+| `enter` / `exit` | 指针进出菜单栏那一条时各一次（不发连续移动）：`screen`、`x`（相对那块屏左边）、`modifiers`。订阅 `enter` 的那一刻指针已经在那一条里时，宿主先补发一条 `enter`——不要自己假定指针在哪 |
+| `click` | 另带 `button`（`left` / `right`）、`onItem`（点在某一颗图标上）、`onAppMenu`（点在前台应用的菜单标题上；宿主还没读到时为 `null`） |
+| `scroll` | 另带 `deltaY`：100 ms 内的累计值，手指 / 滚轮向上为正 |
+
+**只订用得着的**：宿主只装 `types` 里那几种监听。`enter` / `exit` 要一个随鼠标移动触发的全局监听（鼠标一动每秒上百次唤醒），用不着就别订；
+`click` / `scroll` 的监听只在用户点、滚的时候醒。参考 [`extensions/menubar`](../extensions/menubar)：收着、没开悬停时只订 `click`，露着时才加 `enter` / `exit`。
+
+#### `jarvis.menuBarExtras` — 菜单栏上的项（能力 `menuBarExtras.read`，中档，借辅助功能，SDK 2.11）
+
+| 方法 | 说明 |
+| --- | --- |
+| `list()` | 此刻菜单栏上的全部图标（任何应用的），从左到右：`[{ id, ownerBundleId, ownerName, title, frame, screen, onScreen, movable, mine?, icon? }]` |
+| `observe(listener)` | 「有哪些项」的变化 `{ added, removed }`，250 ms 合并；位置随时在变，要位置就 `list()` |
+
+- `id` 跨重启尽量不变：有 AX identifier 的 `<bundleId>:<identifier>`；同一应用只有一颗的 `<bundleId>`；有几颗的 `<bundleId>#<序号>`；归属认不出的 `window:<窗口号>`。
+- `frame` 是全局坐标（原点在主屏左上角、y 向下）；`onScreen` 为假的是被刘海挡住或被挤出屏幕的；`movable` 为假的是时钟、控制中心这类钉死的系统项；
+  `mine` 是你自己的哪一枚状态项；`icon` 是所属应用的图标句柄（交给 `row.image`）。
+- Jarvis 没有辅助功能权限时报 `permission.unavailable`（macOS 26 起归属只能经 AX 认）。
+- **宿主只在菜单栏变了时才问 AX**：稳态一次 `list()` 只按已知窗口号读位置（约 0.2 ms），要位置时直接调、不必自己缓存；
+  有 `observe` 订阅者时宿主每 10 s 兜底看一眼屏幕上的窗口——页面离开就退订。限频每分钟 ≤ 600 次。
+
+#### `jarvis.screens` — 屏幕几何（隐式，SDK 2.11）
+
+`list()` → `[{ id, frame, visibleFrame, menuBarHeight, isMain, scale, notch }]`，主屏在前；`notch` 是刘海两侧还能放东西的两块（`{ left, right }`），没有刘海为 `null`。
+`observe(listener)`：屏幕配置变了推完整的新列表。坐标与 `menuBarExtras` 同一套。
 
 #### `jarvis.orb`（悬浮球那一层，SDK 2.10）
 

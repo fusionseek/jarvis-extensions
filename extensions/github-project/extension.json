@@ -1,7 +1,7 @@
 {
   "manifestVersion": 2,
   "id": "github-project",
-  "version": "1.3.4",
+  "version": "1.3.5",
   "name": "GitHub 项目",
   "symbol": "tablecells",
   "description": "给 Jarvis「项目」接上 GitHub Projects v2：读 Project 的字段、条目、迭代与 Issue 的父子 / 依赖关系，把你在需求、迭代、缺陷页上的修改写回 GitHub。页面与规则由 Jarvis 画，它只负责读写数据。",

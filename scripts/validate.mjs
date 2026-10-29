@@ -221,6 +221,10 @@ export function checkExtension(dir) {
   for (const key of menuBarPreferences) {
     if (!declaredPreferenceKeys.has(key)) problem(dir, `contributes.menuBar.preferences 点名的「${key}」不在 contributes.settings.preferences 里`);
   }
+  // 多枚状态项（SDK 2.11，jarvis-mac specs/20261029-225323-menubar-manager-p1 N-1，与宿主 ExtensionManifestValidation 同一份）：
+  // 个数、id 形状由 schema 管；这里管 id 不重复——两枚同名的状态项，menuBar.update 点名时宿主分不出是哪一枚。
+  const statusItemIDs = (contributes.menuBar?.items ?? []).map((item) => item.id);
+  if (new Set(statusItemIDs).size !== statusItemIDs.length) problem(dir, "contributes.menuBar.items 的 id 不能重复");
 
   // ── Git 操作域（与宿主 ExtensionManifest.checkGit 同一份）──────────────
   // 变更名不重、格式与个数由 schema 管；这里管 schema 表达不了的两条成对关系。
@@ -261,8 +265,10 @@ export function checkExtension(dir) {
     if (c.presentation === "window" && !contributes.window) {
       problem(dir, `命令「${c.id}」落在 window，却没有入驻窗口域（contributes.window）`);
     }
-    if (c.presentation === "silent" && !REPORTING_CAPABILITIES.some(has)) {
-      problem(dir, `命令「${c.id}」是 silent 的，却没有任何把结果交给用户的能力（${REPORTING_CAPABILITIES.join(" / ")}）`);
+    // 入驻了菜单栏域的扩展，菜单栏上它自己那几枚就是结果的出口（SDK 2.11，与宿主 ExtensionManifestValidation 同一份）：
+    // 静默命令改的往往正是它们（开关代理、收起图标），用户当场看得见。
+    if (c.presentation === "silent" && !REPORTING_CAPABILITIES.some(has) && !contributes.menuBar) {
+      problem(dir, `命令「${c.id}」是 silent 的，却没有任何把结果交给用户的能力（${REPORTING_CAPABILITIES.join(" / ")}），也没有入驻菜单栏域`);
     }
     if (c.slash) {
       for (const word of [c.slash.keyword, ...(c.slash.aliases ?? [])]) {

@@ -37,6 +37,7 @@ import type {
   MenuBarActionItem,
   MenuBarItem,
   MenuBarModel,
+  MenuBarModifier,
   OrbMeterModel,
   SerializedNode,
   ServiceCall,
@@ -106,9 +107,16 @@ export interface TestHost {
    * （它与它所在的子菜单都没有 `enabled: false`）——否则抛错：用户点不到的东西，测试也不该点到。
    */
   menuBarEvent(
-    event: "start" | "open" | "select",
-    options?: { itemId?: string; granted?: string[]; preferences?: Record<string, unknown> },
+    event: "start" | "open" | "select" | "press",
+    options?: { itemId?: string; statusItem?: string; modifiers?: MenuBarModifier[]; granted?: string[]; preferences?: Record<string, unknown> },
   ): Promise<void>;
+  /**
+   * SDK 2.11：某一枚状态项此刻生效的那份模型（`menuBar.update` 按 `statusItem` 分开记，省略 = 第一枚 `main`）。
+   * 还没推过为 `undefined`。
+   */
+  statusItem(id: string): MenuBarModel | undefined;
+  /** 某个命名空间最近一次订阅的 token（`menuBarPointer` / `menuBarExtras` / `screens` …）；没订过为 `undefined`。 */
+  subscriptionToken(namespace: string): string | undefined;
   /** 给 SDK 发一个宿主事件。 */
   dispatch(event: HostEvent): void;
   /** 往一个订阅 token 上推一次事件。 */
@@ -224,15 +232,33 @@ export function createTestHost(options: TestHostOptions = {}): TestHost {
       if (event === "select") {
         const itemId = eventOptions.itemId;
         if (itemId === undefined) throw new Error("menuBarEvent(\"select\") 要带 itemId。");
-        const latest = menuBarModels[menuBarModels.length - 1];
+        const latest = eventOptions.statusItem === undefined ? menuBarModels[menuBarModels.length - 1] : host.statusItem(eventOptions.statusItem);
         const hit = latest ? findMenuItem(latest.items, itemId) : undefined;
         if (!hit) throw new Error(`最新一份菜单栏模型里没有「${itemId}」这一项。`);
         if (!hit.reachable) throw new Error(`菜单项「${itemId}」被禁用了（它或它所在的子菜单 enabled: false），用户点不到。`);
-        dispatchToRuntime({ type: "menuBar", menuBar: { event, itemId, granted, preferences } });
+        const statusItem = eventOptions.statusItem;
+        dispatchToRuntime({ type: "menuBar", menuBar: statusItem === undefined ? { event, itemId, granted, preferences } : { event, itemId, statusItem, granted, preferences } });
+      } else if (event === "press") {
+        const statusItem = eventOptions.statusItem;
+        if (statusItem === undefined) throw new Error("menuBarEvent(\"press\") 要带 statusItem。");
+        if (host.statusItem(statusItem)?.primaryClick !== "event") {
+          throw new Error(`状态项「${statusItem}」的最新模型不是 primaryClick: "event"：宿主不会为它发 press。`);
+        }
+        dispatchToRuntime({ type: "menuBar", menuBar: { event, statusItem, modifiers: eventOptions.modifiers ?? [], granted, preferences } });
+      } else if (event === "open") {
+        const statusItem = eventOptions.statusItem;
+        dispatchToRuntime({ type: "menuBar", menuBar: statusItem === undefined ? { event, granted, preferences } : { event, statusItem, granted, preferences } });
       } else {
         dispatchToRuntime({ type: "menuBar", menuBar: { event, granted, preferences } });
       }
       await host.settle();
+    },
+    statusItem(id) {
+      return [...menuBarModels].reverse().find((model) => (model.statusItem ?? "main") === id);
+    },
+    subscriptionToken(namespace) {
+      const request = [...invocations].reverse().find((entry) => entry.namespace === namespace && entry.method === "observe");
+      return (request?.params as { token?: string } | undefined)?.token;
     },
     get nextCallId() {
       return callCounter;
