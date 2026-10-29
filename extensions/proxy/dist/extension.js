@@ -5398,6 +5398,7 @@
   var ruleTableRows = 300;
   var logPanelRows = 200;
   var hourLabels = Array.from({ length: 24 }, (_, hour) => String(hour));
+  var idleCurve = new Array(60).fill(0);
   function renderDashboard(session2, snapshot, loading) {
     const page = snapshot ? pageOf(session2, snapshot) : loading ?? ui.scroll({ children: [] });
     return layout.sidebar({
@@ -5501,7 +5502,7 @@
     ];
     children.push(...notes(session2, snapshot));
     children.push(factsStrip(session2, snapshot), layout.grid({ key: "activity-cards", minimum: 180, spacing: "regular", children: activityCards(session2, snapshot) }));
-    children.push(layout.grid({ key: "activity-panels", minimum: 420, spacing: "regular", children: [trafficSection(session2), topSection(session2)] }));
+    children.push(layout.grid({ key: "activity-panels", minimum: 420, spacing: "regular", fill: true, children: [trafficSection(session2), topSection(session2)] }));
     return children;
   }
   function factsStrip(session2, snapshot) {
@@ -5542,20 +5543,22 @@
     const latest = (values) => values.length > 0 ? values[values.length - 1] : 0;
     const upload = session2.reading?.upload ?? latest(session2.history.upload);
     const download = session2.reading?.download ?? latest(session2.history.download);
-    const today = session2.stats?.all;
-    const sum = (values) => (values ?? []).reduce((total, value) => total + value, 0);
     const card = (key, title, value, tint, footer) => ui.card({
       key,
       children: [ui.text({ key: `${key}:title`, style: "footnote", text: title }), ui.text({ key: `${key}:value`, style: "metric", tint, text: value, lines: 1 }), ui.spacer(), footer]
     });
     const caption = (key, text) => ui.text({ key, style: "footnote", text, lines: 1 });
-    const chart = (key, tone, values, fallback) => running && values.length > 1 ? ui.chart({ key, series: [{ tone, values: values.slice(-120) }], label: tone === "upload" ? "\u6700\u8FD1\u4E00\u5206\u949F\u7684\u4E0A\u884C" : "\u6700\u8FD1\u4E00\u5206\u949F\u7684\u4E0B\u884C" }) : caption(key, fallback);
+    const chart = (key, tone, values) => {
+      const live = running && values.length > 1;
+      const what = tone === "upload" ? "\u4E0A\u884C" : "\u4E0B\u884C";
+      return ui.chart({ key, series: [{ tone, values: live ? values.slice(-120) : idleCurve }], label: live ? `\u6700\u8FD1\u4E00\u5206\u949F\u7684${what}` : `\u4EE3\u7406\u5173\u7740\uFF0C\u6CA1\u6709${what}` });
+    };
     const processCount = new Set((session2.connections?.connections ?? []).map((connection) => processName2(connection.process))).size;
     return [
       card("card-latency", "Internet \u5EF6\u8FDF", running ? delay === void 0 ? "\u6D4B\u91CF\u4E2D" : delay === null ? "\u4E0D\u901A" : `${delay} ms` : "\u2014", running ? delayTintValue : "neutral", caption("card-latency:caption", running ? "\u7ECF\u8FC7\u8282\u70B9\u8BBF\u95EE apple.com\uFF0C\u6BCF 30 \u79D2\u6D4B\u4E00\u6B21" : "\u4EE3\u7406\u5F00\u7740\u65F6\u6D4B")),
       card("card-connections", "\u6D3B\u52A8\u8FDE\u63A5", running && session2.connections ? String(session2.connections.connections.length) : "\u2014", running ? "accent" : "neutral", caption("card-connections:caption", running && session2.connections ? `${processCount} \u4E2A\u7A0B\u5E8F` : "\u4EE3\u7406\u5F00\u7740\u65F6\u6570")),
-      card("card-upload", "\u4E0A\u884C", running ? formatRate(upload) : "\u2014", running ? "amber" : "neutral", chart("card-upload:chart", "upload", session2.history.upload, today ? `\u4ECA\u5929 ${formatBytes(sum(today.upload))}` : "\u6700\u8FD1\u4E00\u5206\u949F")),
-      card("card-download", "\u4E0B\u884C", running ? formatRate(download) : "\u2014", running ? "blue" : "neutral", chart("card-download:chart", "download", session2.history.download, today ? `\u4ECA\u5929 ${formatBytes(sum(today.download))}` : "\u6700\u8FD1\u4E00\u5206\u949F"))
+      card("card-upload", "\u4E0A\u884C", running ? formatRate(upload) : "\u2014", running ? "amber" : "neutral", chart("card-upload:chart", "upload", session2.history.upload)),
+      card("card-download", "\u4E0B\u884C", running ? formatRate(download) : "\u2014", running ? "blue" : "neutral", chart("card-download:chart", "download", session2.history.download))
     ];
   }
   function trafficSection(session2) {
@@ -5620,6 +5623,8 @@
           rows: rows.map(([name, usage]) => ({
             cells: [category === "policies" ? policyName(name) : name, String(usage.connections), formatBytes(usage.upload), formatBytes(usage.download), formatBytes(usage.upload + usage.download)]
           })),
+          // 跟着面板长（第二轮 R-5）：那一行撑满时表也撑满，空着时提示在正中。
+          scroll: true,
           emptyText: "\u4EE3\u7406\u5F00\u7740\u65F6\u540E\u53F0\u4F1A\u8BB0\u4ECA\u5929\u7684\u6D41\u91CF\uFF0C\u6BCF\u5206\u949F\u66F4\u65B0\u4E00\u6B21"
         })
       ]
@@ -5774,6 +5779,8 @@
           minimum: 240,
           spacing: "regular",
           weights: [1, 3],
+          // 窗口比内容高时这一行吃掉剩下的高（第二轮 R-5）：策略组与节点两块面板长到订阅那一行上面，而不是整页下面空一截。
+          fill: true,
           children: [
             ui.section({
               key: "policy-groups",

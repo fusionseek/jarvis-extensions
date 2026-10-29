@@ -1,9 +1,9 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-29T01:10:38.424Z",
+  "generatedAt": "2026-10-29T11:00:16.413Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "e565da9dc14c92c488d76b3a809d2f7ede624a0d"
+    "commit": "ba930628a3e892c7dab533d48eec295c6c2dfa89"
   },
   "extensions": [
     {
@@ -1190,10 +1190,10 @@
       "path": "extensions/proxy",
       "bundle": {
         "path": "extensions/proxy/dist/extension.js",
-        "sha256": "4c1776a7c77c079ce3624fb42594afdd03ec31d0c3b27b1773c5902a6b42f284",
-        "byteCount": 342277
+        "sha256": "01eb6c52f39d0c35dd5ac10f26ffca90ddbba31d307a2fb42688a82adf9e043f",
+        "byteCount": 342429
       },
-      "updatedAt": "2026-10-28T20:47:49+08:00"
+      "updatedAt": "2026-10-29T09:15:34+08:00"
     },
     {
       "manifest": {

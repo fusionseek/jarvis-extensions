@@ -311,6 +311,13 @@ test("窗口：左边栏活动 / 进程 / 策略 / 规则（jarvis-mac specs/202
   assert.equal(header.kind, "header");
   assert.deepEqual(header.children.map((child) => child.key), ["activity-system-proxy", "activity-tun", "activity-power"]);
   assert.equal(byKey("activity-system-proxy").props.value, false);
+  // 第二轮 R-5：关着时上下行卡里照样是曲线区（全零的平线），四张卡与开着时一个高度；下面那一行吃掉窗口剩下的高。
+  for (const key of ["card-upload:chart", "card-download:chart"]) {
+    assert.equal(byKey(key).kind, "chart", key);
+    assert.ok(byKey(key).props.series[0].values.every((value) => value === 0), key);
+  }
+  assert.equal(byKey("activity-panels").props.fill, true);
+  assert.equal(byKey("top-table:processes").props.scroll, true, "Top 10 跟着面板长，空着时提示在正中");
   await fire(byKey("activity-system-proxy"), "change", true);
   assert.equal(daemons.status("sing-box").state, "running");
   assert.equal(byKey("activity-system-proxy").props.value, true);
@@ -390,6 +397,7 @@ test("窗口：左边栏活动 / 进程 / 策略 / 规则（jarvis-mac specs/202
   // 策略页：页头里的出站模式是紧凑分段；左栏策略组、右边那一组的节点卡；点卡 = 选它并只测它一个；订阅地址由宿主画（preference 节点）。
   await fire(host.latest, "change", "policies");
   assert.equal(byKey("policy-mode-picker").props.layout, "compact");
+  assert.equal(byKey("policies-split").props.fill, true, "策略组与节点那一行吃掉窗口剩下的高");
   assert.ok(byKey("policies-header").children.some((child) => child.key === "policy-mode-picker"));
   assert.equal(byKey("policy-group:节点选择").props.selected, true);
   const nodeCards = collect(byKey("node-cards"), (node) => node.kind === "card");

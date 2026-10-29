@@ -453,7 +453,10 @@ export interface GridNode extends Keyed {
    * （主从两栏：进程 2 : 连接 3；jarvis-mac `specs/20261029-082059-proxy-window-desktop-layout` D-5，宿主 ≥ 3.3.1）。
    */
   weights?: number[];
-  /** 页的根是 `stack`（不滚动）时，这个网格吃掉剩下的高度、那一行撑满。一页至多一个（宿主 ≥ 3.3.1）。 */
+  /**
+   * 这个网格吃掉这一页剩下的高度、最后一行撑满：页的根是 `stack`（不滚动）时由竖排给；窗口里页的根是 `scroll` 时，
+   * 内容比一窗矮才给、比一窗高照内容高整页滚（jarvis-mac 同一个 spec 第二轮 R-2）。一页至多一个（宿主 ≥ 3.3.1）。
+   */
   fill?: boolean;
   children: UINode[];
 }

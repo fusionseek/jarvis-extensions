@@ -63,6 +63,8 @@ const logPanelRows = 200;
 
 /** 24 个小时的横轴。 */
 const hourLabels = Array.from({ length: 24 }, (_, hour) => String(hour));
+/** 关着时统计卡里那条曲线：一分钟（每秒一个点）全零，画出来是贴底的一条平线。 */
+const idleCurve: number[] = new Array(60).fill(0);
 
 /**
  * 整个窗口。
@@ -210,7 +212,8 @@ function activityPage(session: Session, snapshot: Snapshot): UINode[] {
   children.push(...notes(session, snapshot));
   children.push(factsStrip(session, snapshot), layout.grid({ key: "activity-cards", minimum: 180, spacing: "regular", children: activityCards(session, snapshot) }));
   // 两块并排（放得下两块各 420 时），窄了上下排；一行里两块等高，柱子长到面板底。
-  children.push(layout.grid({ key: "activity-panels", minimum: 420, spacing: "regular", children: [trafficSection(session), topSection(session)] }));
+  // `fill`：窗口比内容高时这一行吃掉剩下的高（宿主 R-2）——稿子按 772 高画，1024 高的窗口里下面不再空一截。
+  children.push(layout.grid({ key: "activity-panels", minimum: 420, spacing: "regular", fill: true, children: [trafficSection(session), topSection(session)] }));
   return children;
 }
 
@@ -258,8 +261,6 @@ function activityCards(session: Session, snapshot: Snapshot): UINode[] {
   const latest = (values: number[]) => (values.length > 0 ? values[values.length - 1] : 0);
   const upload = session.reading?.upload ?? latest(session.history.upload);
   const download = session.reading?.download ?? latest(session.history.download);
-  const today = session.stats?.all;
-  const sum = (values: number[] | undefined) => (values ?? []).reduce((total, value) => total + value, 0);
   // 一张卡：标签、大数字、末一行（说明或一分钟曲线）。`spacer` 把末一行推到卡底：一行四张卡等高，末一行落在同一条线上。
   const card = (key: string, title: string, value: string, tint: Tint, footer: UINode) =>
     ui.card({
@@ -267,14 +268,18 @@ function activityCards(session: Session, snapshot: Snapshot): UINode[] {
       children: [ui.text({ key: `${key}:title`, style: "footnote", text: title }), ui.text({ key: `${key}:value`, style: "metric", tint, text: value, lines: 1 }), ui.spacer(), footer],
     });
   const caption = (key: string, text: string) => ui.text({ key, style: "footnote", text, lines: 1 });
-  const chart = (key: string, tone: "upload" | "download", values: number[], fallback: string) =>
-    running && values.length > 1 ? ui.chart({ key, series: [{ tone, values: values.slice(-120) }], label: tone === "upload" ? "最近一分钟的上行" : "最近一分钟的下行" }) : caption(key, fallback);
+  // 曲线区一直在（第二轮 R-5）：关着时是一分钟全零的平线——此前换成一行字，四张卡跟着塌矮，和开着时不是一个样子。
+  const chart = (key: string, tone: "upload" | "download", values: number[]) => {
+    const live = running && values.length > 1;
+    const what = tone === "upload" ? "上行" : "下行";
+    return ui.chart({ key, series: [{ tone, values: live ? values.slice(-120) : idleCurve }], label: live ? `最近一分钟的${what}` : `代理关着，没有${what}` });
+  };
   const processCount = new Set((session.connections?.connections ?? []).map((connection) => processName(connection.process))).size;
   return [
     card("card-latency", "Internet 延迟", running ? (delay === undefined ? "测量中" : delay === null ? "不通" : `${delay} ms`) : "—", running ? delayTintValue : "neutral", caption("card-latency:caption", running ? "经过节点访问 apple.com，每 30 秒测一次" : "代理开着时测")),
     card("card-connections", "活动连接", running && session.connections ? String(session.connections.connections.length) : "—", running ? "accent" : "neutral", caption("card-connections:caption", running && session.connections ? `${processCount} 个程序` : "代理开着时数")),
-    card("card-upload", "上行", running ? formatRate(upload) : "—", running ? "amber" : "neutral", chart("card-upload:chart", "upload", session.history.upload, today ? `今天 ${formatBytes(sum(today.upload))}` : "最近一分钟")),
-    card("card-download", "下行", running ? formatRate(download) : "—", running ? "blue" : "neutral", chart("card-download:chart", "download", session.history.download, today ? `今天 ${formatBytes(sum(today.download))}` : "最近一分钟")),
+    card("card-upload", "上行", running ? formatRate(upload) : "—", running ? "amber" : "neutral", chart("card-upload:chart", "upload", session.history.upload)),
+    card("card-download", "下行", running ? formatRate(download) : "—", running ? "blue" : "neutral", chart("card-download:chart", "download", session.history.download)),
   ];
 }
 
@@ -343,6 +348,8 @@ function topSection(session: Session): UINode {
         rows: rows.map(([name, usage]) => ({
           cells: [category === "policies" ? policyName(name) : name, String(usage.connections), formatBytes(usage.upload), formatBytes(usage.download), formatBytes(usage.upload + usage.download)],
         })),
+        // 跟着面板长（第二轮 R-5）：那一行撑满时表也撑满，空着时提示在正中。
+        scroll: true,
         emptyText: "代理开着时后台会记今天的流量，每分钟更新一次",
       }),
     ],
@@ -522,6 +529,8 @@ function policiesPage(session: Session, snapshot: Snapshot): UINode[] {
         minimum: 240,
         spacing: "regular",
         weights: [1, 3],
+        // 窗口比内容高时这一行吃掉剩下的高（第二轮 R-5）：策略组与节点两块面板长到订阅那一行上面，而不是整页下面空一截。
+        fill: true,
         children: [
           ui.section({
             key: "policy-groups",
