@@ -13,7 +13,8 @@
 export type Tint = "accent" | "live" | "alert" | "danger" | "violet" | "blue" | "amber" | "neutral";
 
 /** 文字档位。对应面板工具那一档字阶（标题 13 / 说明 11 / 脚注 10 …）。 */
-export type TextStyle = "sectionTitle" | "title" | "body" | "subtle" | "footnote" | "mono" | "readout";
+/** `metric`：统计卡上的大数字（面板 18pt、窗口 26pt；jarvis-mac `specs/20261029-082059-proxy-window-desktop-layout` D-4，宿主 ≥ 3.3.1）。 */
+export type TextStyle = "sectionTitle" | "title" | "body" | "subtle" | "footnote" | "mono" | "readout" | "metric";
 
 /** 栈的节奏。tight = 6（清单）、regular = 10（工具段内）、loose = 14（段与段）。 */
 export type StackSpacing = "none" | "tight" | "regular" | "loose";
@@ -69,14 +70,36 @@ export interface ScrollNode extends Keyed {
   children: UINode[];
 }
 
+/** 段标题右端（窗口里是面板头）的一段。 */
+export interface SectionSegment {
+  /** 1–40 字，一组里不重复。 */
+  value: string;
+  /** 1–12 字。 */
+  title: string;
+  /** ≤ 80 字，悬停说明。 */
+  help?: string;
+}
+
 export interface SectionNode extends Keyed {
   kind: "section";
-  /** 段标题，形如「输入 · INPUT」；宿主按 10pt bold、字距 1 画。 */
+  /** 段标题，形如「输入 · INPUT」；面板里按 10pt bold、字距 1 画。窗口里整段画成一块带框的面板，标题 14pt semibold（宿主 ≥ 3.3.1）。 */
   title: string;
   /** 段标题右端的读数（如 `26 字符 · 36 字节`）。 */
   trailing?: string;
   tint?: Tint;
   actions?: ActionSpec[];
+  /**
+   * 段标题右端（窗口里是面板头）的紧凑分段，2–5 项（jarvis-mac `specs/20261029-082059-proxy-window-desktop-layout` D-3，宿主 ≥ 3.3.1）。
+   * 切换「这一块看哪一份」用它，不用通栏 `segmented`——通栏分段放进窗口就是手机的顶部 Tab。
+   * `segments` / `segment` / `segmentLabel` / `onSegment` 要一起给。
+   */
+  segments?: SectionSegment[];
+  /** 选中的那一段（必须是 `segments` 里的一个）。 */
+  segment?: string;
+  /** 1–40 字。VoiceOver。 */
+  segmentLabel?: string;
+  /** 点了另一段，回传它的 `value`。 */
+  onSegment?: Handler<string>;
   children: UINode[];
 }
 
@@ -425,6 +448,13 @@ export interface GridNode extends Keyed {
   kind: "grid";
   minimum?: number;
   spacing?: StackSpacing;
+  /**
+   * 2–4 个 1–4 的整数，个数必须等于子节点数：一行放得下全部子节点时按比例分宽，折行时照旧等分
+   * （主从两栏：进程 2 : 连接 3；jarvis-mac `specs/20261029-082059-proxy-window-desktop-layout` D-5，宿主 ≥ 3.3.1）。
+   */
+  weights?: number[];
+  /** 页的根是 `stack`（不滚动）时，这个网格吃掉剩下的高度、那一行撑满。一页至多一个（宿主 ≥ 3.3.1）。 */
+  fill?: boolean;
   children: UINode[];
 }
 
@@ -446,9 +476,11 @@ export interface TableRow {
   cells: string[];
   /** 整行的字着色。 */
   tint?: Tint;
+  /** 1–120 字，一张表里不重复。有它的行在表挂了 `onSelect` 时可点（宿主 ≥ 3.3.1）。 */
+  id?: string;
 }
 
-/** 表格：表头 + 斑马纹行，1–8 列、至多 300 行。不可点。 */
+/** 表格：表头 + 斑马纹行，1–8 列、至多 300 行。挂了 `onSelect` 的表行可点。 */
 export interface TableNode extends Keyed {
   kind: "table";
   columns: TableColumn[];
@@ -457,6 +489,12 @@ export interface TableNode extends Keyed {
   emptyText?: string;
   /** ≤ 80 字。VoiceOver。 */
   label?: string;
+  /** 选中那一行的 `id`；不在这一次的行里时什么都不高亮（jarvis-mac `specs/20261029-082059-proxy-window-desktop-layout` D-6，宿主 ≥ 3.3.1）。 */
+  selection?: string;
+  /** 点了带 `id` 的一行，回传它的 `id`。点已选中的那一行同样回传——要不要取消选中由扩展决定。 */
+  onSelect?: Handler<string>;
+  /** 表头钉住、行在表里滚，表撑满被给的高度（主从两栏里用，配 `grid.fill`）。 */
+  scroll?: boolean;
 }
 
 /** 柱状图的一条（与 `ChartSeries` 同一对色调）。 */
@@ -483,6 +521,22 @@ export interface BarsNode extends Keyed {
  * 宿主画的偏好控件：manifest `contributes.settings.preferences` 里声明过的那一项，与设置页同一个控件（紧凑排版）。
  * 扩展读不到、写不到控件里的字——`urlList` 的地址仍是用户亲手填的，白名单语义不变。没声明过的宿主拒绝整棵树。
  */
+/**
+ * 窗口一页的页头（jarvis-mac `specs/20261029-082059-proxy-window-desktop-layout` D-2，宿主 ≥ 3.3.1）：左边标题与一行状态，右边 0–6 颗控件。
+ * 页头里的 `toggle` 画紧凑一档（副标题进悬停说明）、`segmented` 一律紧凑、`search` 定宽。不可点。
+ */
+export interface HeaderNode extends Keyed {
+  kind: "header";
+  /** 1–24 字。 */
+  title: string;
+  /** ≤ 120 字。状态行：开没开、走哪条线、一共多少。 */
+  subtitle?: string;
+  /** 状态行前那颗点；省略不画点。`alert` / `danger` 时状态行的字也着色。 */
+  tint?: Tint;
+  /** 只能是 toggle / segmented / button / iconButton / search / chip / copy。 */
+  children: UINode[];
+}
+
 export interface PreferenceNode extends Keyed {
   kind: "preference";
   /**
@@ -528,7 +582,8 @@ export type UINode =
   | GridNode
   | TableNode
   | BarsNode
-  | PreferenceNode;
+  | PreferenceNode
+  | HeaderNode;
 
 export type UINodeKind = UINode["kind"];
 

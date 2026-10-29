@@ -57,6 +57,10 @@ v2 的扩展最多有三面（[02](02-architecture.md#运行时前台会话与�
 | `footnote` | 10pt regular `footnoteText` | 时刻、脚注 |
 | `mono` | 11pt 等宽 semibold `titleText` | 读数、代码 |
 | `readout` | 13pt 等宽 semibold 白 | 时间转换器读数 |
+| `metric`（宿主 ≥ 3.3.1） | 面板 18pt / 窗口 26pt semibold、等宽数字、白 | 统计卡上的大数字（代理窗口的延迟、连接数、速率） |
+
+**窗口里字号大一档**（jarvis-mac `specs/20261029-082059-proxy-window-desktop-layout` D-1，宿主 ≥ 3.3.1）：画在工作区窗口里的节点，字号与控件高乘 1.2（正文 12 → 14.5、表格 11.5 → 14，与「项目」表格同档）；工具箱面板与原地弹窗逐像素不变。`metric` 不乘，两面各一个数。
+提交时查文字档：拼错的档（不在上表里）整棵树被拒——3.3.0 及以前的宿主把它悄悄画成 `body`。
 
 所有文字走 `Font.jarvis(size:weight:)`；`mono` / `readout` 走 `.system(design: .monospaced)`——
 与内置工具一致：等宽字不跟用户挑的字体走。
@@ -71,7 +75,7 @@ v2 的扩展最多有三面（[02](02-architecture.md#运行时前台会话与�
 | --- | --- | --- | --- |
 | `stack` | `VStack` / `HStack` | `spacing`: none 0 / tight 6 / regular 10 / loose 14 | `loose` 是段与段（工具面板的 14pt），`regular` 段内，`tight` 清单行距 |
 | `scroll` | `ScrollView` + `.scrollBounceBehavior(.basedOnSize)`，内边距 16 | `Spacing.large` | **只允许在根上**；装得下时不回弹。根不是 `scroll` 时内容溢出会被裁剪并记警告 |
-| `section` | 段标题行 + 内容 | 标题 `sectionTitle`；`trailing` 10pt 等宽 `footnoteText`；`actions` 22pt 行内动作 | 标题、读数与动作**同处一行**（Base64 那条：那两行 chip 占掉的 60pt 正是两块框缺的） |
+| `section` | 段标题行 + 内容；**窗口里是一块带框的面板**（宿主 ≥ 3.3.1）：白 3% 底 / 7% 边、圆角 10、内距 16，头一行在框里，标题 14pt semibold；放在 `grid` 的一格里时吃满格子的高（一行两块面板等高） | 标题 `sectionTitle`；`trailing` 10pt 等宽 `footnoteText`；`actions` 22pt 行内动作 | 标题、读数与动作**同处一行**（Base64 那条：那两行 chip 占掉的 60pt 正是两块框缺的）。`segments` / `segment` / `segmentLabel` / `onSegment`（宿主 ≥ 3.3.1）：段标题右端（窗口里是面板头）一枚紧凑分段，2–5 项、每项 ≤ 12 字，四样要一起给——切换「这一块看哪一份」用它，不用通栏 `segmented`。面板里的段落不再套框（不出现框套框）；窗口里段标题去掉「· 大写英文」那一截读得更干净 |
 | `hairline` | `SettingsHairline` | 白 8.2% / 1pt | 通栏 |
 | `spacer` | `Spacer(minLength: 0)` | — | 只在 `stack` 里有意义 |
 
@@ -97,9 +101,10 @@ v2 的扩展最多有三面（[02](02-architecture.md#运行时前台会话与�
 | 节点 | 宿主实现 | tokens | 规则 |
 | --- | --- | --- | --- |
 | `sidebar` | 左侧一列导航（每项借「项目」左栏那一行 `ProjectSidebarRow`）+ 1pt 分隔线 + 右侧那一页 | 侧栏 176 宽、上下 10；右侧左右内距 20 | **只许做根**；`items` 2–8 项（`value` 1–40 字不重、`title` ≤ 24 字、`symbol`），`value` 必须是其中一个；`onChange` 必挂、只挂它；**恰好一个子节点**，可以是 `scroll`。窗口里以它为根时正文不受 720pt 上限、铺满整扇窗；为窗口设计——400 宽的面板里请用 `segmented` |
-| `grid` | `LazyVGrid(.adaptive(minimum:))`，一行里的子节点等高 | `minimum` 80–480 的整数（省略 160）；`spacing` 同 `stack` | 统计卡、节点卡一行放几张由宽度决定；不可点（点交给里面的 `card`） |
-| `table` | 表头 + 斑马纹行（白 3%），单行中间截断、悬停看全文、可选中 | 行高 24、表头 22、11.5pt / 表头 10.5pt bold；列宽 `narrow` 56 / `regular` 104 / `wide` 200 / `fill` 弹性，列距 10 | 1–8 列，≤ 300 行；每行 `cells` 个数 = 列数、每格 ≤ 200 字；`alignment: "trailing"` 给数字列，`mono` 用等宽字；`tint` 给整行的字着色；没有行时画 `emptyText`；**行是 props 不是节点**，不占 500 个节点的预算；不可点 |
+| `grid` | 自排的网格：列数 = min(子节点数, 一行放得下几个 `minimum`)，一行里的子节点等高，格子里的 `card` / 面板吃满格子 | `minimum` 80–480 的整数（省略 160）；`spacing` 同 `stack`（窗口里 ×1.5） | 统计卡、节点卡一行放几张由宽度决定；不可点（点交给里面的 `card`）。`weights`（宿主 ≥ 3.3.1）：2–4 个 1–4 的整数、个数 = 子节点数，一行放得下全部子节点时按比例分宽（主从两栏 2 : 3），折行时等分。`fill`：页的根是 `stack`（不滚动）时吃掉剩下的高度、最后一行撑满——配 `table.scroll` 做撑满窗口的主从两栏；一页至多一个 |
+| `table` | 表头 + 斑马纹行（白 3%），单行中间截断、悬停看全文、可选中 | 行高 24、表头 22、11.5pt / 表头 10.5pt bold；列宽 `narrow` 56 / `regular` 104 / `wide` 200 / `fill` 弹性，列距 10 | 1–8 列，≤ 300 行；每行 `cells` 个数 = 列数、每格 ≤ 200 字；`alignment: "trailing"` 给数字列，`mono` 用等宽字；`tint` 给整行的字着色；没有行时画 `emptyText`；**行是 props 不是节点**，不占 500 个节点的预算。选中（宿主 ≥ 3.3.1）：行带 `id`（1–120 字、一张表里不重复）、表挂 `onSelect` 时带 `id` 的行可点，回传它的 `id`（点已选中的那一行同样回传，取消选中由扩展决定）；`selection` 是选中那一行的 `id`，不在这一次的行里时什么都不高亮；选中行青 12% 底 / 30% 边、字青色；可点的行不可选中文字。`scroll`：表头钉住、行在表里滚、撑满被给的高度（至少 6 行）。只许挂 `onSelect` |
 | `bars` | 一排堆叠柱：下行（系统青）在下、上行（系统橙）叠在上面，按最高那一根归一 | 高 96，柱距占一格 30%，圆角 2，非零的柱至少 1.5pt；横轴标签 9.5pt、放不下时每隔几根画一个；`caption` 11pt 一行 | `labels` 1–48 个（≤ 6 字），`series` 1–2 条（`upload` / `download` 各至多一条），每条个数 = `labels`、≥ 0；`caption`、`label` ≤ 80 字；不可点、没有子节点 |
+| `header`（宿主 ≥ 3.3.1，jarvis-mac `specs/20261029-082059-proxy-window-desktop-layout` D-2） | 窗口一页的页头：左边标题与一行状态（`tint` 给状态前一颗 7pt 点，`alert` / `danger` 时状态的字也着色），右边控件按内容宽靠右，下面一条分隔线 | 标题 22pt semibold、状态 13pt；控件间距 14；页头里的 `toggle` 是紧凑一档的玻璃开关（副标题进悬停说明）、`segmented` 一律紧凑、`search` 定宽 220 | `title` 1–24 字、`subtitle` ≤ 120 字；`children` 0–6 个、只能是 `toggle` / `segmented` / `button` / `iconButton` / `search` / `chip` / `copy`；不可点。为窗口设计——面板有自己的 header，不要在面板里用 |
 | `preference` | 设置页那一行偏好控件，紧凑排版（标题与说明在上、控件在下占满宽） | 同 设置 › 扩展 | 只点名 manifest `contributes.settings.preferences` 里声明过的一项（字段叫 `preference`，线缆上原样是 `props.preference`——`key` 是节点自己的身份）；没声明的整棵树拒掉。**扩展读不到、写不到控件里的字**：`urlList` 的地址仍是用户亲手在宿主画的框里填的，白名单语义不变。`secret` 的值不进偏好变更通知，扩展要知道变没变得自己现问 `preferences.get` |
 
 ### 清单与卡片

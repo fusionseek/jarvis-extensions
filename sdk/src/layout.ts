@@ -5,7 +5,7 @@
  * 这里一个个是没有副作用的箭头函数，没用到 `layout` 的扩展打包时整块被摇掉、产物逐字节不变。
  * 与 `ui.*` 一样：只是给对象字面量加上类型推断，不做任何运行时工作。宿主在提交时逐项校验（bridge `$defs.*NodeProps`）。
  */
-import type { BarsNode, GridNode, PreferenceNode, SidebarNode, TableNode } from "./ui.js";
+import type { BarsNode, GridNode, HeaderNode, PreferenceNode, SidebarNode, TableNode } from "./ui.js";
 
 type Props<N extends { kind: string }> = Omit<N, "kind">;
 
@@ -20,4 +20,6 @@ export const layout = {
   bars: (props: Props<BarsNode>): BarsNode => ({ kind: "bars", ...props }),
   /** 宿主画的偏好控件。 */
   preference: (props: Props<PreferenceNode>): PreferenceNode => ({ kind: "preference", ...props }),
+  /** 窗口一页的页头（jarvis-mac `specs/20261029-082059-proxy-window-desktop-layout` D-2，宿主 ≥ 3.3.1）。 */
+  header: (props: Props<HeaderNode>): HeaderNode => ({ kind: "header", ...props }),
 } as const;
