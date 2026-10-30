@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "name": "输入法切换",
   "symbol": "keyboard",
-  "description": "切到哪个应用，就自动换成你给它定的输入法：写代码的地方用 ABC，聊天的地方用拼音。没写规则的应用可以不动、记住上次用的，或者换成默认输入法。规则在菜单栏图标里给此刻的应用选一下就定了；换过去的那一下，在文字光标旁闪一枚小牌子告诉你换成了什么。只在切换应用的那一刻做事，空闲不占 CPU。",
+  "description": "切到哪个应用，就自动换成你给它定的输入法：写代码的地方用 ABC，聊天的地方用拼音。无规则的应用可以不动、记住上次用的，或者换成默认输入法。规则在菜单栏图标里给此刻的应用选一下就定了；换过去的那一下，在屏幕中间偏下或悬浮球旁闪一下告诉你换成了什么。只在切换应用的那一刻做事，空闲不占 CPU。",
   "author": {
     "name": "fusionseek",
     "github": "fusionseek"
@@ -27,7 +27,7 @@
     },
     {
       "id": "hud.show",
-      "reason": "换过去的那一下，在文字光标旁闪一枚小牌子告诉你换成了什么"
+      "reason": "换过去的那一下，在屏幕中间偏下或悬浮球旁闪一下告诉你换成了什么"
     },
     {
       "id": "apps.read",
@@ -84,8 +84,8 @@
         {
           "key": "others",
           "type": "select",
-          "title": "没写规则的应用",
-          "description": "切到一个还没定规则的应用时怎么办",
+          "title": "无规则的应用",
+          "description": "切到一个没定规则的应用时怎么办",
           "default": "keep",
           "options": [
             {
@@ -106,31 +106,23 @@
           "key": "hud",
           "type": "toggle",
           "title": "切换时提示",
-          "description": "替你换了输入法时，在文字光标旁闪一下换成了什么",
+          "description": "替你换了输入法时，闪一下换成了什么",
           "default": true
         },
         {
           "key": "hudAnchor",
           "type": "select",
           "title": "提示的位置",
-          "description": "「输入框旁」读不到输入框的应用（企业微信这类）放在窗口正中，不跟着指针跑；要每次都在同一处就选「屏幕下方正中」",
-          "default": "caret",
+          "description": "「悬浮球旁」把输入法的图标放进悬浮球、名字贴在球下，停 2 秒；悬浮球展开或贴边藏起时改在屏幕中间偏下",
+          "default": "screen",
           "options": [
             {
-              "value": "caret",
-              "title": "输入框旁"
-            },
-            {
-              "value": "window",
-              "title": "当前窗口正中"
-            },
-            {
               "value": "screen",
-              "title": "屏幕下方正中（固定）"
+              "title": "屏幕中间偏下"
             },
             {
-              "value": "pointer",
-              "title": "指针旁边"
+              "value": "orb",
+              "title": "悬浮球旁（粘连闪现）"
             }
           ]
         },

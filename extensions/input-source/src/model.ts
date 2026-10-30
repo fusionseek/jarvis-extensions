@@ -2,24 +2,26 @@
  * 纯函数：规则、决定切到哪一个、显示用的短名与说明、菜单栏模型。测试直接 import 它（`test/support.mjs` 现编）。
  *
  * 宿主不认识「规则」：它只给读 / 切输入源、前台应用、提示这几样通用的东西（jarvis-mac `specs/20261030-170731-input-source-switch-p1`），
- * 哪个应用用哪个输入法、没写规则的怎么办，全在这里。
+ * 哪个应用用哪个输入法、无规则的应用怎么办，全在这里。
  */
 import type { FileHandle, InputSource, MacApp, MenuBarItem, MenuBarModel } from "@fusionseek/jarvis-extension-sdk";
 
-/** 一个应用的规则。`name` 是定规则时的应用名：列表里要画，而那个应用此刻未必开着。 */
-export type Rule =
-  | { mode: "fixed"; source: string; name: string }
-  | { mode: "remember"; name: string }
-  | { mode: "ignore"; name: string };
+/**
+ * 一个应用的规则。`name` 是定规则时的应用名：列表里要画，而那个应用此刻未必开着。
+ *
+ * 只有两种（jarvis-mac `specs/20261030-194903-input-source-cards-orb-flash` C-5）：用某个输入法、记住上次用的。
+ * 原来的「不管它」与「不写规则」合成「无规则」——没有规则，跟着「无规则的应用」那一条走；存储里留下的 `ignore` 读的时候丢掉。
+ */
+export type Rule = { mode: "fixed"; source: string; name: string } | { mode: "remember"; name: string };
 
 /** bundle id → 规则。 */
 export type Rules = Record<string, Rule>;
 
-/** 没写规则的应用怎么办。 */
+/** 无规则的应用怎么办。 */
 export type Others = "keep" | "remember" | "default";
 
-/** 提示贴在哪：输入框旁（读不到时窗口正中）/ 窗口正中 / 屏幕下方正中（固定）/ 指针旁。 */
-export type HUDAnchor = "caret" | "window" | "screen" | "pointer";
+/** 提示在哪（C-8）：屏幕中间偏下（固定）/ 悬浮球旁粘连闪现（图标进球心，球看不见时宿主退回屏幕）。 */
+export type HUDAnchor = "screen" | "orb";
 
 /** 偏好（manifest `contributes.settings`）。 */
 export interface Settings {
@@ -34,7 +36,7 @@ export interface Settings {
 export const defaultSettings: Settings = {
   others: "keep",
   hud: true,
-  hudAnchor: "caret",
+  hudAnchor: "screen",
   hudOnManual: false,
   menuBarLabel: true,
   paused: false,
@@ -52,7 +54,8 @@ export function readSettings(preferences: Record<string, unknown>): Settings {
   return {
     others: pick(preferences.others, ["keep", "remember", "default"] as const, defaultSettings.others),
     hud: flag(preferences.hud, defaultSettings.hud),
-    hudAnchor: pick(preferences.hudAnchor, ["caret", "window", "screen", "pointer"] as const, defaultSettings.hudAnchor),
+    // 原来的 caret / window / pointer 三档去掉了（仓库主人要固定的位置）：存着它们的读作默认。
+    hudAnchor: pick(preferences.hudAnchor, ["screen", "orb"] as const, defaultSettings.hudAnchor),
     hudOnManual: flag(preferences.hudOnManual, defaultSettings.hudOnManual),
     menuBarLabel: flag(preferences.menuBarLabel, defaultSettings.menuBarLabel),
     paused: flag(preferences.paused, defaultSettings.paused),
@@ -78,8 +81,8 @@ export const maximumRemembered = 300;
 /**
  * 切到这个应用时该换成哪一个；不换为 `undefined`。
  *
- * - 应用有规则：`fixed` 换成那一个；`remember` 换成上次手动用的（没记过就不动）；`ignore` 不动。
- * - 没有规则：按「没写规则的应用」——不动 / 记住上次 / 默认输入法。
+ * - 应用有规则：`fixed` 换成那一个；`remember` 换成上次手动用的（没记过就不动）。
+ * - 无规则：按「无规则的应用」——不动 / 记住上次 / 默认输入法。
  * - 目标此刻没启用（用户在系统设置里删掉了）：不动，不报错。
  *
  * @param bundleId 切到的应用。
@@ -92,9 +95,7 @@ export function resolveTarget(bundleId: string, memory: Memory, settings: Settin
   const rule = memory.rules[bundleId];
   let target: string | undefined;
   if (rule) {
-    if (rule.mode === "fixed") target = rule.source;
-    else if (rule.mode === "remember") target = memory.lastUsed[bundleId];
-    else return undefined;
+    target = rule.mode === "fixed" ? rule.source : memory.lastUsed[bundleId];
   } else if (settings.others === "remember") {
     target = memory.lastUsed[bundleId];
   } else if (settings.others === "default") {
@@ -119,7 +120,7 @@ export function remember(lastUsed: Record<string, string>, bundleId: string, sou
   return next;
 }
 
-/** 选择器里的取值：`fixed:<输入法 id>` / `remember` / `ignore` / `none`（跟着「没写规则的应用」）。 */
+/** 选择器里的取值：`fixed:<输入法 id>` / `remember` / `none`（无规则，跟着「无规则的应用」）。 */
 export type RuleChoice = string;
 
 /**
@@ -141,7 +142,6 @@ export function ruleChoice(rule: Rule | undefined): RuleChoice {
 export function ruleFromChoice(choice: RuleChoice, name: string): Rule | undefined {
   if (choice.startsWith("fixed:")) return { mode: "fixed", source: choice.slice("fixed:".length), name };
   if (choice === "remember") return { mode: "remember", name };
-  if (choice === "ignore") return { mode: "ignore", name };
   return undefined;
 }
 
@@ -170,7 +170,7 @@ const othersTitles: Record<Others, string> = {
 };
 
 /**
- * 「没写规则的应用」那一档的名字。
+ * 「无规则的应用」那一档的名字。
  * @param others 偏好。
  * @returns 名字。
  */
@@ -182,21 +182,14 @@ export function othersTitle(others: Others): string {
  * 规则的一句说明（列表行的副标题、菜单的勾）。
  * @param rule 规则。
  * @param sources 此刻启用的输入法。
- * @param settings 偏好（没写规则时说「跟着……」）。
+ * @param settings 偏好（无规则时说它跟着哪一档）。
  * @returns 说明。
  */
 export function ruleTitle(rule: Rule | undefined, sources: readonly InputSource[], settings: Settings): string {
-  if (!rule) return `没写规则 · ${othersTitle(settings.others)}`;
-  switch (rule.mode) {
-    case "fixed": {
-      const source = sources.find((candidate) => candidate.id === rule.source);
-      return source ? source.name : "那个输入法已经停用了";
-    }
-    case "remember":
-      return "记住上次用的";
-    case "ignore":
-      return "不管它";
-  }
+  if (!rule) return `无规则 · ${othersTitle(settings.others)}`;
+  if (rule.mode === "remember") return "记住上次用的";
+  const source = sources.find((candidate) => candidate.id === rule.source);
+  return source ? source.name : "那个输入法已经停用了";
 }
 
 /**
@@ -237,7 +230,7 @@ export function fixedItemID(index: number): string {
  */
 export function choiceFromMenuItem(itemId: string, sources: readonly InputSource[]): RuleChoice | "pause" | undefined {
   if (itemId === "pause") return "pause";
-  if (itemId === "remember" || itemId === "ignore" || itemId === "none") return itemId;
+  if (itemId === "remember" || itemId === "none") return itemId;
   const match = /^fixed:(\d+)$/.exec(itemId);
   if (!match) return undefined;
   const source = sources[Number(match[1])];
@@ -261,12 +254,11 @@ export function menuModel(state: MenuState): MenuBarModel {
     });
     items.push(
       { kind: "item", id: "remember", title: "记住上次用的", checked: choice === "remember" },
-      { kind: "item", id: "ignore", title: "不管它", checked: choice === "ignore" },
       {
         kind: "item",
         id: "none",
-        title: "不写规则",
-        subtitle: clip(`跟着「没写规则的应用」：${othersTitle(state.settings.others)}`, 80),
+        title: "无规则",
+        subtitle: clip(`跟着「无规则的应用」：${othersTitle(state.settings.others)}`, 80),
         checked: choice === "none",
       },
       { kind: "separator" },
@@ -291,7 +283,7 @@ export function menuModel(state: MenuState): MenuBarModel {
 // MARK: - 第二轮：按输入法分组、自己加应用、推荐（jarvis-mac `specs/20261030-182223-input-source-rules-ux`）
 
 /**
- * 一个选择的名字：「用 ABC」「记住上次用的」「不管它」「不写规则」。
+ * 一个选择的名字：「用 ABC」「记住上次用的」「无规则」。
  * @param choice 选择器的值。
  * @param sources 此刻启用的输入法。
  * @returns 名字。
@@ -303,8 +295,7 @@ export function choiceTitle(choice: RuleChoice, sources: readonly InputSource[])
     return source ? `用 ${source.name}` : "用一个已停用的输入法";
   }
   if (choice === "remember") return "记住上次用的";
-  if (choice === "ignore") return "不管它";
-  return "不写规则";
+  return "无规则";
 }
 
 /** 一枚一点即定的选项。 */
@@ -319,12 +310,11 @@ export interface ChoiceChip {
 }
 
 /**
- * 「此刻」与「换成」那一排：每个输入法一枚（带它的图标），再加记住上次、不管它；`withNone` 时加「不写规则」。
+ * 「此刻」与「换成」那一排：每个输入法一枚（带它的图标），再加记住上次、无规则——两个输入法时一行四枚（C-5）。
  * @param sources 此刻启用的输入法。
- * @param withNone 要不要「不写规则」。
  * @returns 选项。
  */
-export function choiceChips(sources: readonly InputSource[], withNone: boolean): ChoiceChip[] {
+export function choiceChips(sources: readonly InputSource[]): ChoiceChip[] {
   const chips: ChoiceChip[] = sources.map((source) => ({
     value: `fixed:${source.id}`,
     title: source.name,
@@ -334,15 +324,14 @@ export function choiceChips(sources: readonly InputSource[], withNone: boolean):
   }));
   chips.push(
     { value: "remember", title: "记住上次", help: "换成你上次在这个应用里手动用的那个", symbol: "arrow.uturn.backward" },
-    { value: "ignore", title: "不管它", help: "切到这个应用时不换输入法", symbol: "minus.circle" },
+    { value: "none", title: "无规则", help: "不给它定规则，跟着「无规则的应用」那一条走（默认不动）", symbol: "circle.dashed" },
   );
-  if (withNone) chips.push({ value: "none", title: "不写规则", help: "跟着「没写规则的应用」那一条走", symbol: "circle.dashed" });
   return chips;
 }
 
 /** 一组规则。 */
 export interface RuleGroup {
-  /** 这一组的选择（`fixed:<id>` / `remember` / `ignore`），停用的那一组是 `stale`。 */
+  /** 这一组的选择（`fixed:<id>` / `remember`），停用的那一组是 `stale`。 */
   key: string;
   title: string;
   source?: InputSource;
@@ -353,10 +342,10 @@ export interface RuleGroup {
 
 /**
  * 按输入法分组：每个启用的输入法一组（空的也给：用户第一眼就看得到「我可以给 ABC 加应用」），
- * 记住上次、不管它两组有内容才给；指向已停用输入法的规则单独一组。组内按应用名排。
+ * 记住上次那一组有内容才给；指向已停用输入法的规则单独一组。组内按应用名排。
  * @param rules 规则。
  * @param sources 此刻启用的输入法。
- * @returns 分组，顺序同系统输入法菜单，然后是记住上次、不管它、已停用。
+ * @returns 分组，顺序同系统输入法菜单，然后是记住上次、已停用。
  */
 export function groupRules(rules: Rules, sources: readonly InputSource[]): RuleGroup[] {
   const byName = (a: { rule: Rule; bundleId: string }, b: { rule: Rule; bundleId: string }) =>
@@ -372,8 +361,6 @@ export function groupRules(rules: Rules, sources: readonly InputSource[]): RuleG
   }));
   const remembered = entries.filter((entry) => entry.rule.mode === "remember").sort(byName);
   if (remembered.length > 0) groups.push({ key: "remember", title: "记住上次用的", entries: remembered, addable: true });
-  const ignored = entries.filter((entry) => entry.rule.mode === "ignore").sort(byName);
-  if (ignored.length > 0) groups.push({ key: "ignore", title: "不管它", entries: ignored, addable: true });
   const stale = entries.filter((entry) => entry.rule.mode === "fixed" && !enabled.has(entry.rule.source)).sort(byName);
   if (stale.length > 0) groups.push({ key: "stale", title: "输入法已停用", entries: stale, addable: false });
   return groups;

@@ -348,6 +348,11 @@ export interface ListNode extends Keyed {
 export interface CardNode extends Keyed {
   kind: "card";
   tint?: Tint;
+  /**
+   * 沿左缘一道 3pt 的 `tint` 色条（宿主 ≥ 3.3.2，jarvis-mac `specs/20261030-194903-input-source-cards-orb-flash` C-2）：
+   * 与工具箱里时间转换器读数行同一种画法；有色条时底与描边保持中性，不再按 `tint` 染底。同一种卡按类别分开时用它。
+   */
+  stripe?: boolean;
   children: UINode[];
   onPress?: Handler;
 }

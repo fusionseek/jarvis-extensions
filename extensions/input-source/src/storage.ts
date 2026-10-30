@@ -16,11 +16,12 @@ function isRule(value: unknown): value is Rule {
   const rule = value as Record<string, unknown>;
   if (typeof rule.name !== "string") return false;
   if (rule.mode === "fixed") return typeof rule.source === "string" && rule.source.length > 0;
-  return rule.mode === "remember" || rule.mode === "ignore";
+  // 上一版的「不管它」（`ignore`）合进了「无规则」（jarvis-mac `specs/20261030-194903-input-source-cards-orb-flash` C-5）：读到就丢掉，等于没有规则。
+  return rule.mode === "remember";
 }
 
 /**
- * 规则表；坏掉的条目丢掉。
+ * 规则表；坏掉的条目、上一版的 `ignore` 丢掉。
  * @returns 规则。
  */
 export async function readRules(): Promise<Rules> {

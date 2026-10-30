@@ -9,23 +9,22 @@ const model = await loadModel();
 const enabled = [ABC, PINYIN];
 const settings = (overrides = {}) => ({ ...model.defaultSettings, ...overrides });
 
-test("resolveTarget：固定规则、记住上次、不管它", () => {
+test("resolveTarget：固定规则、记住上次", () => {
   const memory = {
     rules: {
       "com.apple.dt.Xcode": { mode: "fixed", source: ABC, name: "Xcode" },
       "com.tencent.xinWeChat": { mode: "remember", name: "微信" },
-      "com.apple.Terminal": { mode: "ignore", name: "终端" },
     },
     lastUsed: { "com.tencent.xinWeChat": PINYIN, "com.apple.Terminal": PINYIN },
   };
   assert.equal(model.resolveTarget("com.apple.dt.Xcode", memory, settings(), enabled), ABC);
   assert.equal(model.resolveTarget("com.tencent.xinWeChat", memory, settings(), enabled), PINYIN);
-  assert.equal(model.resolveTarget("com.apple.Terminal", memory, settings({ others: "remember" }), enabled), undefined, "不管它就是不管，哪怕其余应用是记住上次");
+  assert.equal(model.resolveTarget("com.apple.Terminal", memory, settings(), enabled), undefined, "无规则 + 默认「不动」：不动");
   const fresh = { rules: { "com.tencent.xinWeChat": { mode: "remember", name: "微信" } }, lastUsed: {} };
   assert.equal(model.resolveTarget("com.tencent.xinWeChat", fresh, settings(), enabled), undefined, "记住上次而从没记过：不动");
 });
 
-test("resolveTarget：没写规则的应用按偏好", () => {
+test("resolveTarget：无规则的应用按偏好", () => {
   const memory = { rules: {}, lastUsed: { "com.apple.Notes": PINYIN }, fallbackSource: ABC };
   assert.equal(model.resolveTarget("com.apple.Notes", memory, settings(), enabled), undefined, "默认不动");
   assert.equal(model.resolveTarget("com.apple.Notes", memory, settings({ others: "remember" }), enabled), PINYIN);
@@ -49,20 +48,22 @@ test("remember：同一个不重写、最近的放最后、超过上限丢最旧
   assert.ok(!("app0" in many), "最旧的先丢");
 });
 
-test("规则与选择器的值互转；不写规则 = 删掉", () => {
+test("规则与选择器的值互转；无规则 = 删掉；上一版的「不管它」不再认", () => {
   assert.equal(model.ruleChoice(undefined), "none");
   assert.equal(model.ruleChoice({ mode: "fixed", source: ABC, name: "Xcode" }), `fixed:${ABC}`);
   assert.deepEqual(model.ruleFromChoice(`fixed:${PINYIN}`, "微信"), { mode: "fixed", source: PINYIN, name: "微信" });
   assert.equal(model.ruleFromChoice("none", "微信"), undefined);
-  const rules = model.setRule({}, "x", { mode: "ignore", name: "X" });
+  assert.equal(model.ruleFromChoice("ignore", "微信"), undefined, "「不管它」合进了无规则");
+  assert.equal(model.choiceFromMenuItem("ignore", sources), undefined, "菜单里也没有了");
+  const rules = model.setRule({}, "x", { mode: "remember", name: "X" });
   assert.deepEqual(model.setRule(rules, "x", undefined), {});
 });
 
 test("setRule：到上限就不再加新的，改旧的照常", () => {
   let rules = {};
-  for (let index = 0; index < model.maximumRules; index += 1) rules = model.setRule(rules, `app${index}`, { mode: "ignore", name: `${index}` });
-  assert.equal(model.setRule(rules, "new", { mode: "ignore", name: "new" }), rules);
-  assert.equal(model.setRule(rules, "app1", { mode: "remember", name: "1" }).app1.mode, "remember");
+  for (let index = 0; index < model.maximumRules; index += 1) rules = model.setRule(rules, `app${index}`, { mode: "remember", name: `${index}` });
+  assert.equal(model.setRule(rules, "new", { mode: "remember", name: "new" }), rules);
+  assert.equal(model.setRule(rules, "app1", { mode: "fixed", source: ABC, name: "1" }).app1.mode, "fixed");
 });
 
 test("shortLabel：中文「中」、繁体「繁」、日文「あ」，其余取首字母", () => {
@@ -89,6 +90,10 @@ test("菜单：给此刻的应用单选一个；菜单项按序号引用输入�
   assert.equal(model.choiceFromMenuItem("fixed:1", sources), `fixed:${PINYIN}`);
   assert.equal(model.choiceFromMenuItem("fixed:9", sources), undefined);
   assert.equal(model.choiceFromMenuItem("pause", sources), "pause");
+  const ids = menu.items.filter((item) => item.kind === "item").map((item) => item.id);
+  assert.deepEqual(ids, ["fixed:0", "fixed:1", "remember", "none", "pause"], "「不管它」「不写规则」合成一项「无规则」");
+  assert.equal(menu.items.find((item) => item.id === "none").title, "无规则");
+  assert.equal(menu.items.find((item) => item.id === "none").subtitle, "跟着「无规则的应用」：不动");
 });
 
 test("菜单：暂停时图标换一枚、短字可以关掉；没有前台应用时只剩暂停", () => {
@@ -99,25 +104,27 @@ test("菜单：暂停时图标换一枚、短字可以关掉；没有前台应�
   assert.equal(menu.items[0].checked, true);
 });
 
-test("readSettings：不认识的值退回默认", () => {
-  assert.deepEqual(model.readSettings({ others: "weird", hud: "yes", hudAnchor: "screen" }), { ...model.defaultSettings, hudAnchor: "screen" });
+test("readSettings：不认识的值退回默认；提示位置只剩屏幕与悬浮球两档，旧的三档读作默认", () => {
+  assert.equal(model.defaultSettings.hudAnchor, "screen");
+  assert.deepEqual(model.readSettings({ others: "weird", hud: "yes", hudAnchor: "orb" }), { ...model.defaultSettings, hudAnchor: "orb" });
+  for (const old of ["caret", "window", "pointer"]) assert.equal(model.readSettings({ hudAnchor: old }).hudAnchor, "screen", old);
 });
 
 const day = 24 * 60 * 60 * 1000;
 const now = Date.UTC(2026, 9, 30);
 const app = (name, bundleId, category, daysAgo) => ({ id: `/Applications/${name}.app`, name, bundleId, category, lastUsedAt: daysAgo === null ? null : now - daysAgo * day });
 
-test("groupRules：每个输入法一组（空的也给）、有内容才给记住上次 / 不管它、停用的单独一组", () => {
+test("groupRules：每个输入法一组（空的也给）、有内容才给记住上次、停用的单独一组", () => {
   const groups = model.groupRules(
     {
       b: { mode: "fixed", source: ABC, name: "终端" },
       a: { mode: "fixed", source: ABC, name: "Xcode" },
-      c: { mode: "ignore", name: "游戏" },
+      c: { mode: "remember", name: "游戏" },
       d: { mode: "fixed", source: "com.apple.keylayout.US", name: "旧的" },
     },
     sources,
   );
-  assert.deepEqual(groups.map((group) => group.key), [`fixed:${ABC}`, `fixed:${PINYIN}`, "ignore", "stale"]);
+  assert.deepEqual(groups.map((group) => group.key), [`fixed:${ABC}`, `fixed:${PINYIN}`, "remember", "stale"]);
   assert.deepEqual(groups[0].entries.map((entry) => entry.rule.name), ["Xcode", "终端"].sort((a, b) => a.localeCompare(b, "zh-Hans")), "组内按应用名、中文排序规则");
   assert.equal(groups[1].entries.length, 0);
   assert.equal(groups[3].addable, false);
@@ -148,7 +155,7 @@ test("suggestions：开发工具 → 键盘布局、社交 → 中文；有规�
     app("很久没用", "com.example.old", "public.app-category.developer-tools", 45),
     app("备忘录", "com.apple.Notes", null, 0),
   ];
-  const list = model.suggestions(apps, { "com.apple.Terminal": { mode: "ignore", name: "终端" } }, sources, now);
+  const list = model.suggestions(apps, { "com.apple.Terminal": { mode: "remember", name: "终端" } }, sources, now);
   assert.deepEqual(list, [
     { bundleId: "com.tencent.xinWeChat", name: "微信", choice: `fixed:${PINYIN}` },
     { bundleId: "com.apple.dt.Xcode", name: "Xcode", choice: `fixed:${ABC}` },
@@ -165,12 +172,12 @@ test("lastUsedTitle 与 choiceTitle", () => {
   assert.equal(model.lastUsedTitle(now - 65 * day, now), "2 个月前用过");
   assert.equal(model.choiceTitle(`fixed:${ABC}`, sources), "用 ABC");
   assert.equal(model.choiceTitle("fixed:gone", sources), "用一个已停用的输入法");
-  assert.equal(model.choiceTitle("none", sources), "不写规则");
+  assert.equal(model.choiceTitle("none", sources), "无规则");
 });
 
-test("choiceChips：每个输入法一枚（带图标），加记住上次、不管它；此刻那一排多一枚「不写规则」", () => {
-  const chips = model.choiceChips(sources, true);
-  assert.deepEqual(chips.map((chip) => chip.value), [`fixed:${ABC}`, `fixed:${PINYIN}`, "remember", "ignore", "none"]);
+test("choiceChips：每个输入法一枚（带图标），加记住上次、无规则——两个输入法时四枚", () => {
+  const chips = model.choiceChips(sources);
+  assert.deepEqual(chips.map((chip) => chip.value), [`fixed:${ABC}`, `fixed:${PINYIN}`, "remember", "none"]);
+  assert.deepEqual(chips.map((chip) => chip.title), ["ABC", "微信输入法", "记住上次", "无规则"]);
   assert.equal(chips[1].image.id, "icon-pinyin");
-  assert.equal(model.choiceChips(sources, false).length, 4);
 });

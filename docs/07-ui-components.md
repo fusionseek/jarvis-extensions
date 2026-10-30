@@ -114,7 +114,7 @@ v2 的扩展最多有三面（[02](02-architecture.md#运行时前台会话与�
 | --- | --- | --- | --- |
 | `row` | 工具箱行 / 粘贴板行的骨架：图标井 + 标题 + 说明 + 记号 / 动作 | `Toolbox.Row`（圆角 12、12×10 内距、行距 6）、`IconWell`（32 / 圆角 8 / 白 4% 底 8% 边） | `image`（SDK 2.4）= 行首图标换成宿主颁发的一张图（例如应用图标），画在同一口 32pt 井里，**有它就不画 `symbol`**；常态**完全透明**（一列清单不是一叠卡片）；`selected` 换青 6% 底 + 青 25% 边 + `0 4 12` 青 10% 外发光、井点亮、记号换青点；`onPress` 存在才可点、才挂悬停光；`hoverCard` 指针停 320ms 才出、前半屏向下挂后半屏向上挂、Reduce Motion 直接出现 |
 | `list` | `ScrollView` + `LazyVStack` | 行距 `tight` | 子节点必须带 `key`；`onLoadMore` 存在时底部画 22pt 定高哨兵（转圈 + 10pt 文字；Reduce Motion 只留文字），滚到它就调用；`emptyState` 在没有子节点时画（图标、标题、说明都画；宿主 3.3.0 及以前只画出默认图标） |
-| `card` | `FloatingPanelCardBackground(tint:)` | 圆角 12、面板底 55% / 白 8% 边；带 `tint` 时 tint 10% 底 / 16% 边 | 带 `onPress` 时整卡可点 + 悬停光；不可点时不亮 |
+| `card` | `FloatingPanelCardBackground(tint:)` | 圆角 12、面板底 55% / 白 8% 边；带 `tint` 时 tint 10% 底 / 16% 边；`stripe`（宿主 ≥ 3.3.2）：左缘 3pt `tint` 色条、底与边回到中性（白 3% / 8%），与时间转换器读数行同一种 | 带 `onPress` 时整卡可点 + 悬停光；不可点时不亮。同一种卡按类别分开（每组一种色条）用 `stripe`，别用 tint 染底 |
 | `note` | 语义说明卡（数据导出「访问受限」、Base64 报错那一类） | 同 `card` 带 tint；符号 15pt、标题 13pt semibold、正文 12pt、动作 22pt 行内 | 一屏解释，不是一句红字：拿不到什么、为什么、还剩哪几条路 |
 | `empty` | `Toolbox.Empty` 那一屏 | 井 56 / glyph 20 / 标题 13 semibold / 提示 11 宽 260 / 按钮 28 高圆角 8 | 三种"空"各说各的话（没内容 / 没权限 / 没连上） |
 
@@ -127,7 +127,7 @@ v2 的扩展最多有三面（[02](02-architecture.md#运行时前台会话与�
 | `search` | 工具箱搜索框 | `Toolbox.Search`：32 高 / 圆角 10 / 12.5pt | 聚焦青边 + 轻辉光；有内容时右端清除钮，空时 `⌘F` 键帽；`Esc` 只在有内容时清空，否则放行给面板收起 |
 | `segmented` | 分段 | `compact`: `TimeConverter.Segmented`（白 6% 底 / 圆角 6 / 选中青 20% / 9pt bold）；`full`: `HashGenerator.Tab`（通栏两段各 26 高 / 圆角 8 / 选中青 7.8% 底 + 青边） | `compact` 挤在段标题右端（ms/s），`full` 是两块内容并列的入口（文本 / 文件）；档数 ≤ 5 |
 | `toggle` | `SettingsGlassToggleStyle` | 56×30 玻璃开关 | 命中区是整颗轨道，不含标签；`disabled` 整体 45% 不隐藏 |
-| `chip` | 紧凑 chip | `Base64.Options` 紧凑 chip：7×3 内距、10pt 等宽 bold；选中 `tint` 20% 底 + `tint` 边，未选白 3% 底 / 白 8% 边 | 文案压到最短，完整含义放 `help`（tooltip + VoiceOver）。`image`（SDK 2.12）：宿主颁的图，画在标题前、高 14，句柄失效时退回 `symbol` |
+| `chip` | 紧凑 chip | `Base64.Options` 紧凑 chip：7×3 内距、10pt 等宽 bold；选中 `tint` 20% 底 + `tint` 边，未选白 3% 底 / 白 8% 边 | 文案压到最短，完整含义放 `help`（tooltip + VoiceOver）。`image`（SDK 2.12）：宿主颁的图，画在标题前、高 14，句柄失效时退回 `symbol`。直接放在 `grid` 的一格里时（宿主 ≥ 3.3.2）撑满格子、内容居中、标题单行：一排单选用 `grid` 排成等宽的块 |
 | `picker` | 下拉 | `TimeConverter.ZonePicker`：宽 320 / 圆角 10 / 选项行 27pt / 选中青 12% 底；`searchable` 时顶部搜索框；列表最高 174pt 后滚；`layout: "compact"` 时触发器是一枚「值 ▾」chip（白 5% 底 / 白 10% 边 / 圆角 8 / 12pt semibold），点开同一份下拉 | 选项 > 8 自动带搜索；勾在未选中时留位不隐藏；`compact` 用在段标题右端或「标签 + 值」的一行里（原地弹窗的语言行） |
 | `dropzone` | `HashGenerator.DropZone` | 高 88 / 圆角 10 / 青 30% 虚线 `[4,3]`；悬停底青 5% + 青 85% 虚线 1.5pt + 12pt 外发光 | 点也能选文件（键盘用户进得来）；文件夹在落下那一刻拒绝；多拖几个只算前 N 个并在屏幕上说出来 |
 

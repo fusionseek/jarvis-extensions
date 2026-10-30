@@ -82,7 +82,7 @@ test("菜单里给 Xcode 选 ABC：存规则、当场换过去、闪一枚带图
   await host.menuBarEvent("select", { itemId: "fixed:0", granted, preferences });
   assert.deepEqual(storage.get("rules"), { "com.apple.dt.Xcode": { mode: "fixed", source: ABC, name: "Xcode" } });
   assert.deepEqual(selects, [ABC]);
-  assert.deepEqual(huds.at(-1), { text: "ABC", anchor: "caret" });
+  assert.deepEqual(huds.at(-1), { text: "ABC", anchor: "screen" }, "默认屏幕中间偏下，宿主默认停留");
   await selected(ABC, true);
 });
 
@@ -149,20 +149,46 @@ const openPage = async () => {
   await host.settle();
 };
 
-test("工具箱页·此刻：一排一点即定，选中的那枚点亮；点「不管它」写进存储", async () => {
+test("工具箱页·此刻：一张青色条的卡，一行四枚（两个输入法 + 记住上次 + 无规则）等宽排开；点「无规则」删掉规则", async () => {
   frontmost = { bundleId: "com.apple.dt.Xcode", name: "Xcode", pid: 11 };
   await openPage();
-  const selected = host.find((node) => node.kind === "chip" && node.key === `now:fixed:${ABC}`);
-  assert.equal(selected.props.selected, true);
-  assert.ok(host.find((node) => node.kind === "chip" && node.key === "now:none"), "此刻那一排有「不写规则」");
-  await host.fire(host.find((node) => node.kind === "chip" && node.key === "now:ignore"), "press");
-  assert.equal(storage.get("rules")["com.apple.dt.Xcode"].mode, "ignore");
+  const nowCard = host.find((node) => node.kind === "card" && node.key === "card:now");
+  assert.equal(nowCard.props.tint, "accent");
+  assert.equal(nowCard.props.stripe, true);
+  const grid = host.find((node) => node.kind === "grid" && node.key === "now:choices");
+  assert.deepEqual(
+    grid.children.map((chip) => chip.key),
+    [`now:fixed:${ABC}`, `now:fixed:${PINYIN}`, "now:remember", "now:none"],
+    "合并之后四枚，352 宽的卡里一行放得下（最小列宽 80）",
+  );
+  assert.equal(grid.props.minimum, 80);
+  assert.equal(host.find((node) => node.kind === "chip" && node.key === `now:fixed:${ABC}`).props.selected, true);
+  assert.equal(host.find((node) => node.kind === "chip" && node.key === "now:none").props.title, "无规则");
+  await host.fire(host.find((node) => node.kind === "chip" && node.key === "now:none"), "press");
+  assert.ok(!("com.apple.dt.Xcode" in storage.get("rules")), "无规则 = 没有规则");
+  assert.equal(host.find((node) => node.kind === "row" && node.key === "now:app").props.subtitle, "无规则 · 记住上次用的", "说它此刻跟着哪一档");
+  await host.fire(host.find((node) => node.kind === "chip" && node.key === `now:fixed:${ABC}`), "press");
 });
 
-test("工具箱页·分组：每个输入法一组（空的也画），有内容才画「不管它」；有「没写规则的应用」那一项偏好", async () => {
-  assert.ok(host.find((node) => node.kind === "section" && node.key === `group:fixed:${ABC}`));
-  assert.ok(host.find((node) => node.kind === "section" && node.key === `group:fixed:${PINYIN}`));
-  assert.ok(host.find((node) => node.kind === "section" && node.key === "group:ignore"));
+test("工具箱页·此刻：刷新重读前台应用与此刻输入法", async () => {
+  frontmost = { bundleId: "com.tencent.xinWeChat", name: "微信", pid: 30 };
+  current = PINYIN;
+  await press(host.find((node) => node.kind === "section" && node.key === "now"));
+  assert.equal(host.find((node) => node.kind === "row" && node.key === "now:app").props.title, "微信");
+  assert.equal(host.find((node) => node.kind === "section" && node.key === "now").props.trailing, "正在用 微信输入法");
+  frontmost = { bundleId: "com.apple.dt.Xcode", name: "Xcode", pid: 11 };
+  await press(host.find((node) => node.kind === "section" && node.key === "now"));
+});
+
+test("工具箱页·分组：每个输入法一张卡（空的也画），各一种色条；没有「不管它」；最后一张「无规则的应用」不带色条", async () => {
+  const abc = host.find((node) => node.kind === "card" && node.key === `card:group:fixed:${ABC}`);
+  const pinyin = host.find((node) => node.kind === "card" && node.key === `card:group:fixed:${PINYIN}`);
+  assert.deepEqual([abc.props.tint, pinyin.props.tint], ["blue", "violet"], "按系统输入法菜单的顺序轮流取");
+  assert.equal(abc.props.stripe, true);
+  assert.equal(host.find((node) => node.key === "group:ignore"), undefined);
+  const others = host.find((node) => node.kind === "card" && node.key === "card:others");
+  assert.equal(others.props.stripe, undefined);
+  assert.equal(host.find((node) => node.kind === "section" && node.key === "others").props.title, "无规则的应用 · OTHERS");
   assert.equal(host.find((node) => node.kind === "preference" && node.key === "others").props.preference, "others");
 });
 
@@ -210,4 +236,32 @@ test("工具箱页·换组与删除：点一行展开「换成」，一点挪组
   assert.equal(storage.get("rules")["com.bytedance.lark"].source, PINYIN);
   await press(host.find((node) => node.kind === "row" && node.key === "rule:com.bytedance.lark"));
   assert.ok(!("com.bytedance.lark" in storage.get("rules")));
+});
+
+test("上一版存下的「不管它」读出来当作无规则：页面上不出现、也不再挡住「无规则的应用」那一档", async () => {
+  storage.set("rules", { ...storage.get("rules"), "com.valvesoftware.steam": { mode: "ignore", name: "Steam" } });
+  await openPage();
+  assert.equal(host.find((node) => node.kind === "row" && node.key === "rule:com.valvesoftware.steam"), undefined);
+  // 「无规则的应用」此刻是「记住上次」：Steam 不再被「不管它」挡住，按记下的换。
+  await front("com.valvesoftware.steam", "Steam");
+  await selected(ABC, false);
+  await front("com.tencent.xinWeChat", "微信");
+  await front("com.valvesoftware.steam", "Steam");
+  assert.equal(selects.at(-1), ABC);
+});
+
+test("提示位置选「悬浮球旁」：锚点 orb、停 2 秒，图标照给（宿主把它放进球心）", async () => {
+  preferences = { ...preferences, hudAnchor: "orb" };
+  host.dispatch({ type: "preferencesChanged", changes: { hudAnchor: "orb" } });
+  // 页面与后台各订了一份偏好：宿主对每一份都推。
+  const tokens = host.invocations.filter((entry) => entry.namespace === "preferences" && entry.method === "observe").map((entry) => entry.params.token);
+  for (const token of new Set(tokens)) host.emit(token, { hudAnchor: "orb" });
+  await host.settle();
+  await selected(PINYIN, false);
+  await front("com.apple.dt.Xcode", "Xcode");
+  assert.equal(selects.at(-1), ABC);
+  const hud = huds.at(-1);
+  assert.equal(hud.anchor, "orb");
+  assert.equal(hud.duration, 2000);
+  assert.equal(hud.text, "ABC");
 });

@@ -24,6 +24,8 @@ import { readFallback, readLastUsed, readRules, storageKeys } from "./storage.js
 
 /** 提示一行至多几个字（宿主 `hud.show` 的上限）。 */
 const HUD_LIMIT = 24;
+/** 悬浮球那一档停多久（jarvis-mac `specs/20261030-194903-input-source-cards-orb-flash` C-8，仓库主人：「停留 2 秒后，恢复原样」）；屏幕那一档用宿主默认的 1.2 秒。 */
+const ORB_DURATION_MS = 2000;
 /**
  * 切完多久再核对一次（jarvis-mac `specs/20261030-190534-input-source-walkthrough-fixes` F-1）。
  * 300 ms 盖得住应用刚激活时自己（或输入法自己）把输入源改回去的那一下，又短到用户还没开始打字。
@@ -294,7 +296,8 @@ export class Controller {
     if (!this.granted.includes("hud.show")) return;
     const clipped = [...text].slice(0, HUD_LIMIT).join("");
     const art = source?.icon ? { image: source.icon } : symbol ? { symbol } : {};
-    await jarvis.hud.show({ text: clipped, anchor: this.settings.hudAnchor, ...art }).catch(() => undefined);
+    const anchor = this.settings.hudAnchor;
+    await jarvis.hud.show({ text: clipped, anchor, ...(anchor === "orb" ? { duration: ORB_DURATION_MS } : {}), ...art }).catch(() => undefined);
   }
 
   // MARK: - 存储

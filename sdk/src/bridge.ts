@@ -387,9 +387,12 @@ export interface HUDOptions {
   image?: FileHandle;
   /**
    * 贴在哪：`caret` 前台应用的文字插入点下方，读不到插入点时贴着输入框，输入框也读不到（没有辅助功能权限、企业微信这类不报的应用）时放在前台窗口正中——
-   * 不退回指针；`window`（宿主 ≥ 3.3.2）前台应用最前面那扇窗的正中；`pointer` 指针右下；`screen` 指针所在那块屏的下方正中。位置由宿主读，不交给扩展。
+   * 不退回指针；`window`（宿主 ≥ 3.3.2）前台应用最前面那扇窗的正中；`pointer` 指针右下；
+   * `screen` 屏幕中间偏下（牌子中心在可见区自下往上 30%；前台窗口所在的屏，读不到用指针所在的屏）；
+   * `orb`（宿主 ≥ 3.3.2，jarvis-mac `specs/20261030-194903-input-source-cards-orb-flash` C-6）悬浮球：`symbol` / `image` 进球心，`text` 是一枚连着颈贴在球下的 chip，
+   * 到时一起缩回、球心复原；球展开、贴边藏起、被藏掉时退回 `screen`。位置由宿主读，不交给扩展。
    */
-  anchor: "caret" | "window" | "pointer" | "screen";
+  anchor: "caret" | "window" | "pointer" | "screen" | "orb";
   /** 400–3000 ms，默认 1200。 */
   duration?: number;
 }

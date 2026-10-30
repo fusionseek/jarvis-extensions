@@ -834,7 +834,7 @@
   var defaultSettings = {
     others: "keep",
     hud: true,
-    hudAnchor: "caret",
+    hudAnchor: "screen",
     hudOnManual: false,
     menuBarLabel: true,
     paused: false
@@ -845,7 +845,8 @@
     return {
       others: pick(preferences.others, ["keep", "remember", "default"], defaultSettings.others),
       hud: flag(preferences.hud, defaultSettings.hud),
-      hudAnchor: pick(preferences.hudAnchor, ["caret", "window", "screen", "pointer"], defaultSettings.hudAnchor),
+      // 原来的 caret / window / pointer 三档去掉了（仓库主人要固定的位置）：存着它们的读作默认。
+      hudAnchor: pick(preferences.hudAnchor, ["screen", "orb"], defaultSettings.hudAnchor),
       hudOnManual: flag(preferences.hudOnManual, defaultSettings.hudOnManual),
       menuBarLabel: flag(preferences.menuBarLabel, defaultSettings.menuBarLabel),
       paused: flag(preferences.paused, defaultSettings.paused)
@@ -858,9 +859,7 @@
     const rule = memory.rules[bundleId];
     let target;
     if (rule) {
-      if (rule.mode === "fixed") target = rule.source;
-      else if (rule.mode === "remember") target = memory.lastUsed[bundleId];
-      else return void 0;
+      target = rule.mode === "fixed" ? rule.source : memory.lastUsed[bundleId];
     } else if (settings.others === "remember") {
       target = memory.lastUsed[bundleId];
     } else if (settings.others === "default") {
@@ -883,7 +882,6 @@
   function ruleFromChoice(choice, name) {
     if (choice.startsWith("fixed:")) return { mode: "fixed", source: choice.slice("fixed:".length), name };
     if (choice === "remember") return { mode: "remember", name };
-    if (choice === "ignore") return { mode: "ignore", name };
     return void 0;
   }
   function setRule(rules, bundleId, rule) {
@@ -918,7 +916,7 @@
   }
   function choiceFromMenuItem(itemId, sources) {
     if (itemId === "pause") return "pause";
-    if (itemId === "remember" || itemId === "ignore" || itemId === "none") return itemId;
+    if (itemId === "remember" || itemId === "none") return itemId;
     const match = /^fixed:(\d+)$/.exec(itemId);
     if (!match) return void 0;
     const source = sources[Number(match[1])];
@@ -936,12 +934,11 @@
       });
       items.push(
         { kind: "item", id: "remember", title: "\u8BB0\u4F4F\u4E0A\u6B21\u7528\u7684", checked: choice === "remember" },
-        { kind: "item", id: "ignore", title: "\u4E0D\u7BA1\u5B83", checked: choice === "ignore" },
         {
           kind: "item",
           id: "none",
-          title: "\u4E0D\u5199\u89C4\u5219",
-          subtitle: clip(`\u8DDF\u7740\u300C\u6CA1\u5199\u89C4\u5219\u7684\u5E94\u7528\u300D\uFF1A${othersTitle(state.settings.others)}`, 80),
+          title: "\u65E0\u89C4\u5219",
+          subtitle: clip(`\u8DDF\u7740\u300C\u65E0\u89C4\u5219\u7684\u5E94\u7528\u300D\uFF1A${othersTitle(state.settings.others)}`, 80),
           checked: choice === "none"
         },
         { kind: "separator" }
@@ -969,10 +966,9 @@
       return source ? `\u7528 ${source.name}` : "\u7528\u4E00\u4E2A\u5DF2\u505C\u7528\u7684\u8F93\u5165\u6CD5";
     }
     if (choice === "remember") return "\u8BB0\u4F4F\u4E0A\u6B21\u7528\u7684";
-    if (choice === "ignore") return "\u4E0D\u7BA1\u5B83";
-    return "\u4E0D\u5199\u89C4\u5219";
+    return "\u65E0\u89C4\u5219";
   }
-  function choiceChips(sources, withNone) {
+  function choiceChips(sources) {
     const chips = sources.map((source) => ({
       value: `fixed:${source.id}`,
       title: source.name,
@@ -982,9 +978,8 @@
     }));
     chips.push(
       { value: "remember", title: "\u8BB0\u4F4F\u4E0A\u6B21", help: "\u6362\u6210\u4F60\u4E0A\u6B21\u5728\u8FD9\u4E2A\u5E94\u7528\u91CC\u624B\u52A8\u7528\u7684\u90A3\u4E2A", symbol: "arrow.uturn.backward" },
-      { value: "ignore", title: "\u4E0D\u7BA1\u5B83", help: "\u5207\u5230\u8FD9\u4E2A\u5E94\u7528\u65F6\u4E0D\u6362\u8F93\u5165\u6CD5", symbol: "minus.circle" }
+      { value: "none", title: "\u65E0\u89C4\u5219", help: "\u4E0D\u7ED9\u5B83\u5B9A\u89C4\u5219\uFF0C\u8DDF\u7740\u300C\u65E0\u89C4\u5219\u7684\u5E94\u7528\u300D\u90A3\u4E00\u6761\u8D70\uFF08\u9ED8\u8BA4\u4E0D\u52A8\uFF09", symbol: "circle.dashed" }
     );
-    if (withNone) chips.push({ value: "none", title: "\u4E0D\u5199\u89C4\u5219", help: "\u8DDF\u7740\u300C\u6CA1\u5199\u89C4\u5219\u7684\u5E94\u7528\u300D\u90A3\u4E00\u6761\u8D70", symbol: "circle.dashed" });
     return chips;
   }
   function groupRules(rules, sources) {
@@ -1000,8 +995,6 @@
     }));
     const remembered = entries.filter((entry) => entry.rule.mode === "remember").sort(byName);
     if (remembered.length > 0) groups.push({ key: "remember", title: "\u8BB0\u4F4F\u4E0A\u6B21\u7528\u7684", entries: remembered, addable: true });
-    const ignored = entries.filter((entry) => entry.rule.mode === "ignore").sort(byName);
-    if (ignored.length > 0) groups.push({ key: "ignore", title: "\u4E0D\u7BA1\u5B83", entries: ignored, addable: true });
     const stale = entries.filter((entry) => entry.rule.mode === "fixed" && !enabled.has(entry.rule.source)).sort(byName);
     if (stale.length > 0) groups.push({ key: "stale", title: "\u8F93\u5165\u6CD5\u5DF2\u505C\u7528", entries: stale, addable: false });
     return groups;
@@ -1070,7 +1063,7 @@
     const rule = value;
     if (typeof rule.name !== "string") return false;
     if (rule.mode === "fixed") return typeof rule.source === "string" && rule.source.length > 0;
-    return rule.mode === "remember" || rule.mode === "ignore";
+    return rule.mode === "remember";
   }
   async function readRules() {
     const raw = await jarvis.storage.get(storageKeys.rules).catch(() => null);
@@ -1095,6 +1088,7 @@
 
   // extensions/input-source/src/controller.ts
   var HUD_LIMIT = 24;
+  var ORB_DURATION_MS = 2e3;
   var VERIFY_DELAY_MS = 300;
   var Controller = class {
     constructor() {
@@ -1325,7 +1319,8 @@
       if (!this.granted.includes("hud.show")) return;
       const clipped = [...text].slice(0, HUD_LIMIT).join("");
       const art = source?.icon ? { image: source.icon } : symbol ? { symbol } : {};
-      await jarvis.hud.show({ text: clipped, anchor: this.settings.hudAnchor, ...art }).catch(() => void 0);
+      const anchor = this.settings.hudAnchor;
+      await jarvis.hud.show({ text: clipped, anchor, ...anchor === "orb" ? { duration: ORB_DURATION_MS } : {}, ...art }).catch(() => void 0);
     }
     // MARK: - 存储
     async loadMemory() {
@@ -1347,6 +1342,8 @@
   var ICON_BATCH = 40;
   var ICON_DEBOUNCE_MS = 300;
   var SUGGESTIONS_DISMISSED = "suggestionsDismissed";
+  var GROUP_TINTS = ["blue", "violet", "amber", "live"];
+  var CHIP_COLUMN_MINIMUM = 80;
   var PageSession = class {
     constructor() {
       this.status = { kind: "loading" };
@@ -1480,6 +1477,17 @@
       await this.loadApps();
       await this.fetchIcons(this.visibleBundleIDs());
     }
+    /**
+     * 「此刻」卡上的刷新（C-4）：重读前台应用、此刻输入法与规则。面板钉住时切过应用，卡上还是打开那一刻的。
+     * 点按钮不会把 Jarvis 拉到前台（面板只在点进输入框时才激活自己），读到的仍是用户刚才在用的那个应用。
+     */
+    async refresh() {
+      if (this.status.kind !== "ready") return;
+      this.editing = void 0;
+      await this.load();
+      if (this.status.kind === "ready") await this.fetchIcons(this.visibleBundleIDs());
+      jarvis.ui.update();
+    }
     /** 不加了，回到分组页。 */
     cancelAdd() {
       this.stage = { kind: "groups" };
@@ -1579,7 +1587,7 @@
         })
       );
     }
-    children.push(nowSection(session));
+    children.push(nowCard(session));
     const recommended = session.currentSuggestions();
     if (recommended.length > 0) {
       children.push(
@@ -1596,11 +1604,14 @@
         })
       );
     }
-    for (const group of groupRules(session.rules, session.sources)) children.push(groupSection(session, group));
-    children.push(othersSection(session));
+    for (const group of groupRules(session.rules, session.sources)) children.push(groupCard(session, group));
+    children.push(othersCard(session));
     return ui.scroll({ key: "page", children: [ui.stack({ key: "content", children })] });
   }
-  function nowSection(session) {
+  function card(key, tint, section) {
+    return ui.card({ key: `card:${key}`, ...tint ? { tint, stripe: true } : {}, children: [ui.section(section)] });
+  }
+  function nowCard(session) {
     const app = session.app;
     const current = session.sources.find((source) => source.id === session.currentId);
     const children = [];
@@ -1612,21 +1623,29 @@
           symbol: "app",
           image: session.icons.get(app.bundleId) ?? app.icon,
           title: app.name,
-          subtitle: choice === "none" ? `\u6CA1\u5199\u89C4\u5219 \xB7 \u8DDF\u7740\u300C\u6CA1\u5199\u89C4\u5219\u7684\u5E94\u7528\u300D` : choiceTitle(choice, session.sources),
+          subtitle: choice === "none" ? `\u65E0\u89C4\u5219 \xB7 ${othersTitle(session.settings.others)}` : choiceTitle(choice, session.sources),
           accessory: "none"
         }),
-        chipGrid("now", session, choice, true, (value) => void session.assign(app.bundleId, app.name, value))
+        chipGrid("now", session, choice, (value) => void session.assign(app.bundleId, app.name, value))
       );
     } else {
-      children.push(ui.text({ key: "now:none", style: "footnote", text: "\u5207\u5230\u4E00\u4E2A\u5E94\u7528\u518D\u6253\u5F00\u8FD9\u4E00\u9875\uFF0C\u5C31\u80FD\u4E00\u70B9\u7ED9\u5B83\u5B9A\u8F93\u5165\u6CD5" }));
+      children.push(ui.text({ key: "now:none", style: "footnote", text: "\u5207\u5230\u4E00\u4E2A\u5E94\u7528\u518D\u70B9\u53F3\u4E0A\u89D2\u7684\u5237\u65B0\uFF0C\u5C31\u80FD\u4E00\u70B9\u7ED9\u5B83\u5B9A\u8F93\u5165\u6CD5" }));
     }
-    return ui.section({ key: "now", title: "\u6B64\u523B \xB7 NOW", trailing: current ? `\u6B63\u5728\u7528 ${current.name}` : void 0, children });
+    return card("now", "accent", {
+      key: "now",
+      title: "\u6B64\u523B \xB7 NOW",
+      trailing: current ? `\u6B63\u5728\u7528 ${current.name}` : void 0,
+      actions: [
+        { id: "refresh", title: "\u5237\u65B0", symbol: "arrow.clockwise", help: "\u91CD\u65B0\u8BFB\u6B64\u523B\u5728\u524D\u53F0\u7684\u5E94\u7528\u4E0E\u8F93\u5165\u6CD5", onPress: () => void session.refresh() }
+      ],
+      children
+    });
   }
-  function chipGrid(keyPrefix, session, selected, withNone, onPick, exclude) {
-    const chips = choiceChips(session.sources, withNone).filter((chip) => chip.value !== exclude);
+  function chipGrid(keyPrefix, session, selected, onPick, exclude) {
+    const chips = choiceChips(session.sources).filter((chip) => chip.value !== exclude);
     return layout.grid({
       key: `${keyPrefix}:choices`,
-      minimum: 84,
+      minimum: CHIP_COLUMN_MINIMUM,
       spacing: "tight",
       children: chips.map(
         (chip) => ui.chip({
@@ -1635,13 +1654,20 @@
           image: chip.image,
           symbol: chip.symbol,
           help: chip.help,
+          // 选中的那枚点亮成青色（与工具箱里别的工具的选中 chip 同一种）；不给 tint 时选中只是灰一档，看不出选了哪个。
+          tint: "accent",
           selected: chip.value === selected,
           onPress: () => onPick(chip.value)
         })
       )
     });
   }
-  function groupSection(session, group) {
+  function groupTint(group, sources) {
+    if (group.key === "stale") return "danger";
+    const index = sources.findIndex((source) => `fixed:${source.id}` === group.key);
+    return index < 0 ? "neutral" : GROUP_TINTS[index % GROUP_TINTS.length];
+  }
+  function groupCard(session, group) {
     const children = [];
     for (const { bundleId, rule } of group.entries) {
       const name = rule.name || bundleId;
@@ -1662,14 +1688,14 @@
       if (editing) {
         children.push(
           ui.text({ key: `rule:${bundleId}:label`, style: "footnote", text: `\u300C${name}\u300D\u6362\u6210` }),
-          chipGrid(`rule:${bundleId}`, session, ruleChoice(rule), false, (value) => void session.assign(bundleId, name, value), group.key)
+          chipGrid(`rule:${bundleId}`, session, ruleChoice(rule), (value) => void session.assign(bundleId, name, value), group.key)
         );
       }
     }
     if (group.entries.length === 0) {
       children.push(ui.text({ key: `${group.key}:empty`, style: "footnote", text: "\u8FD8\u6CA1\u6709\u5E94\u7528\u3002\u70B9\u53F3\u4E0A\u89D2\u7684 + \u52A0\u51E0\u4E2A" }));
     }
-    return ui.section({
+    return card(`group:${group.key}`, groupTint(group, session.sources), {
       key: `group:${group.key}`,
       title: group.title,
       trailing: `${group.entries.length} \u4E2A\u5E94\u7528`,
@@ -1677,7 +1703,7 @@
       children
     });
   }
-  function othersSection(session) {
+  function othersCard(session) {
     const children = [layout.preference({ key: "others", preference: "others" })];
     if (session.settings.others === "default") {
       const value = session.fallbackSource && session.sources.some((source) => source.id === session.fallbackSource) ? session.fallbackSource : "";
@@ -1700,7 +1726,7 @@
         text: "\u4E5F\u53EF\u4EE5\u5728\u4EFB\u4F55\u5E94\u7528\u91CC\u70B9\u83DC\u5355\u680F\u4E0A\u7684\u952E\u76D8\u56FE\u6807\uFF0C\u7ED9\u5B83\u4E00\u70B9\u5373\u5B9A\u3002\u4E2D\u6587\u8F93\u5165\u6CD5\u91CC\u6309 \u21E7 \u5207\u5230\u7684\u82F1\u6587\u6A21\u5F0F\u4E0D\u7B97\u6362\u4E86\u8F93\u5165\u6CD5\uFF0C\u89C4\u5219\u7BA1\u4E0D\u5230\u5B83\u3002"
       })
     );
-    return ui.section({ key: "others", title: "\u6CA1\u5199\u89C4\u5219\u7684\u5E94\u7528 \xB7 OTHERS", children });
+    return card("others", void 0, { key: "others", title: "\u65E0\u89C4\u5219\u7684\u5E94\u7528 \xB7 OTHERS", children });
   }
   function addStage(session, target) {
     const title = choiceTitle(target, session.sources);

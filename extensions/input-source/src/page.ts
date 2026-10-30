@@ -1,6 +1,9 @@
 /**
  * 工具箱那一页（400×520）：此刻这个应用一点即定、按输入法分组的全部规则、自己往一组里加应用、第一次用时的推荐。
  *
+ * 每一块是一张带左缘色条的卡（jarvis-mac `specs/20261030-194903-input-source-cards-orb-flash` C-1）：此刻、每个输入法一组、
+ * 记住上次、已停用、无规则的应用——与工具箱里时间转换器的读数行同一种画法，一眼分得开哪块是哪块。
+ *
  * 加规则有两条路（jarvis-mac `specs/20261030-182223-input-source-rules-ux` U-1）：此刻的应用在顶上一点即定；
  * 别的应用在每一组右上角点「+」，从这台 Mac 装的应用里挑。页面跑在前台会话，只读写 `jarvis.storage` 与偏好；
  * 后台每次切应用、每次点开菜单都重读规则，不需要另开一条线把改动推过去。
@@ -14,6 +17,7 @@ import {
   type FrontmostApp,
   type InputSource,
   type MacApp,
+  type Tint,
   type UINode,
   type Unsubscribe,
 } from "@fusionseek/jarvis-extension-sdk";
@@ -23,6 +27,7 @@ import {
   choiceTitle,
   groupRules,
   lastUsedTitle,
+  othersTitle,
   readSettings,
   ruleChoice,
   ruleFromChoice,
@@ -46,6 +51,13 @@ const ICON_BATCH = 40;
 const ICON_DEBOUNCE_MS = 300;
 /** 推荐卡「不用了」之后不再出现。 */
 const SUGGESTIONS_DISMISSED = "suggestionsDismissed";
+/**
+ * 输入法各组的色条，按系统输入法菜单的顺序轮流取（C-1）。与时间转换器四行读数同一个用意：一眼分得开是哪一组；
+ * 青留给「此刻」，红留给「已停用」。
+ */
+const GROUP_TINTS: readonly Tint[] = ["blue", "violet", "amber", "live"];
+/** 一排选项的最小列宽：352 宽的卡里放得下四枚（两个输入法 + 记住上次 + 无规则），再窄输入法的名字就要截断。 */
+const CHIP_COLUMN_MINIMUM = 80;
 
 type Status = { kind: "loading" } | { kind: "denied" } | { kind: "ready" } | { kind: "failed"; message: string };
 type Stage = { kind: "groups" } | { kind: "add"; target: RuleChoice };
@@ -89,7 +101,7 @@ export class PageSession {
     this.stage = { kind: "groups" };
     this.editing = undefined;
     this.highlight = undefined;
-    // 「没写规则的应用」是宿主画的偏好控件：用户在这一页改了它，这里跟着重画（选了「默认输入法」才露出下面那一行）。
+    // 「无规则的应用」是宿主画的偏好控件：用户在这一页改了它，这里跟着重画（选了「默认输入法」才露出下面那一行）。
     this.stopPreferences ??= jarvis.preferences.onChange((changes) => {
       this.settings = readSettings({ ...this.settings, ...changes });
       jarvis.ui.update();
@@ -205,6 +217,19 @@ export class PageSession {
     this.editing = undefined;
     await this.loadApps();
     await this.fetchIcons(this.visibleBundleIDs());
+  }
+
+  /**
+   * 「此刻」卡上的刷新（C-4）：重读前台应用、此刻输入法与规则。面板钉住时切过应用，卡上还是打开那一刻的。
+   * 点按钮不会把 Jarvis 拉到前台（面板只在点进输入框时才激活自己），读到的仍是用户刚才在用的那个应用。
+   */
+  async refresh(): Promise<void> {
+    if (this.status.kind !== "ready") return;
+    this.editing = undefined;
+    await this.load();
+    if (this.status.kind === "ready") await this.fetchIcons(this.visibleBundleIDs());
+    // 读是异步的：按钮回调返回时还没读完，读完再画一次。
+    jarvis.ui.update();
   }
 
   /** 不加了，回到分组页。 */
@@ -325,7 +350,7 @@ function groupsStage(session: PageSession): UINode {
       }),
     );
   }
-  children.push(nowSection(session));
+  children.push(nowCard(session));
   const recommended = session.currentSuggestions();
   if (recommended.length > 0) {
     children.push(
@@ -342,12 +367,17 @@ function groupsStage(session: PageSession): UINode {
       }),
     );
   }
-  for (const group of groupRules(session.rules, session.sources)) children.push(groupSection(session, group));
-  children.push(othersSection(session));
+  for (const group of groupRules(session.rules, session.sources)) children.push(groupCard(session, group));
+  children.push(othersCard(session));
   return ui.scroll({ key: "page", children: [ui.stack({ key: "content", children })] });
 }
 
-function nowSection(session: PageSession): UINode {
+/** 一张带左缘色条的卡，卡里一段（标题、读数、动作照旧）。 */
+function card(key: string, tint: Tint | undefined, section: Parameters<typeof ui.section>[0]): UINode {
+  return ui.card({ key: `card:${key}`, ...(tint ? { tint, stripe: true } : {}), children: [ui.section(section)] });
+}
+
+function nowCard(session: PageSession): UINode {
   const app = session.app;
   const current = session.sources.find((source) => source.id === session.currentId);
   const children: UINode[] = [];
@@ -359,23 +389,31 @@ function nowSection(session: PageSession): UINode {
         symbol: "app",
         image: session.icons.get(app.bundleId) ?? app.icon,
         title: app.name,
-        subtitle: choice === "none" ? `没写规则 · 跟着「没写规则的应用」` : choiceTitle(choice, session.sources),
+        subtitle: choice === "none" ? `无规则 · ${othersTitle(session.settings.others)}` : choiceTitle(choice, session.sources),
         accessory: "none",
       }),
-      chipGrid("now", session, choice, true, (value) => void session.assign(app.bundleId, app.name, value)),
+      chipGrid("now", session, choice, (value) => void session.assign(app.bundleId, app.name, value)),
     );
   } else {
-    children.push(ui.text({ key: "now:none", style: "footnote", text: "切到一个应用再打开这一页，就能一点给它定输入法" }));
+    children.push(ui.text({ key: "now:none", style: "footnote", text: "切到一个应用再点右上角的刷新，就能一点给它定输入法" }));
   }
-  return ui.section({ key: "now", title: "此刻 · NOW", trailing: current ? `正在用 ${current.name}` : undefined, children });
+  return card("now", "accent", {
+    key: "now",
+    title: "此刻 · NOW",
+    trailing: current ? `正在用 ${current.name}` : undefined,
+    actions: [
+      { id: "refresh", title: "刷新", symbol: "arrow.clockwise", help: "重新读此刻在前台的应用与输入法", onPress: () => void session.refresh() },
+    ],
+    children,
+  });
 }
 
-/** 一排一点即定的选项；选中的那枚点亮。 */
-function chipGrid(keyPrefix: string, session: PageSession, selected: RuleChoice, withNone: boolean, onPick: (value: RuleChoice) => void, exclude?: RuleChoice): UINode {
-  const chips = choiceChips(session.sources, withNone).filter((chip) => chip.value !== exclude);
+/** 一排一点即定的选项，排成等宽的一行（宿主把网格里的 chip 撑满格子，C-3）；选中的那枚点亮。 */
+function chipGrid(keyPrefix: string, session: PageSession, selected: RuleChoice, onPick: (value: RuleChoice) => void, exclude?: RuleChoice): UINode {
+  const chips = choiceChips(session.sources).filter((chip) => chip.value !== exclude);
   return layout.grid({
     key: `${keyPrefix}:choices`,
-    minimum: 84,
+    minimum: CHIP_COLUMN_MINIMUM,
     spacing: "tight",
     children: chips.map((chip) =>
       ui.chip({
@@ -384,6 +422,8 @@ function chipGrid(keyPrefix: string, session: PageSession, selected: RuleChoice,
         image: chip.image,
         symbol: chip.symbol,
         help: chip.help,
+        // 选中的那枚点亮成青色（与工具箱里别的工具的选中 chip 同一种）；不给 tint 时选中只是灰一档，看不出选了哪个。
+        tint: "accent",
         selected: chip.value === selected,
         onPress: () => onPick(chip.value),
       }),
@@ -391,7 +431,14 @@ function chipGrid(keyPrefix: string, session: PageSession, selected: RuleChoice,
   });
 }
 
-function groupSection(session: PageSession, group: RuleGroup): UINode {
+/** 一组的色条：输入法各组按顺序轮流取，记住上次中性，已停用红。 */
+function groupTint(group: RuleGroup, sources: PageSession["sources"]): Tint {
+  if (group.key === "stale") return "danger";
+  const index = sources.findIndex((source) => `fixed:${source.id}` === group.key);
+  return index < 0 ? "neutral" : GROUP_TINTS[index % GROUP_TINTS.length];
+}
+
+function groupCard(session: PageSession, group: RuleGroup): UINode {
   const children: UINode[] = [];
   for (const { bundleId, rule } of group.entries) {
     const name = rule.name || bundleId;
@@ -412,14 +459,14 @@ function groupSection(session: PageSession, group: RuleGroup): UINode {
     if (editing) {
       children.push(
         ui.text({ key: `rule:${bundleId}:label`, style: "footnote", text: `「${name}」换成` }),
-        chipGrid(`rule:${bundleId}`, session, ruleChoice(rule), false, (value) => void session.assign(bundleId, name, value), group.key),
+        chipGrid(`rule:${bundleId}`, session, ruleChoice(rule), (value) => void session.assign(bundleId, name, value), group.key),
       );
     }
   }
   if (group.entries.length === 0) {
     children.push(ui.text({ key: `${group.key}:empty`, style: "footnote", text: "还没有应用。点右上角的 + 加几个" }));
   }
-  return ui.section({
+  return card(`group:${group.key}`, groupTint(group, session.sources), {
     key: `group:${group.key}`,
     title: group.title,
     trailing: `${group.entries.length} 个应用`,
@@ -430,7 +477,7 @@ function groupSection(session: PageSession, group: RuleGroup): UINode {
   });
 }
 
-function othersSection(session: PageSession): UINode {
+function othersCard(session: PageSession): UINode {
   const children: UINode[] = [layout.preference({ key: "others", preference: "others" })];
   if (session.settings.others === "default") {
     const value = session.fallbackSource && session.sources.some((source) => source.id === session.fallbackSource) ? session.fallbackSource : "";
@@ -453,7 +500,8 @@ function othersSection(session: PageSession): UINode {
       text: "也可以在任何应用里点菜单栏上的键盘图标，给它一点即定。中文输入法里按 ⇧ 切到的英文模式不算换了输入法，规则管不到它。",
     }),
   );
-  return ui.section({ key: "others", title: "没写规则的应用 · OTHERS", children });
+  // 这一块是设置，不是一类规则：不带色条。
+  return card("others", undefined, { key: "others", title: "无规则的应用 · OTHERS", children });
 }
 
 // MARK: - 加应用那一步
