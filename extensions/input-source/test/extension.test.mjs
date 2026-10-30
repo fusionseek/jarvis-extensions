@@ -82,7 +82,7 @@ test("菜单里给 Xcode 选 ABC：存规则、当场换过去、闪一枚带图
   await host.menuBarEvent("select", { itemId: "fixed:0", granted, preferences });
   assert.deepEqual(storage.get("rules"), { "com.apple.dt.Xcode": { mode: "fixed", source: ABC, name: "Xcode" } });
   assert.deepEqual(selects, [ABC]);
-  assert.deepEqual(huds.at(-1), { text: "ABC", anchor: "screen" }, "默认屏幕中间偏下，宿主默认停留");
+  assert.deepEqual(huds.at(-1), { text: "ABC", anchor: "screen", monogram: "A" }, "默认屏幕中间偏下、宿主默认停留；系统自带的 ABC 画字标键帽「A」");
   await selected(ABC, true);
 });
 
@@ -109,7 +109,8 @@ test("其余应用改成「记住上次」：切回微信换回拼音，提示�
   await front("com.tencent.xinWeChat", "微信");
   assert.equal(selects.at(-1), PINYIN);
   assert.equal(huds.at(-1).text, "微信输入法");
-  assert.equal(huds.at(-1).image.id, "icon-pinyin");
+  assert.equal(huds.at(-1).image.id, "icon-pinyin", "三方输入法用它自己的图标");
+  assert.equal(huds.at(-1).monogram, undefined);
   await selected(PINYIN, true);
 });
 
@@ -264,4 +265,6 @@ test("提示位置选「悬浮球旁」：锚点 orb、停 2 秒，图标照给�
   assert.equal(hud.anchor, "orb");
   assert.equal(hud.duration, 2000);
   assert.equal(hud.text, "ABC");
+  assert.equal(hud.monogram, "A", "球心画字标键帽，不用系统那枚浅底图标");
+  assert.equal(hud.image, undefined);
 });

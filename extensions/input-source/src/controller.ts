@@ -8,6 +8,7 @@ import { jarvis, type CommandContext, type FrontmostApp, type InputSource, type 
 import {
   choiceFromMenuItem,
   defaultSettings,
+  isSystemSource,
   emptyMemory,
   menuModel,
   readSettings,
@@ -15,6 +16,7 @@ import {
   resolveTarget,
   ruleFromChoice,
   setRule,
+  shortLabel,
   type Memory,
   type RuleChoice,
   type Rules,
@@ -295,7 +297,7 @@ export class Controller {
   private async showHUD(text: string, source?: InputSource, symbol?: string): Promise<void> {
     if (!this.granted.includes("hud.show")) return;
     const clipped = [...text].slice(0, HUD_LIMIT).join("");
-    const art = source?.icon ? { image: source.icon } : symbol ? { symbol } : {};
+    const art = hudArt(source, symbol);
     const anchor = this.settings.hudAnchor;
     await jarvis.hud.show({ text: clipped, anchor, ...(anchor === "orb" ? { duration: ORB_DURATION_MS } : {}), ...art }).catch(() => undefined);
   }
@@ -318,4 +320,20 @@ export class Controller {
       .update(menuModel({ app: this.app, rules: this.memory.rules as Rules, sources: this.sources, currentId: this.currentId, settings: this.settings }))
       .catch(() => undefined);
   }
+}
+
+/**
+ * 提示上画什么：系统自带的输入法画字标键帽（「A」「中」，与菜单栏上那个字一致），三方输入法用它自己的图标，
+ * 都没有时用给的 SF Symbol（jarvis-mac `specs/20261030-210500-input-source-orb-crash-keycap` K-3）。
+ * @param source 换成的输入法。
+ * @param symbol 没有输入法时的符号（暂停 / 恢复）。
+ * @returns `hud.show` 的图那一项。
+ */
+export function hudArt(source: InputSource | undefined, symbol?: string): { monogram: string } | { image: NonNullable<InputSource["icon"]> } | { symbol: string } | Record<string, never> {
+  if (source && isSystemSource(source)) {
+    const label = shortLabel(source);
+    if (label) return { monogram: label };
+  }
+  if (source?.icon) return { image: source.icon };
+  return symbol ? { symbol } : {};
 }

@@ -381,10 +381,15 @@ export interface AppIcon {
 export interface HUDOptions {
   /** 1–24 字。 */
   text: string;
-  /** SF Symbol；与 `image` 至多给一个。 */
+  /** SF Symbol；与 `image`、`monogram` 至多给一个。 */
   symbol?: string;
-  /** 这个会话拿到的图片句柄（例：`InputSource.icon`）；与 `symbol` 至多给一个。 */
+  /** 这个会话拿到的图片句柄（例：`InputSource.icon`）；与 `symbol`、`monogram` 至多给一个。 */
   image?: FileHandle;
+  /**
+   * 字标（宿主 ≥ 3.3.2，jarvis-mac `specs/20261030-210500-input-source-orb-crash-keycap` K-2）：1–3 个字，宿主画成一枚键帽（圆角方块、白边、底沿一道暗边）。
+   * 给一个没有图标的东西一个识别标记时用它（系统自带的输入法「A」「中」、代理节点的「HK」）；与 `symbol`、`image` 至多给一个。
+   */
+  monogram?: string;
   /**
    * 贴在哪：`caret` 前台应用的文字插入点下方，读不到插入点时贴着输入框，输入框也读不到（没有辅助功能权限、企业微信这类不报的应用）时放在前台窗口正中——
    * 不退回指针；`window`（宿主 ≥ 3.3.2）前台应用最前面那扇窗的正中；`pointer` 指针右下；

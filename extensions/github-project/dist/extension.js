@@ -697,6 +697,7 @@
           anchor: options.anchor,
           ...options.symbol === void 0 ? {} : { symbol: options.symbol },
           ...options.image === void 0 ? {} : { image: options.image },
+          ...options.monogram === void 0 ? {} : { monogram: options.monogram },
           ...options.duration === void 0 ? {} : { duration: options.duration }
         });
       }

@@ -213,7 +213,8 @@ N-2。`current()` → `{ bundleId, name, pid, icon? } | null`；`observe(listene
 
 N-3。`show({ text, symbol?, image?, anchor, duration? })`：宿主画一枚胶囊小牌子，不抢焦点、鼠标穿透，`duration`（400–3000 ms，默认 1200）后淡出。
 
-- `text` 1–24 字；`symbol`（SF Symbol）与 `image`（**这个会话**拿到的句柄，例 `InputSource.icon`）至多给一个。
+- `text` 1–24 字；`symbol`（SF Symbol）、`image`（**这个会话**拿到的句柄，例 `InputSource.icon`）与 `monogram`（宿主 ≥ 3.3.2：1–3 个字，宿主画成一枚键帽，
+  例：系统自带输入法的「A」「中」、代理节点的「HK」，jarvis-mac `specs/20261030-210500-input-source-orb-crash-keycap` K-2）至多给一个。
 - `anchor`：`caret` 前台应用的文字插入点下方；读不到插入点时贴着输入框（下方左对齐、放不下翻上面）；输入框也读不到（没有辅助功能权限、企业微信这类不报的应用、密码框）时放在前台窗口正中——
   **不退回指针**（指针可能在屏幕任何地方，牌子就飘，jarvis-mac `specs/20261030-190534-input-source-walkthrough-fixes` F-2）。刚切过去时焦点常常还没落定，宿主隔 60 ms 再读一次。
   `window` 前台应用最前面那扇窗的正中（窗口列表读位置，不要权限；读不到退回 `screen`）；`pointer` 指针右下；

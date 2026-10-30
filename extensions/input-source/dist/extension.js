@@ -710,6 +710,7 @@
           anchor: options.anchor,
           ...options.symbol === void 0 ? {} : { symbol: options.symbol },
           ...options.image === void 0 ? {} : { image: options.image },
+          ...options.monogram === void 0 ? {} : { monogram: options.monogram },
           ...options.duration === void 0 ? {} : { duration: options.duration }
         });
       }
@@ -901,6 +902,9 @@
   };
   function othersTitle(others) {
     return othersTitles[others];
+  }
+  function isSystemSource(source) {
+    return source.id.startsWith("com.apple.");
   }
   function shortLabel(source) {
     if (!source) return "";
@@ -1318,7 +1322,7 @@
     async showHUD(text, source, symbol) {
       if (!this.granted.includes("hud.show")) return;
       const clipped = [...text].slice(0, HUD_LIMIT).join("");
-      const art = source?.icon ? { image: source.icon } : symbol ? { symbol } : {};
+      const art = hudArt(source, symbol);
       const anchor = this.settings.hudAnchor;
       await jarvis.hud.show({ text: clipped, anchor, ...anchor === "orb" ? { duration: ORB_DURATION_MS } : {}, ...art }).catch(() => void 0);
     }
@@ -1336,6 +1340,14 @@
       await jarvis.menuBar.update(menuModel({ app: this.app, rules: this.memory.rules, sources: this.sources, currentId: this.currentId, settings: this.settings })).catch(() => void 0);
     }
   };
+  function hudArt(source, symbol) {
+    if (source && isSystemSource(source)) {
+      const label = shortLabel(source);
+      if (label) return { monogram: label };
+    }
+    if (source?.icon) return { image: source.icon };
+    return symbol ? { symbol } : {};
+  }
 
   // extensions/input-source/src/page.ts
   var pageCapabilities = ["system.activity", "inputSources.read", "inputSources.select", "hud.show", "apps.read"];

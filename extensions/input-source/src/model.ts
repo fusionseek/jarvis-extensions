@@ -193,6 +193,18 @@ export function ruleTitle(rule: Rule | undefined, sources: readonly InputSource[
 }
 
 /**
+ * 是不是系统自带的输入法（id 以 `com.apple.` 开头：ABC、简体拼音、日文假名……）。
+ *
+ * 切换时的提示：系统自带的画成一枚字标键帽（与菜单栏上那个字一致），三方输入法用它自己的图标
+ * （jarvis-mac `specs/20261030-210500-input-source-orb-crash-keycap` K-3，仓库主人：「只有切换到三方的输入法才需要用三方输入法的ICON」）。
+ * @param source 输入法。
+ * @returns 系统自带为真。
+ */
+export function isSystemSource(source: InputSource): boolean {
+  return source.id.startsWith("com.apple.");
+}
+
+/**
  * 菜单栏图标旁的一个字：中文「中」、日文「あ」、韩文「한」，其余取名字的第一个字母（ABC → A）。
  * @param source 输入法；不知道时为 `undefined`。
  * @returns 一两个字；不知道为空串。

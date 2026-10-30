@@ -825,6 +825,7 @@ export const jarvis: Jarvis = {
         anchor: options.anchor,
         ...(options.symbol === undefined ? {} : { symbol: options.symbol }),
         ...(options.image === undefined ? {} : { image: options.image }),
+        ...(options.monogram === undefined ? {} : { monogram: options.monogram }),
         ...(options.duration === undefined ? {} : { duration: options.duration }),
       });
     },

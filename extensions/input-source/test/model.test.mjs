@@ -66,6 +66,12 @@ test("setRule：到上限就不再加新的，改旧的照常", () => {
   assert.equal(model.setRule(rules, "app1", { mode: "fixed", source: ABC, name: "1" }).app1.mode, "fixed");
 });
 
+test("isSystemSource：com.apple. 开头的是系统自带（画字标），其余是三方（用自己的图标）", () => {
+  assert.equal(model.isSystemSource(sources[0]), true, "ABC");
+  assert.equal(model.isSystemSource({ id: "com.apple.inputmethod.SCIM.ITABC", name: "简体拼音", kind: "inputMode", languages: ["zh-Hans"] }), true);
+  assert.equal(model.isSystemSource(sources[1]), false, "微信输入法");
+});
+
 test("shortLabel：中文「中」、繁体「繁」、日文「あ」，其余取首字母", () => {
   assert.equal(model.shortLabel(sources[1]), "中");
   assert.equal(model.shortLabel(sources[0]), "A");
