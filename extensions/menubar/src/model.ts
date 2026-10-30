@@ -29,6 +29,12 @@ export interface Settings {
   autoRehide: number;
   /** 启用「永远隐藏」段：只有 ⌥ 点控制项才露出来。 */
   alwaysHidden: boolean;
+  /**
+   * 隐藏的图标在哪儿显示（1.1）：`menuBar` 在菜单栏里展开（1.0 的做法）；`bar` 在「‹」下面弹一条副栏，菜单栏本身不动。
+   */
+  showIn: "menuBar" | "bar";
+  /** 在菜单栏里展开时，被刘海挡住、挤到刘海左边看不见的那些，放进副栏（1.1）。 */
+  notchToBar: boolean;
 }
 
 export const defaultSettings: Settings = {
@@ -37,6 +43,8 @@ export const defaultSettings: Settings = {
   scrollReveal: false,
   autoRehide: 10,
   alwaysHidden: true,
+  showIn: "menuBar",
+  notchToBar: true,
 };
 
 /**
@@ -53,6 +61,8 @@ export function readSettings(preferences: Record<string, unknown>): Settings {
     scrollReveal: flag("scrollReveal", defaultSettings.scrollReveal),
     autoRehide: Math.max(0, Math.min(120, Math.round(seconds))),
     alwaysHidden: flag("alwaysHidden", defaultSettings.alwaysHidden),
+    showIn: preferences.showIn === "bar" ? "bar" : "menuBar",
+    notchToBar: flag("notchToBar", defaultSettings.notchToBar),
   };
 }
 
@@ -225,6 +235,77 @@ export function isBehindNotch(item: MenuBarExtra, screens: ScreenInfo[]): boolea
   const gapStart = notch.left.x + notch.left.width;
   const gapEnd = notch.right.x;
   return item.frame.x < gapEnd && item.frame.x + item.frame.width > gapStart;
+}
+
+/**
+ * 该露着却看不见：窗口服务器说它不在屏上，而它的中点落在某块屏的横向范围里——被刘海挡住，或者挤到了刘海左边、应用菜单底下。
+ * 被挤出屏幕的（收起时隐藏段里那些，x 在负几千）不算：它们是我们自己藏的。
+ * @param item 一颗图标。
+ * @param screens 屏幕。
+ * @returns 是为 `true`。
+ */
+export function isObscured(item: MenuBarExtra, screens: ScreenInfo[]): boolean {
+  return !item.onScreen && isWithinScreens(item, screens);
+}
+
+/**
+ * 它的中点落在某块屏的横向范围里（刘海下面也算）。点开它要这个（jarvis-mac `specs/20261030-081832-menubar-manager-p2` R-8）。
+ * @param item 一颗图标。
+ * @param screens 屏幕。
+ * @returns 是为 `true`。
+ */
+export function isWithinScreens(item: MenuBarExtra, screens: ScreenInfo[]): boolean {
+  const center = item.frame.x + item.frame.width / 2;
+  return item.frame.width > 0 && screens.some((screen) => center >= screen.frame.x && center < screen.frame.x + screen.frame.width);
+}
+
+/** 副栏里放哪些（1.1）：`hidden` 隐藏段 + 看不见的；`all` 再加永远隐藏段；`obscured` 只放看不见的（在菜单栏里展开之后）。 */
+export type BarScope = "hidden" | "all" | "obscured";
+
+/**
+ * 副栏的内容，从左到右。
+ * @param items `jarvis.menuBarExtras.list()`。
+ * @param screens `jarvis.screens.list()`。
+ * @param scope 放哪些。
+ * @returns 那几颗。
+ */
+export function barItems(items: MenuBarExtra[], screens: ScreenInfo[], scope: BarScope): MenuBarExtra[] {
+  const layout = classify(items, screens);
+  const picked = new Set<string>();
+  const add = (list: MenuBarExtra[]) => list.forEach((item) => picked.add(item.id));
+  if (scope === "all") add(layout.always);
+  if (scope !== "obscured") add(layout.hidden);
+  add(items.filter((item) => !item.mine && isObscured(item, screens)));
+  return items.filter((item) => picked.has(item.id));
+}
+
+/**
+ * 副栏的参数（`commands.run("bar", { argument })`）读成范围；不认识的当 `hidden`。
+ * @param argument 参数。
+ * @returns 范围。
+ */
+export function barScope(argument: string | undefined): BarScope {
+  return argument === "all" || argument === "obscured" ? argument : "hidden";
+}
+
+/** 点开一颗之后，菜单关上再等多久收回（只在为了点它才临时露出来时）。 */
+export const CLOSE_REHIDE_MS = 300;
+/** 露出来之后等它挪进屏幕：每隔多久读一次、最多等多久（本机实测约 170 ms 就到位，R-8）。 */
+export const REVEAL_POLL_MS = 60;
+export const REVEAL_TIMEOUT_MS = 1200;
+/** 在菜单栏里展开之后多久截图、看刘海：图标挪到位要一会儿。 */
+export const SETTLE_MS = 300;
+
+/**
+ * 露着时该截哪几颗：隐藏段与永远隐藏段里此刻在屏上的（副栏画的就是它们；显示段的一直看得见，不用截）。
+ * 一次至多 40 颗（宿主的上限）。
+ * @param items `list()`。
+ * @param screens 屏幕。
+ * @returns id。
+ */
+export function captureTargets(items: MenuBarExtra[], screens: ScreenInfo[]): string[] {
+  const layout = classify(items, screens);
+  return [...layout.always, ...layout.hidden].filter((item) => item.onScreen).map((item) => item.id).slice(0, 40);
 }
 
 /**

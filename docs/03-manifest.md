@@ -254,7 +254,7 @@ v2 按**域**组织（[01](01-overview.md)）：身份与能力在顶层，入�
 
 #### 指令域：`contributes.commands[]`
 
-≤ 12 条，每条 `{ id, title, description?, slash?, hotkey?, presentation }`。
+≤ 12 条，每条 `{ id, title, description?, slash?, hotkey?, presentation, popoverWidth? }`。
 
 | 字段 | 规则 | 为什么 |
 | --- | --- | --- |
@@ -267,12 +267,13 @@ v2 按**域**组织（[01](01-overview.md)）：身份与能力在顶层，入�
 | `slash.scopes` | ⊆ `["launcher", "memo"]`，省略 = 两处都要 | `launcher` = 全局搜索（全局启动条与默认页搜索栏），`memo` = 速记输入框 |
 | `hotkey` | 修饰键按 `⌃⌥⇧⌘` 顺序 + 一个主键，至少含 ⌃、⌥、⌘ 之一；例 `⌥⌘T` | 与设置页显示的写法一致；跨应用冲突系统层面探测不到 |
 | `presentation` | `toolbox` / `window` / `popover` / `silent` | 见下表 |
+| `popoverWidth`（SDK 2.12，宿主 ≥ 3.3.1） | `standard`（省略时）/ `content`；只许 `popover` 命令写 | `standard` = 400 宽、带宿主的页头与脚注；`content` = 宽度取那棵树的理想宽度（夹在 120 与屏宽 − 32 之间），**不画页头与脚注**——它们本身就要 220–330pt，留着就谈不上随内容。一排快捷开关、一条图标那样的工具条用它（jarvis-mac `specs/20261030-081832-menubar-manager-p2` N-4） |
 
 | `presentation` | 跑在哪 | 用户看到 | 要求 |
 | --- | --- | --- | --- |
 | `toolbox` | 前台会话 | 面板展开到这个扩展的页面 | 入驻工具箱域 |
 | `window` | 前台会话 | 工作区里开它的标签 | 入驻窗口域 |
-| `popover` | 前台会话 | 面板不动，原地结果弹窗：截图的扩展锚在选区旁，不截图的扩展锚在指针旁 | 入驻工具箱域（弹窗画 `popover`，省略时画 `toolbox`） |
+| `popover` | 前台会话 | 面板不动，原地结果弹窗：截图的扩展锚在选区旁，不截图的扩展锚在指针旁；`jarvis.commands.run(id, { anchor: { statusItem } })` 锚在自己的一枚状态项下面（SDK 2.12） | 入驻工具箱域（弹窗画 `popover`，省略时画 `toolbox`） |
 | `silent` | **后台会话** | 什么界面都不碰 | 至少声明 `clipboard.write`、`notifications.post`、`inbox.post` 之一来交结果 |
 
 **`/` 指令词不能与内置指令撞**：`color colour 颜色 调色板 hash md5 sha1 sha256 sha512 哈希 base64 b64 url 链接

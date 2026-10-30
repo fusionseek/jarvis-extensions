@@ -4,7 +4,7 @@
  * 页面跑在前台会话，收放的状态在后台会话：这一页不存状态，从菜单栏上自己那枚边界有多宽读出「此刻收没收着」，
  * 按钮经 `jarvis.commands.run("toggle")` 交给后台。打开这一页时读一次清单、订「有哪些项」的变化，离开就退订。
  */
-import { jarvis, ui, type ActivationContext, type MenuBarExtra, type ScreenInfo, type UINode, type Unsubscribe } from "@fusionseek/jarvis-extension-sdk";
+import { jarvis, ui, type ActivationContext, type FileHandle, type MenuBarExtra, type ScreenInfo, type UINode, type Unsubscribe } from "@fusionseek/jarvis-extension-sdk";
 import { classify, displayName, type Layout } from "./model.js";
 
 type Status = { kind: "loading" } | { kind: "denied" } | { kind: "noAccessibility" } | { kind: "ready"; layout: Layout } | { kind: "failed"; message: string };
@@ -15,6 +15,8 @@ export class PageSession {
   private stopObserving: Unsubscribe | undefined;
   private screens: ScreenInfo[] = [];
   private refreshing: Promise<void> | undefined;
+  /** 截到的图（1.1）：打开这一页时截一次；露着的当场截，藏着的是最近一次露着时的。 */
+  private images = new Map<string, FileHandle>();
 
   /**
    * 页面出现了。
@@ -23,9 +25,26 @@ export class PageSession {
   async activate(context: Pick<ActivationContext, "granted">): Promise<void> {
     this.granted = context.granted;
     await this.refresh();
+    await this.captureImages();
     if (this.granted.includes("menuBarExtras.read")) {
-      this.stopObserving ??= jarvis.menuBarExtras.observe(() => void this.refresh());
+      // 订阅推来的变化不经过任何界面事件：重读完要自己请宿主重画。
+      this.stopObserving ??= jarvis.menuBarExtras.observe(() => void this.refresh().then(() => jarvis.ui.update()));
     }
+  }
+
+  /** 这一颗画哪张图：截到的，没有就用应用图标。 */
+  image(item: MenuBarExtra): FileHandle | undefined {
+    return this.images.get(item.id) ?? item.icon;
+  }
+
+  /** 截一次（没给截图授权、或 Jarvis 没有屏幕录制权限时就用应用图标）。 */
+  private async captureImages(): Promise<void> {
+    if (this.status.kind !== "ready" || !this.granted.includes("menuBarExtras.capture")) return;
+    const { shown, hidden, always } = this.status.layout;
+    const ids = [...always, ...hidden, ...shown].map((item) => item.id).slice(0, 40);
+    if (ids.length === 0) return;
+    const captures = await jarvis.menuBarExtras.capture(ids).catch(() => []);
+    for (const capture of captures) if (capture.image) this.images.set(capture.id, capture.image);
   }
 
   /** 页面不在了：退订（订阅留着，宿主就会每 10 s 看一眼窗口列表）。 */
@@ -65,17 +84,19 @@ export class PageSession {
 
   /** 再问一次授权（只在按钮回调里调）。 */
   async requestAccess(): Promise<void> {
-    const result = await jarvis.permissions.request(["menuBarExtras.read", "menuBar.pointer"]);
+    const result = await jarvis.permissions.request(["menuBarExtras.read", "menuBar.pointer", "menuBarExtras.capture", "menuBarExtras.control"]);
     await this.activate({ granted: result.granted });
   }
 }
 
-function rows(items: MenuBarExtra[], keyPrefix: string, subtitle: (item: MenuBarExtra) => string | undefined): UINode[] {
+type ImageOf = (item: MenuBarExtra) => FileHandle | undefined;
+
+function rows(items: MenuBarExtra[], keyPrefix: string, subtitle: (item: MenuBarExtra) => string | undefined, image: ImageOf): UINode[] {
   return items.map((item) =>
     ui.row({
       key: `${keyPrefix}:${item.id}`,
       symbol: "app.dashed",
-      image: item.icon,
+      image: image(item),
       title: displayName(item),
       subtitle: subtitle(item),
       accessory: "none",
@@ -83,12 +104,19 @@ function rows(items: MenuBarExtra[], keyPrefix: string, subtitle: (item: MenuBar
   );
 }
 
-function section(key: string, title: string, items: MenuBarExtra[], empty: string, subtitle: (item: MenuBarExtra) => string | undefined): UINode {
+function section(
+  key: string,
+  title: string,
+  items: MenuBarExtra[],
+  empty: string,
+  subtitle: (item: MenuBarExtra) => string | undefined,
+  image: ImageOf,
+): UINode {
   return ui.section({
     key,
     title,
     trailing: `${items.length} 颗`,
-    children: items.length > 0 ? rows(items, key, subtitle) : [ui.text({ key: `${key}:empty`, style: "footnote", text: empty })],
+    children: items.length > 0 ? rows(items, key, subtitle, image) : [ui.text({ key: `${key}:empty`, style: "footnote", text: empty })],
   });
 }
 
@@ -126,6 +154,7 @@ export function renderPage(session: PageSession): UINode {
 }
 
 function ready(session: PageSession, layout: Layout): UINode {
+  const image: ImageOf = (item) => session.image(item);
   const hiddenCount = layout.hidden.length + layout.always.length;
   const children: UINode[] = [
     ui.row({
@@ -144,14 +173,14 @@ function ready(session: PageSession, layout: Layout): UINode {
     }),
   ];
   if (layout.notched.length > 0) {
-    children.push(section("notch", "被刘海挡住", layout.notched, "", () => "在显示段里，但落在刘海下面看不见：拖到竖线左边收起，或者少放几颗"));
+    children.push(section("notch", "被刘海挡住", layout.notched, "", () => "在显示段里，但落在刘海下面看不见：拖到竖线左边收起，或者少放几颗", image));
   }
   children.push(
-    section("shown", "显示", layout.shown.filter((item) => !layout.notched.includes(item)), "竖线右边的图标一直显示", (item) => item.title || undefined),
-    section("hidden", "隐藏", layout.hidden, "按住 ⌘ 把图标拖到竖线左边，收起时它就藏起来", (item) => item.title || undefined),
+    section("shown", "显示", layout.shown.filter((item) => !layout.notched.includes(item)), "竖线右边的图标一直显示", (item) => item.title || undefined, image),
+    section("hidden", "隐藏", layout.hidden, "按住 ⌘ 把图标拖到竖线左边，收起时它就藏起来", (item) => item.title || undefined, image),
   );
   if (layout.always.length > 0) {
-    children.push(section("always", "永远隐藏", layout.always, "", (item) => item.title || "⌥ 点「‹」时才出来"));
+    children.push(section("always", "永远隐藏", layout.always, "", (item) => item.title || "⌥ 点「‹」时才出来", image));
   }
   children.push(
     ui.text({

@@ -57,6 +57,11 @@ v2 的目录**只列宿主真的做得到的**：声明得到、调不到的能�
 `run(id, argument?)`：运行 manifest 里声明的一条命令，与快捷键同一条路（`trigger = "page"`）。落点是 `silent` 的
 去后台会话跑，其余在前台——宿主替你转到对的那一种。页面里那颗「截屏翻译」按钮就该这么写：一条命令只有一份实现。
 
+SDK 2.12：第二个参数也可以是 `{ argument?, anchor? }`。`anchor: { statusItem }` 让 `popover` 命令的弹窗挂在**你自己的**那一枚状态项正下方
+（manifest `contributes.menuBar.items` 里的 id；上沿离菜单栏下沿 4pt、水平居中、夹回屏内）；那一枚此刻没画出来时退回指针旁边。
+不是 `popover` 命令、或状态项不是你声明的，报 `invalid.argument`。**再点那一枚状态项 = 关掉弹窗**，这一下不再发 `press`（`NSPopover` 的惯例）。
+后台会话（菜单栏域）收到 `press` 之后就用它开一面：弹窗跑在前台会话里，规则与别的弹窗一样。
+
 #### `jarvis.storage`
 
 每扩展一个键值空间（库里 `extension_preferences` 的 `<id>#storage` 命名空间，与偏好分开存——否则一个 key 取成
@@ -154,6 +159,30 @@ manifest `contributes.settings.preferences` 与各服务 `preferences` 里声明
 - Jarvis 没有辅助功能权限时报 `permission.unavailable`（macOS 26 起归属只能经 AX 认）。
 - **宿主只在菜单栏变了时才问 AX**：稳态一次 `list()` 只按已知窗口号读位置（约 0.2 ms），要位置时直接调、不必自己缓存；
   有 `observe` 订阅者时宿主每 10 s 兜底看一眼屏幕上的窗口——页面离开就退订。限频每分钟 ≤ 600 次。
+
+#### `jarvis.menuBarExtras.capture` — 截菜单栏上的项（能力 `menuBarExtras.capture`，高档，借屏幕录制，SDK 2.12）
+
+`capture(ids)` → `[{ id, live, image?, capturedAt? }]`，与 `ids` 同序（1–40 个，`list()` 给的 id）。
+
+- 此刻在屏幕上的当场截（`live: true`，2x PNG 句柄，交给 `image` / `row.image` / `chip.image` / `iconButton.image`）。
+- **藏着的截不到**：被挤出屏幕的、被刘海挡住的，窗口服务器都不算在屏上，ScreenCaptureKit 截不到（jarvis-mac `specs/20261030-081832-menubar-manager-p2` R-3）。
+  宿主按窗口号留着它最近一次露着时截到的那一张（内存里至多 64 张），藏着时交回它：`live: false`，`capturedAt` 是截的时刻（Unix 毫秒）。
+  从没露出来过、应用重启过（窗口换了）的没有 `image`——退回 `list()` 的 `icon`。
+- 所以要藏着时也有图，就在它露着的时候截一次（参考 [`extensions/menubar`](../extensions/menubar)：启动收起之前、每次展开之后、为点开而露出时）。
+  **宿主自己从不截，也不会为了截去动菜单栏**；一次调用读一次屏上窗口的清单（约 50 ms）、只截屏上的那几颗（每颗约 20 ms）。
+- Jarvis 没有屏幕录制权限时整次报 `permission.unavailable`。限频每分钟 ≤ 60 次。
+
+#### `jarvis.menuBarExtras.press` — 点开菜单栏上的项（能力 `menuBarExtras.control`，高档，借辅助功能，SDK 2.12）
+
+`press(id, { button?, onMenu? })` → `{ via: "accessibility" | "click" }`。
+
+- 先 AXPress（右键是 AXShowMenu）。那个应用不接 AX 的动作时，宿主在它中点合成一次点击、再把指针放回原处（`via: "click"`，用户看得到指针跳一下）。
+- **它的横向范围要落在某块屏里**：被挤出屏幕的报 `target.unavailable`（`detail: "offscreen"`）——点开的菜单会开在屏外。
+  宿主不替你把它挪出来：先露出它所在的段，等 `list()` 里它进了屏幕再点。刘海下面的可以点（AXPress 打开的菜单开在刘海下方，看得见），
+  但那里没有像素可点，AX 不接的应用在刘海下面点不开，同样报 `target.unavailable`。
+- `onMenu(state)`：这一次点开之后那个应用的菜单——`opened` 开了、`closed` 关了、`none` 1.5 s 内没开菜单（弹的是窗口、自绘面板，或什么都没弹）。
+  `closed` / `none` 之后不再推；开着超过 10 分钟的不再观察。宿主只为带了 `onMenu` 的那一次装观察，不常驻。
+- 限频每分钟 ≤ 30 次。
 
 #### `jarvis.screens` — 屏幕几何（隐式，SDK 2.11）
 

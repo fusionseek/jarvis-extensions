@@ -334,6 +334,33 @@ export interface MenuBarExtrasChange {
   removed: string[];
 }
 
+/**
+ * `jarvis.menuBarExtras.capture` 交回的一项（SDK 2.12，`$defs.menuBarExtraCapture`），与请求的 id 同序。
+ *
+ * - `live: true`：这一次当场截的（图标此刻在屏幕上）。
+ * - `live: false` 而有 `image`：它藏着，交回的是同一扇窗最近一次露着时截到的那一张，`capturedAt` 是那一刻（Unix 毫秒）。
+ * - 没有 `image`：从没露出来过、应用重启过（窗口换了），或 id 不认识。
+ *
+ * 屏幕外、刘海下的图标窗口服务器不算在屏上，截不到（jarvis-mac `specs/20261030-081832-menubar-manager-p2` R-3）。
+ */
+export interface MenuBarExtraCapture {
+  id: string;
+  live: boolean;
+  image?: FileHandle;
+  capturedAt?: number;
+}
+
+/** `jarvis.menuBarExtras.press` 怎么点到的（SDK 2.12）：`accessibility` = AXPress 送达；`click` = 那个应用不接，宿主合成了一次点击。 */
+export interface MenuBarExtrasPressResult {
+  via: "accessibility" | "click";
+}
+
+/**
+ * 点开之后那个应用的菜单（SDK 2.12，`$defs.menuBarMenuEvent.state`）：`opened` 开了；`closed` 关了；
+ * `none` 1.5 s 内没有菜单打开（弹的是窗口、自绘面板，或什么都没弹）。`closed` / `none` 之后不再推。
+ */
+export type MenuBarMenuState = "opened" | "closed" | "none";
+
 // ---------------------------------------------------------------------------
 // 常驻进程（SDK 2.9）：`$defs.daemonID` / `controlPort` / `daemonStartRequest` / `daemonStatus` / `daemonEvent` /
 // `daemonRequest` / `daemonResponse`。语义见同一 spec P-3、P-4。

@@ -224,6 +224,8 @@ export interface ChipNode extends Keyed {
   kind: "chip";
   title: string;
   symbol?: string;
+  /** 宿主颁的一张图（SDK 2.12）：画在标题前、高 14；有它就不画 `symbol`，句柄失效时退回 `symbol`。 */
+  image?: FileHandle;
   selected?: boolean;
   tint?: Tint;
   disabled?: boolean;
@@ -265,7 +267,13 @@ export interface ButtonNode extends Keyed {
 
 export interface IconButtonNode extends Keyed {
   kind: "iconButton";
+  /** 没给 `image`、或句柄失效时画它。 */
   symbol: string;
+  /**
+   * 宿主颁的一张图（SDK 2.12：`menuBarExtras.capture` 的截图、`list()` 的应用图标）：按比例放进按钮，按钮随图变宽、至少是正方形——
+   * 菜单栏上的读数类图标是横长的，不会被压扁。
+   */
+  image?: FileHandle;
   /** VoiceOver 与 tooltip 都读它。必填。 */
   label: string;
   size?: ControlSize;

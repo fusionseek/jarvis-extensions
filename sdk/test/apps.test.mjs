@@ -30,9 +30,9 @@ defineExtension({
   },
 });
 
-test("apps.read 是中档；SDK 是 2.11.0", () => {
+test("apps.read 是中档；SDK 是 2.12.0", () => {
   assert.equal(capabilityTiers["apps.read"], "medium");
-  assert.equal(sdkVersion, "2.11.0");
+  assert.equal(sdkVersion, "2.12.0");
 });
 
 test("jarvis.apps.list 按 namespace = apps、method = list 上线缆，不带参数", async () => {

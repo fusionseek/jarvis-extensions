@@ -15,6 +15,7 @@ mock.timers.enable({ apis: ["setTimeout", "Date"] });
 let preferences = {};
 let items = [];
 const subscriptions = [];
+const runs = [];
 const host = createTestHost({
   async: {
     "menuBar.update": async () => null,
@@ -27,7 +28,7 @@ const host = createTestHost({
     "menuBarExtras.list": async () => items,
     "menuBarExtras.observe": async () => null,
     "menuBarExtras.unsubscribe": async () => null,
-    "commands.run": async () => null,
+    "commands.run": async (params) => void runs.push(params),
   },
 });
 await import(pathToFileURL(join(extensionRoot, "dist", "extension.js")).href);
@@ -103,6 +104,25 @@ test("/menubar 指令切换", async () => {
   assert.equal(host.statusItem("hidden").length, "auto");
   await host.dispatch({ type: "command", context: { id: "toggle", trigger: "slash", granted, preferences, commands: [] } });
   await host.settle();
+  assert.ok(blank("hidden"));
+});
+
+test("1.1：在菜单栏里展开之后，被刘海挡住的放进副栏——锚在隐藏段那条竖线下面", async () => {
+  items = [
+    extra("me.hidden", 1180, { width: 22, mine: "hidden" }),
+    extra("com.figma", 862, { name: "Figma", onScreen: false }),
+    extra("com.wifi", 1336, { name: "Wi‑Fi" }),
+    extra("me.toggle", 1400, { width: 26, mine: "toggle" }),
+  ];
+  runs.length = 0;
+  await host.menuBarEvent("press", { statusItem: "toggle", modifiers: [], granted });
+  assert.equal(host.statusItem("hidden").length, "auto");
+  assert.deepEqual(runs, [], "展开那一下先不弹：等图标挪到位");
+  mock.timers.tick(350);
+  await host.settle();
+  assert.deepEqual(runs, [{ id: "bar", argument: "obscured", anchor: { statusItem: "hidden" } }],
+    "锚在竖线上：点「‹」收起时不会被当成「关副栏」吞掉");
+  await host.menuBarEvent("press", { statusItem: "toggle", modifiers: [], granted });
   assert.ok(blank("hidden"));
 });
 

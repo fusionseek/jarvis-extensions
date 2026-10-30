@@ -146,7 +146,7 @@
     },
     "capabilityID": {
       "type": "string",
-      "description": "能力目录见 docs/06-capabilities.md。只列宿主真的做得到的；隐式能力（panel.* / storage.* / preferences.* / text.* / time.* / color.* / window.open / service.* / host.* / log）不在这里声明。git.* 三项是 Git 操作域：声明任一项都要入驻 Git 域（contributes.git），git.hosting.write 还要逐字写出 git.mutations。android.* 两项是 Android 操作域：宿主经自己的 adb 跑它写死的那几条命令（列设备、列应用、读应用名与图标），扩展只给设备序列号与包名、不给参数；android.tools.open 把一个包名交给内置的「APK 扫描」「数据导出」。apps.read 读这台 Mac 装了哪些应用（名字、Bundle ID、位置、分类、最近打开 / 添加时刻）：宿主自己扫三处应用目录，扩展不给路径；打开、删除应用由用户在 Jarvis 全局搜索里点，扩展做不了。 process.daemon 是常驻进程（manifest process.daemons 逐字声明可执行文件与一组参数；宿主托管它的生死、只放行发往它自己控制口的本机请求），system.proxy 把系统代理指向本机 127.0.0.1 的一个端口（要求这个扩展此刻有一个在跑的常驻进程或 TUN 内核；都没了宿主自动还原）——jarvis-mac specs/20261028-091917-proxy-extension-menubar-daemon。SDK 2.10（jarvis-mac specs/20261028-111714-proxy-tun-orb-traffic-page-rules）：network.tunnel 以管理员身份运行 sing-box 接管整机网络（TUN 增强模式，要 manifest process.tunnel；第一次打开时用户输一次管理员密码装上 Jarvis 的网络助手，配置过宿主的守卫、TUN 段由宿主填）；browser.activeTab 读前台（或最近一次激活的）浏览器当前标签的地址与标题（系统「自动化」授权）；files.pick 让用户在宿主画的打开面板里挑一个文件交给扩展读（只拿到文件名与正文，拿不到路径）。 SDK 2.11（jarvis-mac specs/20261029-225323-menubar-manager-p1）：menuBar.pointer 感知指针进出菜单栏那一条、在那里点击与滚动（只报菜单栏带里的事，指针在别处的位置读不到）；menuBarExtras.read 读系统菜单栏上有哪些图标——任何应用的，归属、说明、位置（借 Jarvis 的辅助功能权限）。",
+      "description": "能力目录见 docs/06-capabilities.md。只列宿主真的做得到的；隐式能力（panel.* / storage.* / preferences.* / text.* / time.* / color.* / window.open / service.* / host.* / log）不在这里声明。git.* 三项是 Git 操作域：声明任一项都要入驻 Git 域（contributes.git），git.hosting.write 还要逐字写出 git.mutations。android.* 两项是 Android 操作域：宿主经自己的 adb 跑它写死的那几条命令（列设备、列应用、读应用名与图标），扩展只给设备序列号与包名、不给参数；android.tools.open 把一个包名交给内置的「APK 扫描」「数据导出」。apps.read 读这台 Mac 装了哪些应用（名字、Bundle ID、位置、分类、最近打开 / 添加时刻）：宿主自己扫三处应用目录，扩展不给路径；打开、删除应用由用户在 Jarvis 全局搜索里点，扩展做不了。 process.daemon 是常驻进程（manifest process.daemons 逐字声明可执行文件与一组参数；宿主托管它的生死、只放行发往它自己控制口的本机请求），system.proxy 把系统代理指向本机 127.0.0.1 的一个端口（要求这个扩展此刻有一个在跑的常驻进程或 TUN 内核；都没了宿主自动还原）——jarvis-mac specs/20261028-091917-proxy-extension-menubar-daemon。SDK 2.10（jarvis-mac specs/20261028-111714-proxy-tun-orb-traffic-page-rules）：network.tunnel 以管理员身份运行 sing-box 接管整机网络（TUN 增强模式，要 manifest process.tunnel；第一次打开时用户输一次管理员密码装上 Jarvis 的网络助手，配置过宿主的守卫、TUN 段由宿主填）；browser.activeTab 读前台（或最近一次激活的）浏览器当前标签的地址与标题（系统「自动化」授权）；files.pick 让用户在宿主画的打开面板里挑一个文件交给扩展读（只拿到文件名与正文，拿不到路径）。 SDK 2.11（jarvis-mac specs/20261029-225323-menubar-manager-p1）：menuBar.pointer 感知指针进出菜单栏那一条、在那里点击与滚动（只报菜单栏带里的事，指针在别处的位置读不到）；menuBarExtras.read 读系统菜单栏上有哪些图标——任何应用的，归属、说明、位置（借 Jarvis 的辅助功能权限）。 SDK 2.12（jarvis-mac specs/20261030-081832-menubar-manager-p2）：menuBarExtras.capture 截菜单栏图标露在屏幕上时的样子（借 Jarvis 的屏幕录制权限；藏着的交回最近一次露着时截到的）；menuBarExtras.control 替用户点开菜单栏上的图标（AXPress，不接时在它中点合成一次点击再把指针放回原处；借辅助功能）。两项都是高档。",
       "enum": [
         "clipboard.read",
         "clipboard.write",
@@ -176,7 +176,9 @@
         "android.tools.open",
         "apps.read",
         "menuBar.pointer",
-        "menuBarExtras.read"
+        "menuBarExtras.read",
+        "menuBarExtras.capture",
+        "menuBarExtras.control"
       ]
     },
     "capabilityRequest": {
@@ -550,9 +552,35 @@
             "silent"
           ],
           "description": "toolbox = 展开面板到它的页面（要工具箱域）；window = 在工作区开它的标签（要窗口域）；popover = 原地结果弹窗（要工具箱域）；silent = 后台会话里跑，不碰任何界面。"
+        },
+        "popoverWidth": {
+          "enum": [
+            "standard",
+            "content"
+          ],
+          "description": "只对 presentation 为 popover 的命令（jarvis-mac specs/20261030-081832-menubar-manager-p2 N-4）：standard（省略时）= 400 宽、带宿主的页头与脚注；content = 宽度取那棵树的理想宽度（夹在 120 与屏宽 − 32 之间）、不画页头与脚注——一排快捷开关、一条图标那样的工具条。"
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "popoverWidth": {}
+            },
+            "required": [
+              "popoverWidth"
+            ]
+          },
+          "then": {
+            "properties": {
+              "presentation": {
+                "const": "popover"
+              }
+            }
+          }
+        }
+      ]
     },
     "slash": {
       "type": "object",

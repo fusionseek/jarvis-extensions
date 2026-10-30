@@ -21,7 +21,10 @@ import type {
   FilesPickRequest,
   FilesPickResult,
   MenuBarExtra,
+  MenuBarExtraCapture,
   MenuBarExtrasChange,
+  MenuBarExtrasPressResult,
+  MenuBarMenuState,
   MenuBarModel,
   MenuBarPointerEvent,
   OrbMeterModel,
@@ -50,7 +53,12 @@ export type JarvisErrorCode =
   /** 宿主侧执行失败（服务没起来、文件不在了、网络不通 …）。`detail` 里是给人读的一句话。 */
   | "host.failure"
   /** 用户在宿主的框选 / 确认里取消了，或宿主取消了这次服务调用。取消不是失败，但调用方仍要收尾。 */
-  | "cancelled";
+  | "cancelled"
+  /**
+   * 要动的那个东西此刻动不了（SDK 2.12）：不在屏幕范围里、已经不在了。`detail` 给原因（`offscreen` / `missing`）。
+   * 参数是对的、只是时机不对：等一下（比如等图标挪进屏幕）可以再试。
+   */
+  | "target.unavailable";
 
 /** 一个结构化错误的形状。 */
 export interface JarvisErrorShape {
@@ -122,8 +130,20 @@ export interface WindowAPI {
 
 /** 命令。 */
 export interface CommandsAPI {
-  /** 运行 manifest 里声明的一条命令，与快捷键触发同一条路（`trigger = "page"`）。 */
-  run(id: string, argument?: string): Promise<void>;
+  /**
+   * 运行 manifest 里声明的一条命令，与快捷键触发同一条路（`trigger = "page"`）。
+   *
+   * 第二个参数可以是原来的字符串（`/` 指令后面那段字），也可以是 `{ argument?, anchor? }`（SDK 2.12）：
+   * `anchor.statusItem` 让 `popover` 命令的弹窗挂在你自己的那一枚状态项正下方（manifest `contributes.menuBar.items` 里的 id）；
+   * 那一枚此刻没画出来时退回指针旁边。再点那一枚状态项 = 关掉弹窗，这一下不再发 `press`。
+   */
+  run(id: string, argument?: string | CommandRunOptions): Promise<void>;
+}
+
+/** `jarvis.commands.run` 的选项（SDK 2.12）。 */
+export interface CommandRunOptions {
+  argument?: string;
+  anchor?: { statusItem: string };
 }
 
 /** 扩展自己的键值存储（与偏好分开存）。 */
@@ -210,6 +230,18 @@ export interface MenuBarExtrasAPI {
    * 有订阅者时宿主每 10 s 兜底看一眼屏幕上的窗口（约 0.6 ms）——用完就退订。
    */
   observe(listener: (change: MenuBarExtrasChange) => void): Unsubscribe;
+  /**
+   * 截这几颗的样子（SDK 2.12，能力 `menuBarExtras.capture`，借屏幕录制；没有时报 `permission.unavailable`）。
+   * `ids` 是 `list()` 给的，1–40 个。此刻在屏幕上的当场截；藏着的交回最近一次露着时截到的（`live: false`）——
+   * 所以要藏着时也有图，就在它露着的时候截一次。宿主自己从不截，也不为了截去动菜单栏。
+   */
+  capture(ids: string[]): Promise<MenuBarExtraCapture[]>;
+  /**
+   * 点开一颗（SDK 2.12，能力 `menuBarExtras.control`，借辅助功能）。先 AXPress，那个应用不接时在它中点合成一次点击、再把指针放回原处。
+   * 它被挤出屏幕时报 `target.unavailable`（`detail: "offscreen"`）——宿主不替你把它挪出来，先露出来、等它进屏幕再点；刘海下面的可以点。
+   * `onMenu`：这一次点开之后那个应用的菜单开了、关了，或者根本没开菜单（`none`）；`closed` / `none` 之后不再推。
+   */
+  press(id: string, options?: { button?: "left" | "right"; onMenu?: (state: MenuBarMenuState) => void }): Promise<MenuBarExtrasPressResult>;
 }
 
 /** 屏幕几何（SDK 2.11，隐式）：每块屏的位置、菜单栏高度、刘海两侧。 */

@@ -1,16 +1,16 @@
 {
   "manifestVersion": 2,
   "id": "menubar",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "菜单栏管理",
   "symbol": "menubar.rectangle",
-  "description": "把用不着的菜单栏图标收起来：点一下「‹」、点菜单栏空白处、悬停或在上面滚动就露出来，指针离开一会儿自己收回；最不常用的放进「永远隐藏」，⌥ 点才出来。按住 ⌘ 拖动图标越过竖线就换段。菜单栏没变时 Jarvis 不去读它，空闲不占 CPU。",
+  "description": "把用不着的菜单栏图标收起来：点一下「‹」、点菜单栏空白处、悬停或在上面滚动就露出来，指针离开一会儿自己收回；也可以不动菜单栏，在「‹」下面弹一条副栏，点副栏里的图标就替你点开它。被刘海挡住的放进副栏。菜单栏没变时 Jarvis 不去读它，空闲不占 CPU。",
   "author": {
     "name": "fusionseek",
     "github": "fusionseek"
   },
   "main": "dist/extension.js",
-  "sdk": "^2.11.0",
+  "sdk": "^2.12.0",
   "minimumJarvisVersion": "3.3.1",
   "capabilities": [
     {
@@ -19,7 +19,15 @@
     },
     {
       "id": "menuBarExtras.read",
-      "reason": "在工具箱页列出每一段里有哪些图标、哪些被刘海挡住"
+      "reason": "在工具箱页与副栏里列出每一段里有哪些图标、哪些被刘海挡住"
+    },
+    {
+      "id": "menuBarExtras.capture",
+      "reason": "副栏与工具箱页里画出图标的真实样子；只在图标露着时截那几颗，不给就画应用图标"
+    },
+    {
+      "id": "menuBarExtras.control",
+      "reason": "点副栏里的一颗时，先把它露出来再替你点开；菜单关上就收回"
     }
   ],
   "contributes": {
@@ -77,10 +85,40 @@
           ]
         },
         "presentation": "silent"
+      },
+      {
+        "id": "bar",
+        "title": "副栏",
+        "description": "在「‹」下面弹一条副栏，画藏起来的与被刘海挡住的图标",
+        "presentation": "popover",
+        "popoverWidth": "content"
+      },
+      {
+        "id": "reveal-item",
+        "title": "点开图标",
+        "description": "露出一颗藏起来的图标并点开它（副栏里点一颗时用）",
+        "presentation": "silent"
       }
     ],
     "settings": {
       "preferences": [
+        {
+          "key": "showIn",
+          "type": "select",
+          "title": "隐藏的图标显示在",
+          "description": "在菜单栏里展开，或者菜单栏不动、在「‹」下面弹一条副栏",
+          "default": "menuBar",
+          "options": [
+            {
+              "value": "menuBar",
+              "title": "菜单栏里"
+            },
+            {
+              "value": "bar",
+              "title": "副栏"
+            }
+          ]
+        },
         {
           "key": "clickReveal",
           "type": "toggle",
@@ -116,6 +154,13 @@
           "type": "toggle",
           "title": "启用「永远隐藏」段",
           "description": "最左边那条竖线左边的图标只有 ⌥ 点「‹」时才出来",
+          "default": true
+        },
+        {
+          "key": "notchToBar",
+          "type": "toggle",
+          "title": "被刘海挡住的放进副栏",
+          "description": "在菜单栏里展开时，挡在刘海下面、挤到刘海左边看不见的图标在「‹」下面的副栏里点得到",
           "default": true
         }
       ]

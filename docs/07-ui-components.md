@@ -25,6 +25,7 @@ v2 的扩展最多有三面（[02](02-architecture.md#运行时前台会话与�
 | `toolbox` | 368pt（400 面板扣左右各 16） | header 62 之下的 457，装不下滚动 | 16 | 面板恒为 400×520，这是全 App 唯一的内容画布 |
 | `window` | 随窗宽，**收在 720pt 以内居中** | 随窗高 | 上下 16 | 节点按 368 设计，放宽到将近两倍还读得顺；再宽，`row` 的标题与读数之间隔着半扇窗 |
 | `popover` | 400pt 宽，扣内距 12 | 随内容长，≤ 520 后滚动 | 12 | 一枚贴着选区的浮片，不是画布；与面板同宽，免得同一棵树换一面就重新折行 |
+| `popover` · `popoverWidth: "content"`（SDK 2.12） | 树的理想宽度，夹在 120 与屏宽 − 32 之间 | 随内容，没有 120 的下限，≤ 520 | 6，圆角 10，无页头脚注 | 一条工具条：横排的 `stack` 里放 `iconButton` / `chip`。别放会撑满宽度的节点（`row`、通栏 `segmented`）——它们没有理想宽度可量 |
 
 后台会话（服务、静默命令）**没有任何一面**，宿主不会调它的 `render()`。
 
@@ -126,7 +127,7 @@ v2 的扩展最多有三面（[02](02-architecture.md#运行时前台会话与�
 | `search` | 工具箱搜索框 | `Toolbox.Search`：32 高 / 圆角 10 / 12.5pt | 聚焦青边 + 轻辉光；有内容时右端清除钮，空时 `⌘F` 键帽；`Esc` 只在有内容时清空，否则放行给面板收起 |
 | `segmented` | 分段 | `compact`: `TimeConverter.Segmented`（白 6% 底 / 圆角 6 / 选中青 20% / 9pt bold）；`full`: `HashGenerator.Tab`（通栏两段各 26 高 / 圆角 8 / 选中青 7.8% 底 + 青边） | `compact` 挤在段标题右端（ms/s），`full` 是两块内容并列的入口（文本 / 文件）；档数 ≤ 5 |
 | `toggle` | `SettingsGlassToggleStyle` | 56×30 玻璃开关 | 命中区是整颗轨道，不含标签；`disabled` 整体 45% 不隐藏 |
-| `chip` | 紧凑 chip | `Base64.Options` 紧凑 chip：7×3 内距、10pt 等宽 bold；选中 `tint` 20% 底 + `tint` 边，未选白 3% 底 / 白 8% 边 | 文案压到最短，完整含义放 `help`（tooltip + VoiceOver） |
+| `chip` | 紧凑 chip | `Base64.Options` 紧凑 chip：7×3 内距、10pt 等宽 bold；选中 `tint` 20% 底 + `tint` 边，未选白 3% 底 / 白 8% 边 | 文案压到最短，完整含义放 `help`（tooltip + VoiceOver）。`image`（SDK 2.12）：宿主颁的图，画在标题前、高 14，句柄失效时退回 `symbol` |
 | `picker` | 下拉 | `TimeConverter.ZonePicker`：宽 320 / 圆角 10 / 选项行 27pt / 选中青 12% 底；`searchable` 时顶部搜索框；列表最高 174pt 后滚；`layout: "compact"` 时触发器是一枚「值 ▾」chip（白 5% 底 / 白 10% 边 / 圆角 8 / 12pt semibold），点开同一份下拉 | 选项 > 8 自动带搜索；勾在未选中时留位不隐藏；`compact` 用在段标题右端或「标签 + 值」的一行里（原地弹窗的语言行） |
 | `dropzone` | `HashGenerator.DropZone` | 高 88 / 圆角 10 / 青 30% 虚线 `[4,3]`；悬停底青 5% + 青 85% 虚线 1.5pt + 12pt 外发光 | 点也能选文件（键盘用户进得来）；文件夹在落下那一刻拒绝；多拖几个只算前 N 个并在屏幕上说出来 |
 
@@ -135,7 +136,7 @@ v2 的扩展最多有三面（[02](02-architecture.md#运行时前台会话与�
 | 节点 | 宿主实现 | tokens | 规则 |
 | --- | --- | --- | --- |
 | `button` | 文字按钮 | `bar` 26 高 / `inline` 22 高；`primary` accent 底 12% + accent 1pt 实边 / 圆角 6（时间转换器那颗「转换」）；`secondary` 白 5% / 10%；`link` 无底、12pt semibold accent；`danger` `danger` 14% 底 / 1pt 边 | **一块面板上只该有一颗实心 accent 按钮**——它是这一段唯一的主动作；`confirm` 走就地两步确认（第一次按变文案、4 秒或视图消失复原），不弹 modal；`disabled` 失效不隐藏、不亮悬停光 |
-| `iconButton` | 图标按钮 | `bar`: header 那排的玻璃圆片 26pt、白 6% 底 / 白 8% 边；`inline`: 22pt 命中区里 12pt glyph | `label` 必填（tooltip + VoiceOver）；`active` 整片点亮成青色（开关语义） |
+| `iconButton` | 图标按钮 | `bar`: header 那排的玻璃圆片 26pt、白 6% 底 / 白 8% 边；`inline`: 22pt 命中区里 12pt glyph | `label` 必填（tooltip + VoiceOver）；`active` 整片点亮成青色（开关语义）。`image`（SDK 2.12）：宿主颁的图（菜单栏截图、应用图标）按比例放进按钮、上下各留 3，按钮随图变宽成胶囊、至少是圆；句柄失效时画 `symbol` |
 | `copy` | 复制钮 | `chip`: `HashGenerator` 复制 chip 15 高 / 圆角 4 / 青 10% 底 + 青 28% 边，「已复制」青 22% + 青 70%；`icon`: 22pt 行内 `doc.on.clipboard` → 一秒对勾 | 宿主写剪贴板，不需要能力；同一屏多颗复制钮的「已复制」由宿主用一个可选值表达，同时亮两颗在类型上不可能 |
 | `ActionSpec`（段与行上的小动作） | 22pt 行内 | 同 `iconButton inline` / `button inline` | 有 `symbol` 时 `help` 必填 |
 

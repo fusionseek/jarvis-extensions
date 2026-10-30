@@ -262,6 +262,9 @@ export function checkExtension(dir) {
     if ((c.presentation === "toolbox" || c.presentation === "popover") && !contributes.toolbox) {
       problem(dir, `命令「${c.id}」落在 ${c.presentation}，却没有入驻工具箱域（contributes.toolbox）`);
     }
+    if (c.popoverWidth !== undefined && c.presentation !== "popover") {
+      problem(dir, `命令「${c.id}」写了 popoverWidth，却不是 popover 命令`);
+    }
     if (c.presentation === "window" && !contributes.window) {
       problem(dir, `命令「${c.id}」落在 window，却没有入驻窗口域（contributes.window）`);
     }

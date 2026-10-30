@@ -50,8 +50,8 @@ defineExtension({
 });
 
 test("SDK 2.9：版本号与两项新能力的档位（都是高）", () => {
-  assert.equal(sdkVersion, "2.11.0");
-  assert.equal(jarvis.sdk.version, "2.11.0");
+  assert.equal(sdkVersion, "2.12.0");
+  assert.equal(jarvis.sdk.version, "2.12.0");
   assert.equal(capabilityTiers["process.daemon"], "high");
   assert.equal(capabilityTiers["system.proxy"], "high");
 });

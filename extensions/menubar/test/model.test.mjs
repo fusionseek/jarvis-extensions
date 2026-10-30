@@ -100,3 +100,55 @@ test("分段：露着时边界是一条竖线，照样按它的左边分", () =>
   assert.deepEqual(layout.shown.map((item) => item.id), ["b"]);
   assert.equal(layout.collapsed, false);
 });
+
+// 1.1（jarvis-mac specs/20261030-081832-menubar-manager-p2 N-7）
+
+test("设置：showIn 只认 menuBar / bar，notchToBar 默认开", () => {
+  assert.equal(model.readSettings({}).showIn, "menuBar");
+  assert.equal(model.readSettings({ showIn: "bar" }).showIn, "bar");
+  assert.equal(model.readSettings({ showIn: "strip" }).showIn, "menuBar");
+  assert.equal(model.readSettings({}).notchToBar, true);
+  assert.equal(model.readSettings({ notchToBar: false }).notchToBar, false);
+});
+
+test("看不见：不在屏上、中点落在屏幕范围里（刘海下、刘海左边）；挤出屏幕的不算", () => {
+  assert.equal(model.isObscured(extra("a", 886, { onScreen: false }), [notchScreen]), true, "刘海下面");
+  assert.equal(model.isObscured(extra("b", 600, { onScreen: false }), [notchScreen]), true, "挤到刘海左边、应用菜单底下");
+  assert.equal(model.isObscured(extra("c", -3700, { onScreen: false }), [notchScreen]), false, "收起时我们自己藏的");
+  assert.equal(model.isObscured(extra("d", 1100), [notchScreen]), false);
+  assert.equal(model.isWithinScreens(extra("a", 886, { onScreen: false }), [notchScreen]), true, "刘海下面的能点开");
+});
+
+test("副栏里放哪些：隐藏段 + 看不见的；all 再加永远隐藏段；obscured 只放看不见的；从左到右", () => {
+  const items = [
+    extra("always-1", -9200, { onScreen: false }),
+    extra("always", -9157, { width: 5016, onScreen: false, mine: "always" }),
+    extra("hidden-1", -3740, { onScreen: false }),
+    extra("hidden-2", -3700, { onScreen: false }),
+    extra("hidden", -3626, { width: 5016, onScreen: false, mine: "hidden" }),
+    extra("notched", 1400, { onScreen: false }),
+    extra("shown", 1440),
+    extra("toggle", 1480, { mine: "toggle" }),
+  ];
+  // 收着时 hidden 那枚撑到 x = −3626…1390：「notched」挪到它右边、算显示段，却看不见。
+  items[5] = extra("notched", 900, { onScreen: false });
+  items[4] = extra("hidden", -3626, { width: 1000, onScreen: false, mine: "hidden" });
+  assert.deepEqual(model.barItems(items, [notchScreen], "hidden").map((item) => item.id), ["hidden-1", "hidden-2", "notched"]);
+  assert.deepEqual(model.barItems(items, [notchScreen], "all").map((item) => item.id), ["always-1", "hidden-1", "hidden-2", "notched"]);
+  assert.deepEqual(model.barItems(items, [notchScreen], "obscured").map((item) => item.id), ["notched"]);
+  assert.equal(model.barScope("all"), "all");
+  assert.equal(model.barScope(undefined), "hidden");
+  assert.equal(model.barScope("everything"), "hidden");
+});
+
+test("截哪几颗：隐藏段与永远隐藏段里此刻露着的；显示段一直看得见，不截；至多 40", () => {
+  const items = [
+    extra("hidden-1", 1000),
+    extra("hidden-2", 860, { onScreen: false }),
+    extra("hidden", 1250, { width: 22, mine: "hidden" }),
+    extra("shown", 1300),
+  ];
+  assert.deepEqual(model.captureTargets(items, [notchScreen]), ["hidden-1"], "刘海下面的截不到，不去截");
+  const many = [...Array.from({ length: 50 }, (_, index) => extra(`h${index}`, index * 10)), extra("hidden", 1250, { width: 22, mine: "hidden" })];
+  assert.equal(model.captureTargets(many, [notchScreen]).length, 40);
+});

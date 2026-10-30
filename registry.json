@@ -1,9 +1,9 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-29T16:28:40.173Z",
+  "generatedAt": "2026-10-30T01:03:41.132Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "03eeb3d20d373789fd0ce3bbdcfccaa4813f9e77"
+    "commit": "c91a82778fd9de3df282bbb3238a55f13bbc1391"
   },
   "extensions": [
     {
@@ -51,10 +51,10 @@
       "path": "extensions/android-apps",
       "bundle": {
         "path": "extensions/android-apps/dist/extension.js",
-        "sha256": "d11263516c0e024badd53070b4a1a469232b1f236e2dfacba3c6aa4355d2372a",
-        "byteCount": 64385
+        "sha256": "8b0a453f125cd8c551d8630f784cbbb74d90ac6bfad229c2896e4b67d828ee28",
+        "byteCount": 65600
       },
-      "updatedAt": "2026-10-28T20:47:49+08:00"
+      "updatedAt": "2026-10-30T00:30:35+08:00"
     },
     {
       "manifest": {
@@ -390,10 +390,10 @@
       "path": "extensions/code-format",
       "bundle": {
         "path": "extensions/code-format/dist/extension.js",
-        "sha256": "8a874ec086b053aae3c21331d8121d140399aaebca56ca720012e2836678bb0b",
-        "byteCount": 38701
+        "sha256": "d4d84482b4de4271373b97f9f5e2c5ca79f6bc87b8238e6da4a418e9191b00d0",
+        "byteCount": 39916
       },
-      "updatedAt": "2026-10-28T20:47:49+08:00"
+      "updatedAt": "2026-10-30T00:30:35+08:00"
     },
     {
       "manifest": {
@@ -430,10 +430,10 @@
       "path": "extensions/code-highlight",
       "bundle": {
         "path": "extensions/code-highlight/dist/extension.js",
-        "sha256": "a7cde6c3310aa793fad34c8060771ff06c6e787ac7546ff065d97017990793e4",
-        "byteCount": 60926
+        "sha256": "1e396bf873bd1e4c03fe5cc72f726adae988912360b79243086698221a005ecb",
+        "byteCount": 62141
       },
-      "updatedAt": "2026-10-28T20:47:49+08:00"
+      "updatedAt": "2026-10-30T00:30:35+08:00"
     },
     {
       "manifest": {
@@ -511,10 +511,10 @@
       "path": "extensions/github-project",
       "bundle": {
         "path": "extensions/github-project/dist/extension.js",
-        "sha256": "4fcefa305f84cfc7afa197866b5c904e5de13a6171c9fff6e8b173f12f9f03d9",
-        "byteCount": 92845
+        "sha256": "cd9e3e5db41f0dfcee057f4ef9f52ffff2e9bc34a7e19d79ca19db3482615240",
+        "byteCount": 94060
       },
-      "updatedAt": "2026-10-28T20:47:49+08:00"
+      "updatedAt": "2026-10-30T00:30:35+08:00"
     },
     {
       "manifest": {
@@ -652,10 +652,10 @@
       "path": "extensions/http-status",
       "bundle": {
         "path": "extensions/http-status/dist/extension.js",
-        "sha256": "92923915f5ca3f9f2bb1aacf72d35d6e63db031bb042d5635a502f4a3c818eef",
-        "byteCount": 124727
+        "sha256": "21b822b3197d636bd6186724496853358433e4057247c9bb1a4e889577dea00f",
+        "byteCount": 125942
       },
-      "updatedAt": "2026-10-28T20:47:49+08:00"
+      "updatedAt": "2026-10-30T00:30:35+08:00"
     },
     {
       "manifest": {
@@ -706,25 +706,25 @@
       "path": "extensions/mac-apps",
       "bundle": {
         "path": "extensions/mac-apps/dist/extension.js",
-        "sha256": "f12a3b278ccb38bd5e02a779c9be4b087098255e80511af5f623d44dd0015747",
-        "byteCount": 41957
+        "sha256": "beda7ae41279a166907e823164028deb9f353828d77a1ca605b9abad67b80e9d",
+        "byteCount": 43172
       },
-      "updatedAt": "2026-10-28T20:47:49+08:00"
+      "updatedAt": "2026-10-30T00:30:35+08:00"
     },
     {
       "manifest": {
         "manifestVersion": 2,
         "id": "menubar",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "name": "菜单栏管理",
         "symbol": "menubar.rectangle",
-        "description": "把用不着的菜单栏图标收起来：点一下「‹」、点菜单栏空白处、悬停或在上面滚动就露出来，指针离开一会儿自己收回；最不常用的放进「永远隐藏」，⌥ 点才出来。按住 ⌘ 拖动图标越过竖线就换段。菜单栏没变时 Jarvis 不去读它，空闲不占 CPU。",
+        "description": "把用不着的菜单栏图标收起来：点一下「‹」、点菜单栏空白处、悬停或在上面滚动就露出来，指针离开一会儿自己收回；也可以不动菜单栏，在「‹」下面弹一条副栏，点副栏里的图标就替你点开它。被刘海挡住的放进副栏。菜单栏没变时 Jarvis 不去读它，空闲不占 CPU。",
         "author": {
           "name": "fusionseek",
           "github": "fusionseek"
         },
         "main": "dist/extension.js",
-        "sdk": "^2.11.0",
+        "sdk": "^2.12.0",
         "minimumJarvisVersion": "3.3.1",
         "capabilities": [
           {
@@ -733,7 +733,15 @@
           },
           {
             "id": "menuBarExtras.read",
-            "reason": "在工具箱页列出每一段里有哪些图标、哪些被刘海挡住"
+            "reason": "在工具箱页与副栏里列出每一段里有哪些图标、哪些被刘海挡住"
+          },
+          {
+            "id": "menuBarExtras.capture",
+            "reason": "副栏与工具箱页里画出图标的真实样子；只在图标露着时截那几颗，不给就画应用图标"
+          },
+          {
+            "id": "menuBarExtras.control",
+            "reason": "点副栏里的一颗时，先把它露出来再替你点开；菜单关上就收回"
           }
         ],
         "contributes": {
@@ -791,10 +799,40 @@
                 ]
               },
               "presentation": "silent"
+            },
+            {
+              "id": "bar",
+              "title": "副栏",
+              "description": "在「‹」下面弹一条副栏，画藏起来的与被刘海挡住的图标",
+              "presentation": "popover",
+              "popoverWidth": "content"
+            },
+            {
+              "id": "reveal-item",
+              "title": "点开图标",
+              "description": "露出一颗藏起来的图标并点开它（副栏里点一颗时用）",
+              "presentation": "silent"
             }
           ],
           "settings": {
             "preferences": [
+              {
+                "key": "showIn",
+                "type": "select",
+                "title": "隐藏的图标显示在",
+                "description": "在菜单栏里展开，或者菜单栏不动、在「‹」下面弹一条副栏",
+                "default": "menuBar",
+                "options": [
+                  {
+                    "value": "menuBar",
+                    "title": "菜单栏里"
+                  },
+                  {
+                    "value": "bar",
+                    "title": "副栏"
+                  }
+                ]
+              },
               {
                 "key": "clickReveal",
                 "type": "toggle",
@@ -831,6 +869,13 @@
                 "title": "启用「永远隐藏」段",
                 "description": "最左边那条竖线左边的图标只有 ⌥ 点「‹」时才出来",
                 "default": true
+              },
+              {
+                "key": "notchToBar",
+                "type": "toggle",
+                "title": "被刘海挡住的放进副栏",
+                "description": "在菜单栏里展开时，挡在刘海下面、挤到刘海左边看不见的图标在「‹」下面的副栏里点得到",
+                "default": true
               }
             ]
           }
@@ -840,10 +885,10 @@
       "path": "extensions/menubar",
       "bundle": {
         "path": "extensions/menubar/dist/extension.js",
-        "sha256": "808bf69d1736e5da5f885111e4c2cf5c6b70c74622a4965974f81de1ff2a55f9",
-        "byteCount": 49347
+        "sha256": "16e2922f29a6e854ff5ad75516fa160921fba6c2d379da99d8abb70528d028bf",
+        "byteCount": 63510
       },
-      "updatedAt": "2026-10-29T16:28:40.103Z"
+      "updatedAt": "2026-10-30T00:30:35+08:00"
     },
     {
       "manifest": {
@@ -964,10 +1009,10 @@
       "path": "extensions/mole-clean",
       "bundle": {
         "path": "extensions/mole-clean/dist/extension.js",
-        "sha256": "1f9c22834ff01f56efe9ff660ea750629b3a54ae3b88cce68ed38f69cdc0878d",
-        "byteCount": 58776
+        "sha256": "17e1d9782b7f54f0a52df075d2c0a79b9ca2917421b18a27b4d42e0d8d1d3fa4",
+        "byteCount": 59991
       },
-      "updatedAt": "2026-10-28T20:47:49+08:00"
+      "updatedAt": "2026-10-30T00:30:35+08:00"
     },
     {
       "manifest": {
@@ -1324,10 +1369,10 @@
       "path": "extensions/proxy",
       "bundle": {
         "path": "extensions/proxy/dist/extension.js",
-        "sha256": "2715991a4d2e4e9b8784957aaee00918768e48df285b5135233abe9184dd7db7",
-        "byteCount": 343299
+        "sha256": "de9a78526ae6634b224d7195615372715e8b69b6fa0bde47bfb05c50674aec5f",
+        "byteCount": 344514
       },
-      "updatedAt": "2026-10-29T19:28:40+08:00"
+      "updatedAt": "2026-10-30T00:30:35+08:00"
     },
     {
       "manifest": {
@@ -1416,10 +1461,10 @@
       "path": "extensions/send-to-phone",
       "bundle": {
         "path": "extensions/send-to-phone/dist/extension.js",
-        "sha256": "b7fcf9e843e89e2057f9b88e726613ef14fc02676c1c7bbbba402918017d5171",
-        "byteCount": 43764
+        "sha256": "5d8bd99b414d954ed41fe091a5f09a2b9766b1b656b3d9eaf6898cf4444c2b07",
+        "byteCount": 44979
       },
-      "updatedAt": "2026-10-28T20:47:49+08:00"
+      "updatedAt": "2026-10-30T00:30:35+08:00"
     },
     {
       "manifest": {
@@ -1655,10 +1700,10 @@
       "path": "extensions/translation",
       "bundle": {
         "path": "extensions/translation/dist/extension.js",
-        "sha256": "3f678bb450f7a475c4bc765ecb406749563098be831a7fee406d3a220256b6dd",
-        "byteCount": 88993
+        "sha256": "30a8842bc6770232a2c260d06c199de4198bab6b7e669fd5a310111c1b38cced",
+        "byteCount": 90208
       },
-      "updatedAt": "2026-10-28T20:47:49+08:00"
+      "updatedAt": "2026-10-30T00:30:35+08:00"
     }
   ]
 }

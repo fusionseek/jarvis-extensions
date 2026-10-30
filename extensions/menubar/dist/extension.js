@@ -1,7 +1,7 @@
-// jarvis-extension bundle · menubar@1.0.0 · sdk 2.11.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · menubar@1.1.0 · sdk 2.12.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
-  // sdk/src/capabilities.ts
+  // ../../sdk/src/capabilities.ts
   var JarvisError = class extends Error {
     constructor(shape) {
       super(shape.message);
@@ -11,7 +11,7 @@
     }
   };
 
-  // sdk/src/bridge.ts
+  // ../../sdk/src/bridge.ts
   var bridgeProtocolVersion = 2;
   function eventName(propName) {
     return propName.length > 2 && propName.startsWith("on") ? propName[2].toLowerCase() + propName.slice(3) : propName;
@@ -67,7 +67,7 @@
     return count;
   }
 
-  // sdk/src/ui.ts
+  // ../../sdk/src/ui.ts
   var maximumNodesPerRender = 500;
   function make(kind) {
     return (props) => ({ kind, ...props });
@@ -107,8 +107,8 @@
     chart: make("chart")
   };
 
-  // sdk/src/index.ts
-  var sdkVersion = "2.11.0";
+  // ../../sdk/src/index.ts
+  var sdkVersion = "2.12.0";
   var Cancellation = class {
     constructor() {
       this.listeners = [];
@@ -581,7 +581,16 @@
       open: () => call.window("open")
     },
     commands: {
-      run: (id, argument) => call.commands("run", argument === void 0 ? { id } : { id, argument })
+      // SDK 2.12：第二个参数可以是 `{ argument?, anchor? }`——弹窗挂在自己的一枚状态项下面。字符串照旧是参数。
+      run: (id, argument) => {
+        if (argument === void 0) return call.commands("run", { id });
+        if (typeof argument === "string") return call.commands("run", { id, argument });
+        return call.commands("run", {
+          id,
+          ...argument.argument === void 0 ? {} : { argument: argument.argument },
+          ...argument.anchor === void 0 ? {} : { anchor: { statusItem: argument.anchor.statusItem } }
+        });
+      }
     },
     storage: {
       get: (key) => call.storage("get", { key }),
@@ -617,7 +626,24 @@
     // SDK 2.11：菜单栏上的项、屏幕几何。
     menuBarExtras: {
       list: () => call.menuBarExtras("list"),
-      observe: (listener) => runtime.subscribe("menuBarExtras", "observe", listener)
+      observe: (listener) => runtime.subscribe("menuBarExtras", "observe", listener),
+      // SDK 2.12：截图、点开。
+      capture: (ids) => call.menuBarExtras("capture", { ids: [...new Set(ids)] }),
+      press: (id, options) => {
+        const button = options?.button ?? "left";
+        const onMenu = options?.onMenu;
+        if (!onMenu) return call.menuBarExtras("press", { id, button });
+        const token = runtime.token("menuBarExtras", "press");
+        runtime.listen(token, (payload) => {
+          const state = payload.state;
+          if (state !== "opened") runtime.forget(token);
+          onMenu(state);
+        });
+        return call.menuBarExtras("press", { id, button, token }).catch((error) => {
+          runtime.forget(token);
+          throw error;
+        });
+      }
     },
     screens: {
       list: () => call.screens("list"),
@@ -737,7 +763,7 @@
     }
   };
 
-  // extensions/menubar/src/model.ts
+  // src/model.ts
   var TOGGLE = "toggle";
   var HIDDEN = "hidden";
   var ALWAYS = "always";
@@ -747,7 +773,9 @@
     hoverReveal: false,
     scrollReveal: false,
     autoRehide: 10,
-    alwaysHidden: true
+    alwaysHidden: true,
+    showIn: "menuBar",
+    notchToBar: true
   };
   function readSettings(preferences) {
     const flag = (key, fallback) => typeof preferences[key] === "boolean" ? preferences[key] : fallback;
@@ -757,7 +785,9 @@
       hoverReveal: flag("hoverReveal", defaultSettings.hoverReveal),
       scrollReveal: flag("scrollReveal", defaultSettings.scrollReveal),
       autoRehide: Math.max(0, Math.min(120, Math.round(seconds))),
-      alwaysHidden: flag("alwaysHidden", defaultSettings.alwaysHidden)
+      alwaysHidden: flag("alwaysHidden", defaultSettings.alwaysHidden),
+      showIn: preferences.showIn === "bar" ? "bar" : "menuBar",
+      notchToBar: flag("notchToBar", defaultSettings.notchToBar)
     };
   }
   var collapsedState = { expanded: false, alwaysRevealed: false };
@@ -839,11 +869,130 @@
     const gapEnd = notch.right.x;
     return item.frame.x < gapEnd && item.frame.x + item.frame.width > gapStart;
   }
+  function isObscured(item, screens) {
+    return !item.onScreen && isWithinScreens(item, screens);
+  }
+  function isWithinScreens(item, screens) {
+    const center = item.frame.x + item.frame.width / 2;
+    return item.frame.width > 0 && screens.some((screen) => center >= screen.frame.x && center < screen.frame.x + screen.frame.width);
+  }
+  function barItems(items, screens, scope) {
+    const layout = classify(items, screens);
+    const picked = /* @__PURE__ */ new Set();
+    const add = (list) => list.forEach((item) => picked.add(item.id));
+    if (scope === "all") add(layout.always);
+    if (scope !== "obscured") add(layout.hidden);
+    add(items.filter((item) => !item.mine && isObscured(item, screens)));
+    return items.filter((item) => picked.has(item.id));
+  }
+  function barScope(argument) {
+    return argument === "all" || argument === "obscured" ? argument : "hidden";
+  }
+  var CLOSE_REHIDE_MS = 300;
+  var REVEAL_POLL_MS = 60;
+  var REVEAL_TIMEOUT_MS = 1200;
+  var SETTLE_MS = 300;
+  function captureTargets(items, screens) {
+    const layout = classify(items, screens);
+    return [...layout.always, ...layout.hidden].filter((item) => item.onScreen).map((item) => item.id).slice(0, 40);
+  }
   function displayName(item) {
     return item.ownerName || item.title || item.id;
   }
 
-  // extensions/menubar/src/controller.ts
+  // src/bar.ts
+  var BarSession = class {
+    constructor() {
+      this.status = { kind: "loading" };
+      this.scope = "hidden";
+      this.images = /* @__PURE__ */ new Map();
+      this.granted = [];
+    }
+    /** 弹窗出现了：先画「正在读」，内容等命令带着范围来了再读（命令紧跟着 activate 到）。 */
+    activate() {
+      this.status = { kind: "loading" };
+    }
+    /**
+     * `bar` 命令：读清单、拿截图。
+     * @param context 命令上下文（`argument` 是范围：`hidden` / `all` / `obscured`）。
+     */
+    async open(context) {
+      this.scope = barScope(context.argument);
+      this.granted = context.granted;
+      if (!context.granted.includes("menuBarExtras.read")) {
+        this.status = { kind: "unavailable", message: "\u8981\u5148\u5141\u8BB8\u300C\u8BFB\u53D6\u83DC\u5355\u680F\u4E0A\u6709\u54EA\u4E9B\u56FE\u6807\u300D" };
+        return;
+      }
+      try {
+        const [items, screens] = await Promise.all([jarvis.menuBarExtras.list(), jarvis.screens.list()]);
+        const shown = barItems(items, screens, this.scope);
+        this.images.clear();
+        if (shown.length > 0 && context.granted.includes("menuBarExtras.capture")) {
+          const captures = await jarvis.menuBarExtras.capture(shown.slice(0, 40).map((item) => item.id)).catch(() => []);
+          for (const capture of captures) if (capture.image) this.images.set(capture.id, capture.image);
+        }
+        this.status = { kind: "ready", items: shown };
+      } catch (error) {
+        const code = error.code;
+        this.status = {
+          kind: "unavailable",
+          message: code === "permission.unavailable" ? "Jarvis \u8FD8\u6CA1\u6709\u8F85\u52A9\u529F\u80FD\u6743\u9650" : error instanceof Error ? error.message : String(error)
+        };
+      }
+    }
+    /**
+     * 点了一颗：交给后台会话去露出、点开（状态在那里），副栏自己关掉。
+     * @param item 那一颗。
+     */
+    async press(item) {
+      if (!this.granted.includes("menuBarExtras.control")) {
+        const result = await jarvis.permissions.request(["menuBarExtras.control"]);
+        if (!result.granted.includes("menuBarExtras.control")) return;
+        this.granted = [...this.granted, "menuBarExtras.control"];
+      }
+      await jarvis.commands.run("reveal-item", item.id);
+      await jarvis.ui.dismissPopover();
+    }
+    /** 这一颗画哪张图：截到的，没有就用应用图标。 */
+    image(item) {
+      return this.images.get(item.id) ?? item.icon;
+    }
+  };
+  function renderBar(session) {
+    const status = session.status;
+    switch (status.kind) {
+      case "loading":
+        return ui.text({ key: "loading", style: "footnote", text: "\u6B63\u5728\u8BFB\u83DC\u5355\u680F" });
+      case "unavailable":
+        return ui.text({ key: "unavailable", style: "footnote", text: status.message });
+      case "ready":
+        if (status.items.length === 0) {
+          return ui.text({
+            key: "empty",
+            style: "footnote",
+            text: session.scope === "obscured" ? "\u5218\u6D77\u4E0B\u9762\u6CA1\u6709\u6321\u4F4F\u7684\u56FE\u6807" : "\u6CA1\u6709\u85CF\u8D77\u6765\u7684\u56FE\u6807\uFF1A\u6309\u4F4F \u2318 \u628A\u56FE\u6807\u62D6\u5230\u7AD6\u7EBF\u5DE6\u8FB9"
+          });
+        }
+        return ui.stack({
+          key: "bar",
+          axis: "horizontal",
+          spacing: "tight",
+          alignment: "center",
+          children: status.items.map(
+            (item) => ui.iconButton({
+              key: item.id,
+              symbol: "app.dashed",
+              image: session.image(item),
+              label: displayName(item),
+              size: "bar",
+              onPress: () => void session.press(item)
+            })
+          )
+        });
+    }
+  }
+
+  // src/controller.ts
   var MAXIMUM_TIMER_MS = 3e4;
   function cancel(timer) {
     if (timer !== void 0) clearTimeout(timer);
@@ -860,6 +1009,11 @@
       /** 露着期间点过某一颗图标（它的菜单多半开着，收回要等久一点）。 */
       this.interacting = false;
       this.screens = [];
+      this.granted = [];
+      /** 点开的那一颗菜单正开着：开着时不倒计时（1.1）。 */
+      this.menuOpen = false;
+      /** 这一次露出来只是为了点开一颗（副栏模式）：它的菜单一关就收回。 */
+      this.transient = false;
     }
     /** 此刻的状态（测试读）。 */
     get current() {
@@ -872,9 +1026,11 @@
      */
     async start(preferences, granted) {
       this.settings = readSettings(preferences);
+      this.granted = granted;
       this.pointerGranted = granted.includes("menuBar.pointer");
       this.state = collapsedState;
       this.stopPreferences ?? (this.stopPreferences = jarvis.preferences.onChange(() => void this.reloadPreferences()));
+      if (this.settings.showIn === "bar") await this.captureHidden();
       await this.render();
     }
     /**
@@ -882,7 +1038,43 @@
      * @param modifiers 按着的修饰键。
      */
     async press(modifiers) {
+      if (this.settings.showIn === "bar" && !this.state.expanded) {
+        const all = modifiers.includes("option") && this.settings.alwaysHidden;
+        return this.openBar(all ? "all" : "hidden", TOGGLE);
+      }
       await this.apply(press(this.state, modifiers, this.settings));
+    }
+    /**
+     * 副栏里点了一颗（静默命令 `reveal-item`）：露出它所在的段、等它挪进屏幕、点开它；菜单关上就收回。
+     * 宿主只给「点一下」，「先露出来、点开、等菜单关上、再收回」是这里拼的（jarvis-mac `specs/20261030-081832-menubar-manager-p2` N-2）。
+     * @param id `list()` 给的 id。
+     * @param granted 命令上下文里此刻的授权（用户可能刚在副栏里点了「允许」，会话启动时记下的那份已经旧了）。
+     */
+    async revealItem(id, granted) {
+      this.granted = granted;
+      if (!granted.includes("menuBarExtras.control") || !granted.includes("menuBarExtras.read")) return;
+      const screens = await this.currentScreens();
+      let items = await jarvis.menuBarExtras.list();
+      let target = items.find((item) => item.id === id);
+      if (!target) return;
+      const layout = classify(items, screens);
+      const inAlways = layout.always.some((item) => item.id === id);
+      const inHidden = layout.hidden.some((item) => item.id === id);
+      if (inAlways && !this.state.alwaysRevealed || inHidden && !this.state.expanded) {
+        this.transient = !this.state.expanded;
+        await this.apply({ expanded: true, alwaysRevealed: this.state.alwaysRevealed || inAlways });
+        target = await this.waitUntilWithinScreens(id, screens);
+        if (!target) return this.finishTransient();
+        items = await jarvis.menuBarExtras.list();
+      }
+      this.interacting = true;
+      try {
+        await jarvis.menuBarExtras.press(id, { onMenu: (state) => this.menuChanged(state) });
+      } catch (error) {
+        jarvis.log.warn("\u70B9\u4E0D\u5F00\u8FD9\u9897\u56FE\u6807", { id, error: error instanceof Error ? error.message : String(error) });
+        return this.finishTransient();
+      }
+      void this.captureHidden(items);
     }
     /**
      * 菜单里点了一项（控制项与两枚边界的菜单）。
@@ -899,8 +1091,9 @@
           return this.apply(collapsedState);
       }
     }
-    /** 快捷键 / 指令：在露与收之间切换。 */
+    /** 快捷键 / 指令：在露与收之间切换；副栏模式下开副栏。 */
     async toggle() {
+      if (this.settings.showIn === "bar" && !this.state.expanded) return this.openBar("hidden", TOGGLE);
       await this.apply(this.state.expanded ? collapsedState : { expanded: true, alwaysRevealed: false });
     }
     /** 会话要收了：退订、停表（宿主同时把边界的宽度复原）。 */
@@ -915,7 +1108,8 @@
     // ---------------------------------------------------------------------------
     async reloadPreferences() {
       this.settings = readSettings(await jarvis.preferences.all());
-      this.pointerGranted = (await jarvis.permissions.granted()).includes("menuBar.pointer");
+      this.granted = await jarvis.permissions.granted();
+      this.pointerGranted = this.granted.includes("menuBar.pointer");
       if (!this.settings.alwaysHidden && this.state.alwaysRevealed) this.state = { ...this.state, alwaysRevealed: false };
       await this.render();
     }
@@ -923,7 +1117,84 @@
       const wasExpanded = this.state.expanded;
       this.state = next;
       if (next.expanded && !wasExpanded) this.interacting = false;
+      if (!next.expanded) {
+        this.transient = false;
+        this.menuOpen = false;
+        this.closeTimer = cancel(this.closeTimer);
+        this.settleTimer = cancel(this.settleTimer);
+      }
       await this.render();
+      if (next.expanded && !wasExpanded && !this.transient) {
+        this.settleTimer = cancel(this.settleTimer);
+        this.settleTimer = setTimeout(() => {
+          this.settleTimer = void 0;
+          void this.afterExpand();
+        }, SETTLE_MS);
+      }
+    }
+    /** 展开到位之后：截隐藏段（给副栏）；被刘海挡住的放进副栏，锚在隐藏段那条竖线下面（点「‹」收起时不会被当成「关副栏」吞掉）。 */
+    async afterExpand() {
+      if (!this.state.expanded || !this.granted.includes("menuBarExtras.read")) return;
+      const items = await jarvis.menuBarExtras.list().catch(() => []);
+      void this.captureHidden(items);
+      if (!this.settings.notchToBar) return;
+      const screens = await this.currentScreens();
+      if (barItems(items, screens, "obscured").length > 0) await this.openBar("obscured", HIDDEN);
+    }
+    /** 开副栏（`bar` 命令，弹窗锚在自己的一枚状态项下面）。 */
+    async openBar(scope, anchor) {
+      await jarvis.commands.run("bar", { argument: scope, anchor: { statusItem: anchor } }).catch((error) => {
+        jarvis.log.warn("\u526F\u680F\u6CA1\u5F00\u51FA\u6765", error instanceof Error ? error.message : String(error));
+      });
+    }
+    /** 截隐藏段与永远隐藏段里此刻露着的那几颗（宿主按窗口留着，副栏打开时就有图）。没授权就什么都不做。 */
+    async captureHidden(known) {
+      if (!this.granted.includes("menuBarExtras.capture") || !this.granted.includes("menuBarExtras.read")) return;
+      try {
+        const items = known ?? await jarvis.menuBarExtras.list();
+        const ids = captureTargets(items, await this.currentScreens());
+        if (ids.length > 0) await jarvis.menuBarExtras.capture(ids);
+      } catch (error) {
+        jarvis.log.debug("\u8FD9\u4E00\u6B21\u6CA1\u622A\u5230", error instanceof Error ? error.message : String(error));
+      }
+    }
+    /** 点开那一颗之后它的菜单开了、关了，或者弹的根本不是菜单。 */
+    menuChanged(state) {
+      if (state === "opened") {
+        this.menuOpen = true;
+        this.rehideTimer = cancel(this.rehideTimer);
+        this.rehideDeadline = void 0;
+        return;
+      }
+      this.menuOpen = false;
+      if (state === "closed" && this.transient) {
+        this.closeTimer = cancel(this.closeTimer);
+        this.closeTimer = setTimeout(() => {
+          this.closeTimer = void 0;
+          if (!this.menuOpen) void this.apply(collapsedState);
+        }, CLOSE_REHIDE_MS);
+        return;
+      }
+      this.transient = false;
+      this.scheduleRehide();
+    }
+    /** 为点开而临时露出、却没点成：收回去。 */
+    async finishTransient() {
+      if (this.transient) await this.apply(collapsedState);
+    }
+    /** 露出来之后等那一颗挪进屏幕的横向范围（刘海下面也算，AXPress 照样能开它的菜单）。 */
+    async waitUntilWithinScreens(id, screens) {
+      const deadline = Date.now() + REVEAL_TIMEOUT_MS;
+      for (; ; ) {
+        const item = (await jarvis.menuBarExtras.list()).find((candidate) => candidate.id === id);
+        if (item && isWithinScreens(item, screens)) return item;
+        if (!item || Date.now() >= deadline) return void 0;
+        await new Promise((resolve) => setTimeout(resolve, REVEAL_POLL_MS));
+      }
+    }
+    async currentScreens() {
+      if (this.screens.length === 0) this.screens = await jarvis.screens.list().catch(() => []);
+      return this.screens;
     }
     async render() {
       for (const model of statusModels(this.state, this.settings)) await jarvis.menuBar.update(model);
@@ -954,7 +1225,7 @@
             this.hoverTimer = cancel(this.hoverTimer);
             this.hoverTimer = setTimeout(() => {
               this.hoverTimer = void 0;
-              if (this.pointerInBar && !this.state.expanded) void this.apply({ expanded: true, alwaysRevealed: false });
+              if (this.pointerInBar && !this.state.expanded) void this.toggle();
             }, HOVER_DELAY_MS);
           }
           return;
@@ -973,7 +1244,7 @@
           return;
         case "scroll":
           if (!this.settings.scrollReveal || Math.abs(event.deltaY) < 1) return;
-          if (event.deltaY > 0 && !this.state.expanded) await this.apply({ expanded: true, alwaysRevealed: false });
+          if (event.deltaY > 0 && !this.state.expanded) await this.toggle();
           if (event.deltaY < 0 && this.state.expanded) await this.apply(collapsedState);
           return;
       }
@@ -986,7 +1257,7 @@
       this.rehideTimer = cancel(this.rehideTimer);
       this.rehideDeadline = void 0;
       const delay = rehideDelay(this.settings, this.interacting);
-      if (!this.state.expanded || delay === null) return;
+      if (!this.state.expanded || delay === null || this.menuOpen) return;
       const knowsPointer = this.subscribedTypes.includes("exit");
       if (knowsPointer && this.pointerInBar) return;
       this.rehideDeadline = Date.now() + delay;
@@ -1006,16 +1277,20 @@
     clearTimers() {
       this.rehideTimer = cancel(this.rehideTimer);
       this.hoverTimer = cancel(this.hoverTimer);
+      this.closeTimer = cancel(this.closeTimer);
+      this.settleTimer = cancel(this.settleTimer);
       this.rehideDeadline = void 0;
     }
   };
 
-  // extensions/menubar/src/page.ts
+  // src/page.ts
   var PageSession = class {
     constructor() {
       this.status = { kind: "loading" };
       this.granted = [];
       this.screens = [];
+      /** 截到的图（1.1）：打开这一页时截一次；露着的当场截，藏着的是最近一次露着时的。 */
+      this.images = /* @__PURE__ */ new Map();
     }
     /**
      * 页面出现了。
@@ -1024,9 +1299,23 @@
     async activate(context) {
       this.granted = context.granted;
       await this.refresh();
+      await this.captureImages();
       if (this.granted.includes("menuBarExtras.read")) {
-        this.stopObserving ?? (this.stopObserving = jarvis.menuBarExtras.observe(() => void this.refresh()));
+        this.stopObserving ?? (this.stopObserving = jarvis.menuBarExtras.observe(() => void this.refresh().then(() => jarvis.ui.update())));
       }
+    }
+    /** 这一颗画哪张图：截到的，没有就用应用图标。 */
+    image(item) {
+      return this.images.get(item.id) ?? item.icon;
+    }
+    /** 截一次（没给截图授权、或 Jarvis 没有屏幕录制权限时就用应用图标）。 */
+    async captureImages() {
+      if (this.status.kind !== "ready" || !this.granted.includes("menuBarExtras.capture")) return;
+      const { shown, hidden, always } = this.status.layout;
+      const ids = [...always, ...hidden, ...shown].map((item) => item.id).slice(0, 40);
+      if (ids.length === 0) return;
+      const captures = await jarvis.menuBarExtras.capture(ids).catch(() => []);
+      for (const capture of captures) if (capture.image) this.images.set(capture.id, capture.image);
     }
     /** 页面不在了：退订（订阅留着，宿主就会每 10 s 看一眼窗口列表）。 */
     deactivate() {
@@ -1061,28 +1350,28 @@
     }
     /** 再问一次授权（只在按钮回调里调）。 */
     async requestAccess() {
-      const result = await jarvis.permissions.request(["menuBarExtras.read", "menuBar.pointer"]);
+      const result = await jarvis.permissions.request(["menuBarExtras.read", "menuBar.pointer", "menuBarExtras.capture", "menuBarExtras.control"]);
       await this.activate({ granted: result.granted });
     }
   };
-  function rows(items, keyPrefix, subtitle) {
+  function rows(items, keyPrefix, subtitle, image) {
     return items.map(
       (item) => ui.row({
         key: `${keyPrefix}:${item.id}`,
         symbol: "app.dashed",
-        image: item.icon,
+        image: image(item),
         title: displayName(item),
         subtitle: subtitle(item),
         accessory: "none"
       })
     );
   }
-  function section(key, title, items, empty, subtitle) {
+  function section(key, title, items, empty, subtitle, image) {
     return ui.section({
       key,
       title,
       trailing: `${items.length} \u9897`,
-      children: items.length > 0 ? rows(items, key, subtitle) : [ui.text({ key: `${key}:empty`, style: "footnote", text: empty })]
+      children: items.length > 0 ? rows(items, key, subtitle, image) : [ui.text({ key: `${key}:empty`, style: "footnote", text: empty })]
     });
   }
   function renderPage(session) {
@@ -1113,6 +1402,7 @@
     }
   }
   function ready(session, layout) {
+    const image = (item) => session.image(item);
     const hiddenCount = layout.hidden.length + layout.always.length;
     const children = [
       ui.row({
@@ -1131,14 +1421,14 @@
       })
     ];
     if (layout.notched.length > 0) {
-      children.push(section("notch", "\u88AB\u5218\u6D77\u6321\u4F4F", layout.notched, "", () => "\u5728\u663E\u793A\u6BB5\u91CC\uFF0C\u4F46\u843D\u5728\u5218\u6D77\u4E0B\u9762\u770B\u4E0D\u89C1\uFF1A\u62D6\u5230\u7AD6\u7EBF\u5DE6\u8FB9\u6536\u8D77\uFF0C\u6216\u8005\u5C11\u653E\u51E0\u9897"));
+      children.push(section("notch", "\u88AB\u5218\u6D77\u6321\u4F4F", layout.notched, "", () => "\u5728\u663E\u793A\u6BB5\u91CC\uFF0C\u4F46\u843D\u5728\u5218\u6D77\u4E0B\u9762\u770B\u4E0D\u89C1\uFF1A\u62D6\u5230\u7AD6\u7EBF\u5DE6\u8FB9\u6536\u8D77\uFF0C\u6216\u8005\u5C11\u653E\u51E0\u9897", image));
     }
     children.push(
-      section("shown", "\u663E\u793A", layout.shown.filter((item) => !layout.notched.includes(item)), "\u7AD6\u7EBF\u53F3\u8FB9\u7684\u56FE\u6807\u4E00\u76F4\u663E\u793A", (item) => item.title || void 0),
-      section("hidden", "\u9690\u85CF", layout.hidden, "\u6309\u4F4F \u2318 \u628A\u56FE\u6807\u62D6\u5230\u7AD6\u7EBF\u5DE6\u8FB9\uFF0C\u6536\u8D77\u65F6\u5B83\u5C31\u85CF\u8D77\u6765", (item) => item.title || void 0)
+      section("shown", "\u663E\u793A", layout.shown.filter((item) => !layout.notched.includes(item)), "\u7AD6\u7EBF\u53F3\u8FB9\u7684\u56FE\u6807\u4E00\u76F4\u663E\u793A", (item) => item.title || void 0, image),
+      section("hidden", "\u9690\u85CF", layout.hidden, "\u6309\u4F4F \u2318 \u628A\u56FE\u6807\u62D6\u5230\u7AD6\u7EBF\u5DE6\u8FB9\uFF0C\u6536\u8D77\u65F6\u5B83\u5C31\u85CF\u8D77\u6765", (item) => item.title || void 0, image)
     );
     if (layout.always.length > 0) {
-      children.push(section("always", "\u6C38\u8FDC\u9690\u85CF", layout.always, "", (item) => item.title || "\u2325 \u70B9\u300C\u2039\u300D\u65F6\u624D\u51FA\u6765"));
+      children.push(section("always", "\u6C38\u8FDC\u9690\u85CF", layout.always, "", (item) => item.title || "\u2325 \u70B9\u300C\u2039\u300D\u65F6\u624D\u51FA\u6765", image));
     }
     children.push(
       ui.text({
@@ -1150,18 +1440,26 @@
     return ui.scroll({ key: "page", children: [ui.stack({ key: "content", children })] });
   }
 
-  // extensions/menubar/src/index.ts
+  // src/index.ts
   var controller = new Controller();
   var page = new PageSession();
+  var bar = new BarSession();
   var toolbox = {
     activate: (context) => page.activate(context),
     deactivate: () => page.deactivate(),
     render: () => renderPage(page)
   };
+  var popover = {
+    activate: () => bar.activate(),
+    render: () => renderBar(bar)
+  };
   defineExtension({
     toolbox,
+    popover,
     commands: {
-      toggle: () => controller.toggle()
+      toggle: () => controller.toggle(),
+      bar: (context) => bar.open(context),
+      "reveal-item": (context) => controller.revealItem(context.argument ?? "", context.granted)
     },
     menuBar: {
       start: (context) => controller.start(context.preferences, context.granted),

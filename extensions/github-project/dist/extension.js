@@ -1,4 +1,4 @@
-// jarvis-extension bundle · github-project@1.3.5 · sdk 2.11.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · github-project@1.3.5 · sdk 2.12.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -111,7 +111,7 @@
   var projectEngineContractVersion = 1;
 
   // sdk/src/index.ts
-  var sdkVersion = "2.11.0";
+  var sdkVersion = "2.12.0";
   var Cancellation = class {
     constructor() {
       this.listeners = [];
@@ -584,7 +584,16 @@
       open: () => call.window("open")
     },
     commands: {
-      run: (id, argument) => call.commands("run", argument === void 0 ? { id } : { id, argument })
+      // SDK 2.12：第二个参数可以是 `{ argument?, anchor? }`——弹窗挂在自己的一枚状态项下面。字符串照旧是参数。
+      run: (id, argument) => {
+        if (argument === void 0) return call.commands("run", { id });
+        if (typeof argument === "string") return call.commands("run", { id, argument });
+        return call.commands("run", {
+          id,
+          ...argument.argument === void 0 ? {} : { argument: argument.argument },
+          ...argument.anchor === void 0 ? {} : { anchor: { statusItem: argument.anchor.statusItem } }
+        });
+      }
     },
     storage: {
       get: (key) => call.storage("get", { key }),
@@ -620,7 +629,24 @@
     // SDK 2.11：菜单栏上的项、屏幕几何。
     menuBarExtras: {
       list: () => call.menuBarExtras("list"),
-      observe: (listener) => runtime.subscribe("menuBarExtras", "observe", listener)
+      observe: (listener) => runtime.subscribe("menuBarExtras", "observe", listener),
+      // SDK 2.12：截图、点开。
+      capture: (ids) => call.menuBarExtras("capture", { ids: [...new Set(ids)] }),
+      press: (id, options) => {
+        const button = options?.button ?? "left";
+        const onMenu = options?.onMenu;
+        if (!onMenu) return call.menuBarExtras("press", { id, button });
+        const token = runtime.token("menuBarExtras", "press");
+        runtime.listen(token, (payload) => {
+          const state = payload.state;
+          if (state !== "opened") runtime.forget(token);
+          onMenu(state);
+        });
+        return call.menuBarExtras("press", { id, button, token }).catch((error) => {
+          runtime.forget(token);
+          throw error;
+        });
+      }
     },
     screens: {
       list: () => call.screens("list"),

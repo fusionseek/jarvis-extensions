@@ -74,7 +74,17 @@ export type CapabilityID =
    * 读菜单栏上有哪些图标（SDK 2.11）：任何应用的——归属、说明、位置、在不在屏幕上。借 Jarvis 的辅助功能权限
    * （macOS 26 起菜单栏图标的窗口一律记在控制中心名下，归属只能经 AX 认）。宿主只在菜单栏变了时才问 AX。
    */
-  | "menuBarExtras.read";
+  | "menuBarExtras.read"
+  /**
+   * 截菜单栏图标的样子（SDK 2.12）：此刻露在屏幕上的当场截，藏着的交回最近一次露着时截到的（宿主按窗口号留着）。
+   * 借 Jarvis 的屏幕录制权限；宿主自己从不截，只在你调的时候截。
+   */
+  | "menuBarExtras.capture"
+  /**
+   * 替用户点开菜单栏上的图标（SDK 2.12）：AXPress；那个应用不接时，在它中点合成一次点击再把指针放回原处。借 Jarvis 的辅助功能权限。
+   * 在屏幕外的点不了（`target.unavailable`）——宿主不替你把它挪出来。
+   */
+  | "menuBarExtras.control";
 
 /** 授权屏按风险分组；一档一个标签，颜色由宿主决定。 */
 export type CapabilityTier = "low" | "medium" | "high";
@@ -92,6 +102,8 @@ export type CapabilityTier = "low" | "medium" | "high";
  * SDK 2.10：TUN 是高（以管理员身份跑、接管全部流量）；读浏览器当前页是中（你在看什么网站，不出本机）；挑文件是低（用户亲手挑、只给这一份）。
  *
  * SDK 2.11：菜单栏上的指针与读菜单栏上的项都是中——看的是用户在菜单栏上的动作与装了哪些菜单栏应用，不出本机、不改任何东西。
+ *
+ * SDK 2.12：截菜单栏图标与点开它都是高——前者截的是别的应用画在屏幕上的像素，后者替用户点了别的应用。
  */
 export const capabilityTiers: Readonly<Record<CapabilityID, CapabilityTier>> = {
   "system.openURL": "low",
@@ -112,6 +124,8 @@ export const capabilityTiers: Readonly<Record<CapabilityID, CapabilityTier>> = {
   "browser.activeTab": "medium",
   "menuBar.pointer": "medium",
   "menuBarExtras.read": "medium",
+  "menuBarExtras.capture": "high",
+  "menuBarExtras.control": "high",
   "screenshot.capture": "high",
   "network.https": "high",
   "quickTransfer.control": "high",
@@ -159,6 +173,7 @@ export interface WindowContribution {
  * - `toolbox`：展开面板到这个扩展的页面（要工具箱域）；
  * - `window`：在工作区开它的标签（要窗口域）；
  * - `popover`：面板不动，原地弹一扇结果弹窗——锚在这条命令里那次 `screenshot.capture` 的选区旁，没截图就锚在指针旁（要工具箱域）；
+ *   `jarvis.commands.run(id, { anchor: { statusItem } })` 让它挂在自己的一枚状态项下面（SDK 2.12）；
  * - `silent`：在**后台会话**里跑，不碰任何界面；至少要 `clipboard.write`、`notifications.post`、`inbox.post` 之一来交结果。
  */
 export type CommandPresentation = "toolbox" | "window" | "popover" | "silent";
@@ -189,6 +204,11 @@ export interface CommandSpec {
   /** 全局快捷键默认值，如 `⌥⌘T`。有它就必须声明 `hotkeys.register`。 */
   hotkey?: string;
   presentation: CommandPresentation;
+  /**
+   * 弹窗多宽（SDK 2.12，只对 `popover`）：`standard`（省略时）= 400 宽、带宿主的页头与脚注；
+   * `content` = 宽度随那棵树（夹在 120 与屏宽 − 32 之间）、不画页头与脚注——一排快捷开关、一条图标那样的工具条。
+   */
+  popoverWidth?: "standard" | "content";
 }
 
 interface PreferenceBase<T extends string> {

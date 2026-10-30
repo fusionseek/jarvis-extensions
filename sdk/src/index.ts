@@ -24,7 +24,7 @@
  */
 import type { EnvironmentInfo, HostInfo, Jarvis, ProcessHandle, ProcessResult, ProcessRunOptions, Unsubscribe } from "./capabilities.js";
 import { JarvisError } from "./capabilities.js";
-import type { ActivationContext, CommandContext, HostEvent, InvokeResult, HostBridge, CommandSummary, MenuBarEvent, MenuBarModifier, NetworkStatus, ScreenInfo, ServiceCall, Surface } from "./bridge.js";
+import type { ActivationContext, CommandContext, HostEvent, InvokeResult, HostBridge, CommandSummary, MenuBarEvent, MenuBarExtrasPressResult, MenuBarMenuState, MenuBarModifier, NetworkStatus, ScreenInfo, ServiceCall, Surface } from "./bridge.js";
 import { bridgeProtocolVersion, countNodes, serialize } from "./bridge.js";
 import type { CancelSignal, CodeFormatEngine, CodeFormatRequest, CodeHighlightEngine, CodeHighlightRequest, ServiceContext, ServiceImplementation, JunkCleanEngine, LauncherAppsEngine, ProjectEngine, ProjectEngineRequest } from "./services.js";
 import type { UINode } from "./ui.js";
@@ -60,10 +60,13 @@ export type {
   MenuBarChartSeries,
   MenuBarEvent,
   MenuBarExtra,
+  MenuBarExtraCapture,
   MenuBarExtrasChange,
+  MenuBarExtrasPressResult,
   MenuBarHeader,
   MenuBarItem,
   MenuBarModel,
+  MenuBarMenuState,
   MenuBarModifier,
   MenuBarPointerEvent,
   MenuBarSeparator,
@@ -88,7 +91,7 @@ export type {
 export { bridgeProtocolVersion } from "./bridge.js";
 
 /** SDK 版本。主版本必须与宿主运行时一致。 */
-export const sdkVersion = "2.11.0";
+export const sdkVersion = "2.12.0";
 
 /** 一面的实现：工具箱页面、原地弹窗或窗口标签。 */
 export interface PageDefinition {
@@ -699,7 +702,16 @@ export const jarvis: Jarvis = {
     open: () => call.window("open"),
   },
   commands: {
-    run: (id, argument) => call.commands("run", argument === undefined ? { id } : { id, argument }),
+    // SDK 2.12：第二个参数可以是 `{ argument?, anchor? }`——弹窗挂在自己的一枚状态项下面。字符串照旧是参数。
+    run: (id, argument) => {
+      if (argument === undefined) return call.commands("run", { id });
+      if (typeof argument === "string") return call.commands("run", { id, argument });
+      return call.commands("run", {
+        id,
+        ...(argument.argument === undefined ? {} : { argument: argument.argument }),
+        ...(argument.anchor === undefined ? {} : { anchor: { statusItem: argument.anchor.statusItem } }),
+      });
+    },
   },
   storage: {
     get: (key) => call.storage("get", { key }),
@@ -737,6 +749,24 @@ export const jarvis: Jarvis = {
   menuBarExtras: {
     list: () => call.menuBarExtras("list"),
     observe: (listener) => runtime.subscribe("menuBarExtras", "observe", listener as (payload: unknown) => void),
+    // SDK 2.12：截图、点开。
+    capture: (ids) => call.menuBarExtras("capture", { ids: [...new Set(ids)] }),
+    press: (id, options) => {
+      const button = options?.button ?? "left";
+      const onMenu = options?.onMenu;
+      if (!onMenu) return call.menuBarExtras("press", { id, button });
+      // 菜单开关推到这一次点开自己的 token 上；宿主在 closed / none 之后不再推，这边也就忘掉它，不需要退订。
+      const token = runtime.token("menuBarExtras", "press");
+      runtime.listen(token, (payload) => {
+        const state = (payload as { state: MenuBarMenuState }).state;
+        if (state !== "opened") runtime.forget(token);
+        onMenu(state);
+      });
+      return call.menuBarExtras<MenuBarExtrasPressResult>("press", { id, button, token }).catch((error: unknown) => {
+        runtime.forget(token);
+        throw error;
+      });
+    },
   },
   screens: {
     list: () => call.screens("list"),
