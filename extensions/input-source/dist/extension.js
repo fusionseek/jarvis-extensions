@@ -107,6 +107,22 @@
     chart: make("chart")
   };
 
+  // sdk/src/layout.ts
+  var layout = {
+    /** 侧栏导航（只许做根）。 */
+    sidebar: (props) => ({ kind: "sidebar", ...props }),
+    /** 自适应网格。 */
+    grid: (props) => ({ kind: "grid", ...props }),
+    /** 表格。 */
+    table: (props) => ({ kind: "table", ...props }),
+    /** 堆叠柱。 */
+    bars: (props) => ({ kind: "bars", ...props }),
+    /** 宿主画的偏好控件。 */
+    preference: (props) => ({ kind: "preference", ...props }),
+    /** 窗口一页的页头（jarvis-mac `specs/20261029-082059-proxy-window-desktop-layout` D-2，宿主 ≥ 3.3.1）。 */
+    header: (props) => ({ kind: "header", ...props })
+  };
+
   // sdk/src/index.ts
   var sdkVersion = "2.13.0";
   var Cancellation = class {
@@ -804,7 +820,9 @@
     },
     // 本机应用（SDK 2.5）：不收参数，扫哪几处由宿主定。
     apps: {
-      list: () => call.apps("list")
+      list: () => call.apps("list"),
+      // SDK 2.13：图标按需取，去重后上线缆（宿主拒绝重复）。
+      icons: (bundleIds) => call.apps("icons", { bundleIds: [...new Set(bundleIds)] })
     },
     system: {
       openURL: (url) => call.system("openURL", { url }),
@@ -886,19 +904,6 @@
   function othersTitle(others) {
     return othersTitles[others];
   }
-  function ruleTitle(rule, sources, settings) {
-    if (!rule) return `\u6CA1\u5199\u89C4\u5219 \xB7 ${othersTitle(settings.others)}`;
-    switch (rule.mode) {
-      case "fixed": {
-        const source = sources.find((candidate) => candidate.id === rule.source);
-        return source ? source.name : "\u90A3\u4E2A\u8F93\u5165\u6CD5\u5DF2\u7ECF\u505C\u7528\u4E86";
-      }
-      case "remember":
-        return "\u8BB0\u4F4F\u4E0A\u6B21\u7528\u7684";
-      case "ignore":
-        return "\u4E0D\u7BA1\u5B83";
-    }
-  }
   function shortLabel(source) {
     if (!source) return "";
     const language = source.languages[0] ?? "";
@@ -956,6 +961,98 @@
       tooltip: clip(current ? `\u6B64\u523B\uFF1A${current.name}${state.settings.paused ? "\uFF08\u81EA\u52A8\u5207\u6362\u5DF2\u6682\u505C\uFF09" : ""}` : "\u8F93\u5165\u6CD5\u5207\u6362", 80),
       items
     };
+  }
+  function choiceTitle(choice, sources) {
+    if (choice.startsWith("fixed:")) {
+      const id = choice.slice("fixed:".length);
+      const source = sources.find((candidate) => candidate.id === id);
+      return source ? `\u7528 ${source.name}` : "\u7528\u4E00\u4E2A\u5DF2\u505C\u7528\u7684\u8F93\u5165\u6CD5";
+    }
+    if (choice === "remember") return "\u8BB0\u4F4F\u4E0A\u6B21\u7528\u7684";
+    if (choice === "ignore") return "\u4E0D\u7BA1\u5B83";
+    return "\u4E0D\u5199\u89C4\u5219";
+  }
+  function choiceChips(sources, withNone) {
+    const chips = sources.map((source) => ({
+      value: `fixed:${source.id}`,
+      title: source.name,
+      help: `\u5207\u5230\u8FD9\u4E2A\u5E94\u7528\u5C31\u6362\u6210 ${source.name}`,
+      image: source.icon,
+      symbol: "keyboard"
+    }));
+    chips.push(
+      { value: "remember", title: "\u8BB0\u4F4F\u4E0A\u6B21", help: "\u6362\u6210\u4F60\u4E0A\u6B21\u5728\u8FD9\u4E2A\u5E94\u7528\u91CC\u624B\u52A8\u7528\u7684\u90A3\u4E2A", symbol: "arrow.uturn.backward" },
+      { value: "ignore", title: "\u4E0D\u7BA1\u5B83", help: "\u5207\u5230\u8FD9\u4E2A\u5E94\u7528\u65F6\u4E0D\u6362\u8F93\u5165\u6CD5", symbol: "minus.circle" }
+    );
+    if (withNone) chips.push({ value: "none", title: "\u4E0D\u5199\u89C4\u5219", help: "\u8DDF\u7740\u300C\u6CA1\u5199\u89C4\u5219\u7684\u5E94\u7528\u300D\u90A3\u4E00\u6761\u8D70", symbol: "circle.dashed" });
+    return chips;
+  }
+  function groupRules(rules, sources) {
+    const byName = (a, b) => (a.rule.name || a.bundleId).localeCompare(b.rule.name || b.bundleId, "zh-Hans");
+    const entries = Object.entries(rules).map(([bundleId, rule]) => ({ bundleId, rule }));
+    const enabled = new Set(sources.map((source) => source.id));
+    const groups = sources.map((source) => ({
+      key: `fixed:${source.id}`,
+      title: `\u7528 ${source.name}`,
+      source,
+      entries: entries.filter((entry) => entry.rule.mode === "fixed" && entry.rule.source === source.id).sort(byName),
+      addable: true
+    }));
+    const remembered = entries.filter((entry) => entry.rule.mode === "remember").sort(byName);
+    if (remembered.length > 0) groups.push({ key: "remember", title: "\u8BB0\u4F4F\u4E0A\u6B21\u7528\u7684", entries: remembered, addable: true });
+    const ignored = entries.filter((entry) => entry.rule.mode === "ignore").sort(byName);
+    if (ignored.length > 0) groups.push({ key: "ignore", title: "\u4E0D\u7BA1\u5B83", entries: ignored, addable: true });
+    const stale = entries.filter((entry) => entry.rule.mode === "fixed" && !enabled.has(entry.rule.source)).sort(byName);
+    if (stale.length > 0) groups.push({ key: "stale", title: "\u8F93\u5165\u6CD5\u5DF2\u505C\u7528", entries: stale, addable: false });
+    return groups;
+  }
+  var maximumCandidates = 60;
+  function candidates(apps, query) {
+    const byBundle = /* @__PURE__ */ new Map();
+    for (const app of apps) {
+      if (!app.bundleId) continue;
+      const existing = byBundle.get(app.bundleId);
+      if (existing && (existing.lastUsedAt ?? -1) >= (app.lastUsedAt ?? -1)) continue;
+      byBundle.set(app.bundleId, { bundleId: app.bundleId, name: app.name, lastUsedAt: app.lastUsedAt, category: app.category });
+    }
+    const needle = query.trim().toLowerCase();
+    const all = [...byBundle.values()].filter((app) => !needle || app.name.toLowerCase().includes(needle) || app.bundleId.toLowerCase().includes(needle)).sort((a, b) => {
+      if (a.lastUsedAt !== b.lastUsedAt) return (b.lastUsedAt ?? -1) - (a.lastUsedAt ?? -1);
+      return a.name.localeCompare(b.name, "zh-Hans");
+    });
+    return { list: all.slice(0, maximumCandidates), truncated: all.length > maximumCandidates };
+  }
+  var maximumSuggestions = 6;
+  var suggestionWindowMs = 30 * 24 * 60 * 60 * 1e3;
+  function suggestions(apps, rules, sources, now) {
+    const layout2 = sources.find((source) => source.kind === "keyboardLayout");
+    const cjk = sources.find((source) => source.languages.some((language) => /^(zh|ja|ko)/.test(language)));
+    const targetFor = (category) => {
+      if (category === "public.app-category.developer-tools") return layout2;
+      if (category === "public.app-category.social-networking") return cjk;
+      return void 0;
+    };
+    const seen = /* @__PURE__ */ new Set();
+    return candidates(apps, "").list.filter((app) => app.lastUsedAt !== null && now - app.lastUsedAt <= suggestionWindowMs && !(app.bundleId in rules)).flatMap((app) => {
+      const target = targetFor(app.category);
+      if (!target || seen.has(app.bundleId)) return [];
+      seen.add(app.bundleId);
+      return [{ bundleId: app.bundleId, name: app.name, choice: `fixed:${target.id}` }];
+    }).slice(0, maximumSuggestions);
+  }
+  function suggestionSummary(list, sources) {
+    const byChoice = /* @__PURE__ */ new Map();
+    for (const item of list) byChoice.set(item.choice, [...byChoice.get(item.choice) ?? [], item.name]);
+    return [...byChoice.entries()].map(([choice, names]) => `${names.join("\u3001")} \u2192 ${choiceTitle(choice, sources).replace(/^用 /, "")}`).join("\uFF1B");
+  }
+  function lastUsedTitle(lastUsedAt, now) {
+    if (lastUsedAt === null) return void 0;
+    const days = Math.floor((now - lastUsedAt) / (24 * 60 * 60 * 1e3));
+    if (days <= 0) return "\u4ECA\u5929\u7528\u8FC7";
+    if (days === 1) return "\u6628\u5929\u7528\u8FC7";
+    if (days < 30) return `${days} \u5929\u524D\u7528\u8FC7`;
+    const months = Math.floor(days / 30);
+    return months < 12 ? `${months} \u4E2A\u6708\u524D\u7528\u8FC7` : "\u4E00\u5E74\u591A\u6CA1\u7528\u8FC7";
   }
   function clip(text, limit) {
     const characters = [...text];
@@ -1212,14 +1309,27 @@
   };
 
   // extensions/input-source/src/page.ts
-  var pageCapabilities = ["system.activity", "inputSources.read", "inputSources.select", "hud.show"];
+  var pageCapabilities = ["system.activity", "inputSources.read", "inputSources.select", "hud.show", "apps.read"];
+  var ICON_BATCH = 40;
+  var ICON_DEBOUNCE_MS = 300;
+  var SUGGESTIONS_DISMISSED = "suggestionsDismissed";
   var PageSession = class {
     constructor() {
       this.status = { kind: "loading" };
+      this.stage = { kind: "groups" };
       this.sources = [];
       this.rules = {};
       this.settings = readSettings({});
+      /** 加应用那一步的搜索词。 */
+      this.query = "";
+      this.suggestionsDismissed = false;
+      /** 应用图标（这个会话拿到的句柄）。 */
+      this.icons = /* @__PURE__ */ new Map();
       this.granted = [];
+    }
+    /** 此刻（测试与渲染读）。 */
+    now() {
+      return Date.now();
     }
     /**
      * 页面出现了。
@@ -1228,12 +1338,25 @@
     async activate(context) {
       this.granted = context.granted;
       this.settings = readSettings(context.preferences);
+      this.stage = { kind: "groups" };
       this.editing = void 0;
+      this.highlight = void 0;
+      this.stopPreferences ?? (this.stopPreferences = jarvis.preferences.onChange((changes) => {
+        this.settings = readSettings({ ...this.settings, ...changes });
+        jarvis.ui.update();
+      }));
       await this.load();
+      if (this.status.kind === "ready") {
+        await this.loadApps();
+        await this.fetchIcons(this.visibleBundleIDs());
+      }
     }
     /** 页面不在了。 */
     deactivate() {
-      this.editing = void 0;
+      this.stopPreferences?.();
+      this.stopPreferences = void 0;
+      if (this.iconTimer !== void 0) clearTimeout(this.iconTimer);
+      this.iconTimer = void 0;
     }
     async load() {
       if (!this.granted.includes("inputSources.read") || !this.granted.includes("system.activity")) {
@@ -1241,53 +1364,136 @@
         return;
       }
       try {
-        const [sources, current, app, rules, fallbackSource] = await Promise.all([
+        const [sources, current, app, rules, fallbackSource, dismissed] = await Promise.all([
           jarvis.inputSources.list(),
           jarvis.inputSources.current(),
           jarvis.frontmostApp.current(),
           readRules(),
-          readFallback()
+          readFallback(),
+          jarvis.storage.get(SUGGESTIONS_DISMISSED).catch(() => void 0)
         ]);
         this.sources = sources;
         this.currentId = current.id;
         this.app = app ?? void 0;
+        if (app?.icon) this.icons.set(app.bundleId, app.icon);
         this.rules = rules;
         this.fallbackSource = fallbackSource;
+        this.suggestionsDismissed = dismissed === true;
         this.status = { kind: "ready" };
       } catch (error) {
         this.status = { kind: "failed", message: error instanceof Error ? error.message : String(error) };
       }
     }
+    async loadApps() {
+      if (this.apps !== void 0 || !this.granted.includes("apps.read")) return;
+      this.apps = await jarvis.apps.list().catch(() => void 0);
+    }
+    /** 此刻画在屏上的那些应用：分组页是全部规则；加应用那一步是列表的前一屏。 */
+    visibleBundleIDs() {
+      if (this.stage.kind === "add") return candidates(this.apps ?? [], this.query).list.map((app) => app.bundleId);
+      return Object.keys(this.rules);
+    }
+    /** 补没取过的图标（一次至多 40 个）。 */
+    async fetchIcons(bundleIds) {
+      if (!this.granted.includes("apps.read")) return;
+      const missing = bundleIds.filter((id) => !this.icons.has(id)).slice(0, ICON_BATCH);
+      if (missing.length === 0) return;
+      const icons = await jarvis.apps.icons(missing).catch(() => []);
+      for (const item of icons) if (item.icon) this.icons.set(item.bundleId, item.icon);
+      jarvis.ui.update();
+    }
+    // MARK: - 规则
     /**
-     * 改一条规则（`none` = 删掉）。
+     * 给一个应用定规则（`none` = 删掉）。
      * @param bundleId 哪个应用。
      * @param name 应用名。
-     * @param choice 选择器的值。
+     * @param choice 选择。
      */
-    async setRule(bundleId, name, choice) {
-      this.rules = setRule(this.rules, bundleId, ruleFromChoice(choice, name));
+    async assign(bundleId, name, choice) {
+      this.rules = setRule(this.rules, bundleId, ruleFromChoice(choice, name || this.rules[bundleId]?.name || bundleId));
+      this.highlight = choice === "none" ? void 0 : bundleId;
+      this.editing = void 0;
       await jarvis.storage.set(storageKeys.rules, this.rules);
     }
     /**
      * 删掉一条规则。
      * @param bundleId 哪个应用。
      */
-    async removeRule(bundleId) {
+    async remove(bundleId) {
       if (this.editing === bundleId) this.editing = void 0;
-      await this.setRule(bundleId, "", "none");
+      if (this.highlight === bundleId) this.highlight = void 0;
+      await this.assign(bundleId, "", "none");
     }
-    /** 展开 / 收起一条规则的选择器。 */
+    /** 展开 / 收起一条规则的「换成」。 */
     toggleEditing(bundleId) {
       this.editing = this.editing === bundleId ? void 0 : bundleId;
+      this.highlight = void 0;
+    }
+    // MARK: - 加应用那一步
+    /**
+     * 往一组里加应用。还没给应用列表的授权时先问（只在按钮回调里调）。
+     * @param target 那一组的选择。
+     */
+    async startAdd(target) {
+      if (!this.granted.includes("apps.read")) {
+        const result = await jarvis.permissions.request(["apps.read"]);
+        this.granted = result.granted;
+        if (!this.granted.includes("apps.read")) return;
+      }
+      this.stage = { kind: "add", target };
+      this.query = "";
+      this.editing = void 0;
+      await this.loadApps();
+      await this.fetchIcons(this.visibleBundleIDs());
+    }
+    /** 不加了，回到分组页。 */
+    cancelAdd() {
+      this.stage = { kind: "groups" };
     }
     /**
-     * 没写规则的应用怎么办。
-     * @param value 偏好值。
+     * 搜索词变了：停下 300 ms 再补图标。
+     * @param query 搜索词。
      */
-    async setOthers(value) {
-      this.settings = readSettings({ ...this.settings, others: value });
-      await jarvis.preferences.set("others", this.settings.others);
+    setQuery(query) {
+      this.query = query;
+      if (this.iconTimer !== void 0) clearTimeout(this.iconTimer);
+      this.iconTimer = setTimeout(() => {
+        this.iconTimer = void 0;
+        void this.fetchIcons(this.visibleBundleIDs());
+      }, ICON_DEBOUNCE_MS);
     }
+    /**
+     * 点了一个应用：加进那一组，回到分组页。
+     * @param bundleId 应用。
+     * @param name 应用名。
+     */
+    async pick(bundleId, name) {
+      if (this.stage.kind !== "add") return;
+      const target = this.stage.target;
+      this.stage = { kind: "groups" };
+      await this.assign(bundleId, name, target);
+    }
+    // MARK: - 推荐
+    /** 此刻的推荐（不用了之后为空）。 */
+    currentSuggestions() {
+      if (this.suggestionsDismissed || this.apps === void 0) return [];
+      return suggestions(this.apps, this.rules, this.sources, this.now());
+    }
+    /** 推荐全部加上。 */
+    async acceptSuggestions() {
+      let rules = this.rules;
+      for (const item of this.currentSuggestions()) rules = setRule(rules, item.bundleId, ruleFromChoice(item.choice, item.name));
+      this.rules = rules;
+      await jarvis.storage.set(storageKeys.rules, rules);
+      await this.dismissSuggestions();
+      await this.fetchIcons(Object.keys(rules));
+    }
+    /** 不用了：这张卡不再出现。 */
+    async dismissSuggestions() {
+      this.suggestionsDismissed = true;
+      await jarvis.storage.set(SUGGESTIONS_DISMISSED, true);
+    }
+    // MARK: - 其余
     /**
      * 默认输入法。
      * @param id 输入法 id。
@@ -1306,15 +1512,6 @@
       const result = await jarvis.permissions.request([...pageCapabilities]);
       await this.activate({ granted: result.granted, preferences: this.settings });
     }
-    /** 选择器的选项：各输入法、记住上次、不管它、不写规则。 */
-    ruleOptions() {
-      return [
-        ...this.sources.map((source) => ({ value: `fixed:${source.id}`, title: source.name })),
-        { value: "remember", title: "\u8BB0\u4F4F\u4E0A\u6B21\u7528\u7684" },
-        { value: "ignore", title: "\u4E0D\u7BA1\u5B83" },
-        { value: "none", title: "\u4E0D\u5199\u89C4\u5219", detail: `\u8DDF\u7740\u300C\u6CA1\u5199\u89C4\u5219\u7684\u5E94\u7528\u300D\uFF1A${othersTitle(this.settings.others)}` }
-      ];
-    }
   };
   function renderPage(session) {
     const status = session.status;
@@ -1332,11 +1529,10 @@
       case "failed":
         return ui.empty({ key: "failed", symbol: "exclamationmark.triangle", title: "\u6CA1\u8BFB\u51FA\u6765", hint: status.message });
       case "ready":
-        return ready(session);
+        return session.stage.kind === "add" ? addStage(session, session.stage.target) : groupsStage(session);
     }
   }
-  function ready(session) {
-    const current = session.sources.find((source) => source.id === session.currentId);
+  function groupsStage(session) {
     const children = [];
     if (session.settings.paused) {
       children.push(
@@ -1349,90 +1545,106 @@
         })
       );
     }
-    children.push(nowSection(session, current), rulesSection(session), othersSection(session));
-    children.push(
-      ui.text({
-        key: "how",
-        style: "footnote",
-        text: "\u5728\u54EA\u4E2A\u5E94\u7528\u91CC\uFF0C\u5C31\u70B9\u83DC\u5355\u680F\u4E0A\u7684\u952E\u76D8\u56FE\u6807\u7ED9\u5B83\u9009\u8F93\u5165\u6CD5\u3002\u4E2D\u6587\u8F93\u5165\u6CD5\u91CC\u6309 \u21E7 \u5207\u5230\u7684\u82F1\u6587\u6A21\u5F0F\u4E0D\u7B97\u6362\u4E86\u8F93\u5165\u6CD5\uFF0C\u89C4\u5219\u7BA1\u4E0D\u5230\u5B83\u3002"
-      })
-    );
+    children.push(nowSection(session));
+    const recommended = session.currentSuggestions();
+    if (recommended.length > 0) {
+      children.push(
+        ui.note({
+          key: "suggestions",
+          tint: "accent",
+          symbol: "sparkles",
+          title: "\u5148\u7ED9\u5E38\u7528\u7684\u5E94\u7528\u5B9A\u597D",
+          body: suggestionSummary(recommended, session.sources),
+          actions: [
+            { id: "accept", title: "\u5168\u90E8\u6DFB\u52A0", onPress: () => void session.acceptSuggestions() },
+            { id: "dismiss", title: "\u4E0D\u7528\u4E86", onPress: () => void session.dismissSuggestions() }
+          ]
+        })
+      );
+    }
+    for (const group of groupRules(session.rules, session.sources)) children.push(groupSection(session, group));
+    children.push(othersSection(session));
     return ui.scroll({ key: "page", children: [ui.stack({ key: "content", children })] });
   }
-  function nowSection(session, current) {
+  function nowSection(session) {
     const app = session.app;
+    const current = session.sources.find((source) => source.id === session.currentId);
     const children = [];
     if (app) {
-      const rule = session.rules[app.bundleId];
+      const choice = ruleChoice(session.rules[app.bundleId]);
       children.push(
         ui.row({
           key: "now:app",
           symbol: "app",
-          image: app.icon,
+          image: session.icons.get(app.bundleId) ?? app.icon,
           title: app.name,
-          subtitle: ruleTitle(rule, session.sources, session.settings),
+          subtitle: choice === "none" ? `\u6CA1\u5199\u89C4\u5219 \xB7 \u8DDF\u7740\u300C\u6CA1\u5199\u89C4\u5219\u7684\u5E94\u7528\u300D` : choiceTitle(choice, session.sources),
           accessory: "none"
         }),
-        ui.picker({
-          key: "now:rule",
-          label: `\u5728\u300C${app.name}\u300D\u91CC\u7528`,
-          options: session.ruleOptions(),
-          value: ruleChoice(rule),
-          searchable: true,
-          onChange: (value) => void session.setRule(app.bundleId, app.name, value)
-        })
+        chipGrid("now", session, choice, true, (value) => void session.assign(app.bundleId, app.name, value))
       );
     } else {
-      children.push(ui.text({ key: "now:none", style: "footnote", text: "\u5207\u5230\u4E00\u4E2A\u5E94\u7528\u518D\u6253\u5F00\u8FD9\u4E00\u9875\uFF0C\u5C31\u80FD\u7ED9\u5B83\u5B9A\u8F93\u5165\u6CD5" }));
+      children.push(ui.text({ key: "now:none", style: "footnote", text: "\u5207\u5230\u4E00\u4E2A\u5E94\u7528\u518D\u6253\u5F00\u8FD9\u4E00\u9875\uFF0C\u5C31\u80FD\u4E00\u70B9\u7ED9\u5B83\u5B9A\u8F93\u5165\u6CD5" }));
     }
     return ui.section({ key: "now", title: "\u6B64\u523B \xB7 NOW", trailing: current ? `\u6B63\u5728\u7528 ${current.name}` : void 0, children });
   }
-  function rulesSection(session) {
-    const entries = Object.entries(session.rules).sort(([, a], [, b]) => a.name.localeCompare(b.name, "zh-Hans"));
+  function chipGrid(keyPrefix, session, selected, withNone, onPick, exclude) {
+    const chips = choiceChips(session.sources, withNone).filter((chip) => chip.value !== exclude);
+    return layout.grid({
+      key: `${keyPrefix}:choices`,
+      minimum: 84,
+      spacing: "tight",
+      children: chips.map(
+        (chip) => ui.chip({
+          key: `${keyPrefix}:${chip.value}`,
+          title: chip.title,
+          image: chip.image,
+          symbol: chip.symbol,
+          help: chip.help,
+          selected: chip.value === selected,
+          onPress: () => onPick(chip.value)
+        })
+      )
+    });
+  }
+  function groupSection(session, group) {
     const children = [];
-    for (const [bundleId, rule] of entries) {
-      const icon = session.app?.bundleId === bundleId ? session.app.icon : void 0;
+    for (const { bundleId, rule } of group.entries) {
+      const name = rule.name || bundleId;
+      const editing = session.editing === bundleId;
       children.push(
         ui.row({
           key: `rule:${bundleId}`,
           symbol: "app",
-          image: icon,
-          title: rule.name || bundleId,
-          subtitle: ruleTitle(rule, session.sources, session.settings),
-          selected: session.editing === bundleId,
+          image: session.icons.get(bundleId),
+          title: name,
+          subtitle: session.app?.bundleId === bundleId ? "\u6B64\u523B\u5728\u524D\u53F0" : group.key === "stale" ? "\u70B9\u4E00\u4E0B\uFF0C\u6362\u4E00\u4E2A\u8FD8\u542F\u7528\u7740\u7684" : void 0,
+          selected: editing || session.highlight === bundleId,
           accessory: "none",
           onPress: () => session.toggleEditing(bundleId),
-          actions: [{ id: "remove", title: "\u5220\u9664\u89C4\u5219", symbol: "xmark", help: "\u5220\u9664\u8FD9\u6761\u89C4\u5219", onPress: () => void session.removeRule(bundleId) }]
+          actions: [{ id: "remove", title: "\u5220\u9664\u89C4\u5219", symbol: "xmark", help: `\u5220\u9664\u300C${name}\u300D\u7684\u89C4\u5219`, onPress: () => void session.remove(bundleId) }]
         })
       );
-      if (session.editing === bundleId) {
+      if (editing) {
         children.push(
-          ui.picker({
-            key: `rule:${bundleId}:picker`,
-            label: `\u5728\u300C${rule.name || bundleId}\u300D\u91CC\u7528`,
-            options: session.ruleOptions(),
-            value: ruleChoice(rule),
-            searchable: true,
-            onChange: (value) => void session.setRule(bundleId, rule.name, value)
-          })
+          ui.text({ key: `rule:${bundleId}:label`, style: "footnote", text: `\u300C${name}\u300D\u6362\u6210` }),
+          chipGrid(`rule:${bundleId}`, session, ruleChoice(rule), false, (value) => void session.assign(bundleId, name, value), group.key)
         );
       }
     }
-    if (children.length === 0) {
-      children.push(ui.text({ key: "rules:empty", style: "footnote", text: "\u8FD8\u6CA1\u6709\u89C4\u5219\u3002\u5728\u54EA\u4E2A\u5E94\u7528\u91CC\uFF0C\u5C31\u70B9\u83DC\u5355\u680F\u4E0A\u7684\u952E\u76D8\u56FE\u6807\u7ED9\u5B83\u9009\u4E00\u4E2A" }));
+    if (group.entries.length === 0) {
+      children.push(ui.text({ key: `${group.key}:empty`, style: "footnote", text: "\u8FD8\u6CA1\u6709\u5E94\u7528\u3002\u70B9\u53F3\u4E0A\u89D2\u7684 + \u52A0\u51E0\u4E2A" }));
     }
-    return ui.section({ key: "rules", title: "\u5E94\u7528\u89C4\u5219 \xB7 RULES", trailing: `${entries.length} \u4E2A`, children });
+    return ui.section({
+      key: `group:${group.key}`,
+      title: group.title,
+      trailing: `${group.entries.length} \u4E2A\u5E94\u7528`,
+      actions: group.addable ? [{ id: "add", title: "\u6DFB\u52A0\u5E94\u7528", symbol: "plus", help: `\u6DFB\u52A0${group.title}\u7684\u5E94\u7528`, onPress: () => void session.startAdd(group.key) }] : void 0,
+      children
+    });
   }
   function othersSection(session) {
-    const children = [
-      ui.picker({
-        key: "others",
-        label: "\u6CA1\u5199\u89C4\u5219\u7684\u5E94\u7528",
-        options: ["keep", "remember", "default"].map((value) => ({ value, title: othersTitle(value) })),
-        value: session.settings.others,
-        onChange: (value) => void session.setOthers(value)
-      })
-    ];
+    const children = [layout.preference({ key: "others", preference: "others" })];
     if (session.settings.others === "default") {
       const value = session.fallbackSource && session.sources.some((source) => source.id === session.fallbackSource) ? session.fallbackSource : "";
       children.push(
@@ -1447,7 +1659,55 @@
         })
       );
     }
+    children.push(
+      ui.text({
+        key: "how",
+        style: "footnote",
+        text: "\u4E5F\u53EF\u4EE5\u5728\u4EFB\u4F55\u5E94\u7528\u91CC\u70B9\u83DC\u5355\u680F\u4E0A\u7684\u952E\u76D8\u56FE\u6807\uFF0C\u7ED9\u5B83\u4E00\u70B9\u5373\u5B9A\u3002\u4E2D\u6587\u8F93\u5165\u6CD5\u91CC\u6309 \u21E7 \u5207\u5230\u7684\u82F1\u6587\u6A21\u5F0F\u4E0D\u7B97\u6362\u4E86\u8F93\u5165\u6CD5\uFF0C\u89C4\u5219\u7BA1\u4E0D\u5230\u5B83\u3002"
+      })
+    );
     return ui.section({ key: "others", title: "\u6CA1\u5199\u89C4\u5219\u7684\u5E94\u7528 \xB7 OTHERS", children });
+  }
+  function addStage(session, target) {
+    const title = choiceTitle(target, session.sources);
+    const children = [
+      ui.row({
+        key: "add:back",
+        symbol: "chevron.left",
+        title: `\u52A0\u5230\u300C${title}\u300D`,
+        subtitle: "\u70B9\u4E00\u4E2A\u5E94\u7528\u5C31\u52A0\u8FDB\u53BB\uFF1B\u5DF2\u7ECF\u6709\u89C4\u5219\u7684\u4F1A\u632A\u8FC7\u6765",
+        accessory: "none",
+        onPress: () => session.cancelAdd(),
+        label: `\u8FD4\u56DE\u3002\u52A0\u5230\u300C${title}\u300D`
+      }),
+      ui.search({ key: "add:search", value: session.query, placeholder: "\u641C\u5E94\u7528\u540D\u6216 Bundle ID", label: "\u641C\u5E94\u7528", onChange: (query) => session.setQuery(query) })
+    ];
+    if (session.apps === void 0) {
+      children.push(ui.text({ key: "add:loading", style: "footnote", text: "\u8BFB\u4E0D\u5230\u5E94\u7528\u5217\u8868\uFF1A\u8981\u300C\u8BFB\u53D6\u672C\u673A\u5E94\u7528\u5217\u8868\u300D\u7684\u6388\u6743" }));
+    } else {
+      const { list, truncated } = candidates(session.apps, session.query);
+      const now = session.now();
+      for (const app of list) {
+        const rule = session.rules[app.bundleId];
+        const choice = ruleChoice(rule);
+        const already = choice === target;
+        children.push(
+          ui.row({
+            key: `app:${app.bundleId}`,
+            symbol: "app",
+            image: session.icons.get(app.bundleId),
+            title: app.name,
+            subtitle: rule ? already ? "\u5DF2\u7ECF\u5728\u8FD9\u4E00\u7EC4" : `\u73B0\u5728\uFF1A${choiceTitle(choice, session.sources)}` : lastUsedTitle(app.lastUsedAt, now),
+            selected: already,
+            accessory: already ? "dot" : "none",
+            onPress: () => void session.pick(app.bundleId, app.name)
+          })
+        );
+      }
+      if (list.length === 0) children.push(ui.text({ key: "add:none", style: "footnote", text: "\u6CA1\u627E\u5230\u3002\u6362\u4E2A\u540D\u5B57\uFF0C\u6216\u8005\u7528 Bundle ID \u641C" }));
+      if (truncated) children.push(ui.text({ key: "add:more", style: "footnote", text: "\u53EA\u5217\u4E86\u6700\u8FD1\u7528\u8FC7\u7684 60 \u4E2A\uFF0C\u8F93\u5165\u540D\u5B57\u627E\u522B\u7684" }));
+    }
+    return ui.scroll({ key: "add", children: [ui.stack({ key: "add:content", children })] });
   }
 
   // extensions/input-source/src/index.ts

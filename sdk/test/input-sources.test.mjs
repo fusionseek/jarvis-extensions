@@ -16,6 +16,7 @@ const host = createTestHost({
     },
     "frontmostApp.current": async () => ({ bundleId: "com.apple.dt.Xcode", name: "Xcode", pid: 4021 }),
     "hud.show": async () => null,
+    "apps.icons": async (params) => params.bundleIds.map((bundleId) => (bundleId === "gone" ? { bundleId } : { bundleId, icon: { id: `i-${bundleId}`, name: "a.png", byteCount: 1, extension: "png" } })),
   },
 });
 const { jarvis, capabilityTiers, sdkVersion, JarvisError } = await import("../dist/index.js");
@@ -87,4 +88,12 @@ test("permissions.onChange：本地听 permissionsChanged，不上线缆；退�
   host.dispatch({ type: "permissionsChanged", granted: [] });
   assert.deepEqual(seen, [["system.activity"]]);
   assert.equal(host.invocations.slice(before).filter((entry) => entry.namespace === "permissions").length, 0);
+});
+
+test("apps.icons：去重上线缆，结果原样交回", async () => {
+  const icons = await jarvis.apps.icons(["com.apple.dt.Xcode", "gone", "com.apple.dt.Xcode"]);
+  const request = host.invocations.findLast((entry) => entry.namespace === "apps" && entry.method === "icons");
+  assert.deepEqual(request.params, { bundleIds: ["com.apple.dt.Xcode", "gone"] });
+  assert.equal(icons[0].icon.id, "i-com.apple.dt.Xcode");
+  assert.equal(icons[1].icon, undefined);
 });

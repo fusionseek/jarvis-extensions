@@ -102,3 +102,75 @@ test("菜单：暂停时图标换一枚、短字可以关掉；没有前台应�
 test("readSettings：不认识的值退回默认", () => {
   assert.deepEqual(model.readSettings({ others: "weird", hud: "yes", hudAnchor: "screen" }), { ...model.defaultSettings, hudAnchor: "screen" });
 });
+
+const day = 24 * 60 * 60 * 1000;
+const now = Date.UTC(2026, 9, 30);
+const app = (name, bundleId, category, daysAgo) => ({ id: `/Applications/${name}.app`, name, bundleId, category, lastUsedAt: daysAgo === null ? null : now - daysAgo * day });
+
+test("groupRules：每个输入法一组（空的也给）、有内容才给记住上次 / 不管它、停用的单独一组", () => {
+  const groups = model.groupRules(
+    {
+      b: { mode: "fixed", source: ABC, name: "终端" },
+      a: { mode: "fixed", source: ABC, name: "Xcode" },
+      c: { mode: "ignore", name: "游戏" },
+      d: { mode: "fixed", source: "com.apple.keylayout.US", name: "旧的" },
+    },
+    sources,
+  );
+  assert.deepEqual(groups.map((group) => group.key), [`fixed:${ABC}`, `fixed:${PINYIN}`, "ignore", "stale"]);
+  assert.deepEqual(groups[0].entries.map((entry) => entry.rule.name), ["Xcode", "终端"].sort((a, b) => a.localeCompare(b, "zh-Hans")), "组内按应用名、中文排序规则");
+  assert.equal(groups[1].entries.length, 0);
+  assert.equal(groups[3].addable, false);
+});
+
+test("candidates：有 bundle id 的、同一个 bundle 留最近用过的、最近用过的在前、搜名字或 bundle id", () => {
+  const apps = [
+    app("Xcode", "com.apple.dt.Xcode", "public.app-category.developer-tools", 1),
+    app("Xcode 旧版", "com.apple.dt.Xcode", "public.app-category.developer-tools", 40),
+    app("没打开过", "com.example.never", null, null),
+    app("脚本", null, null, 0),
+    app("微信", "com.tencent.xinWeChat", "public.app-category.social-networking", 0),
+  ];
+  const { list, truncated } = model.candidates(apps, "");
+  assert.deepEqual(list.map((item) => item.name), ["微信", "Xcode", "没打开过"]);
+  assert.equal(truncated, false);
+  assert.deepEqual(model.candidates(apps, "tencent").list.map((item) => item.name), ["微信"]);
+  const many = Array.from({ length: 70 }, (_, index) => app(`应用${index}`, `com.example.${index}`, null, index));
+  assert.equal(model.candidates(many, "").list.length, model.maximumCandidates);
+  assert.equal(model.candidates(many, "").truncated, true);
+});
+
+test("suggestions：开发工具 → 键盘布局、社交 → 中文；有规则的、一个月没用的、没分类的不推；至多 6 条", () => {
+  const apps = [
+    app("Xcode", "com.apple.dt.Xcode", "public.app-category.developer-tools", 1),
+    app("微信", "com.tencent.xinWeChat", "public.app-category.social-networking", 0),
+    app("终端", "com.apple.Terminal", "public.app-category.developer-tools", 2),
+    app("很久没用", "com.example.old", "public.app-category.developer-tools", 45),
+    app("备忘录", "com.apple.Notes", null, 0),
+  ];
+  const list = model.suggestions(apps, { "com.apple.Terminal": { mode: "ignore", name: "终端" } }, sources, now);
+  assert.deepEqual(list, [
+    { bundleId: "com.tencent.xinWeChat", name: "微信", choice: `fixed:${PINYIN}` },
+    { bundleId: "com.apple.dt.Xcode", name: "Xcode", choice: `fixed:${ABC}` },
+  ]);
+  assert.equal(model.suggestionSummary(list, sources), "微信 → 微信输入法；Xcode → ABC");
+  assert.deepEqual(model.suggestions(apps, {}, [sources[0]], now).map((item) => item.name), ["Xcode", "终端"], "没有中文输入法就不推聊天应用");
+});
+
+test("lastUsedTitle 与 choiceTitle", () => {
+  assert.equal(model.lastUsedTitle(null, now), undefined);
+  assert.equal(model.lastUsedTitle(now - 3600_000, now), "今天用过");
+  assert.equal(model.lastUsedTitle(now - day, now), "昨天用过");
+  assert.equal(model.lastUsedTitle(now - 5 * day, now), "5 天前用过");
+  assert.equal(model.lastUsedTitle(now - 65 * day, now), "2 个月前用过");
+  assert.equal(model.choiceTitle(`fixed:${ABC}`, sources), "用 ABC");
+  assert.equal(model.choiceTitle("fixed:gone", sources), "用一个已停用的输入法");
+  assert.equal(model.choiceTitle("none", sources), "不写规则");
+});
+
+test("choiceChips：每个输入法一枚（带图标），加记住上次、不管它；此刻那一排多一枚「不写规则」", () => {
+  const chips = model.choiceChips(sources, true);
+  assert.deepEqual(chips.map((chip) => chip.value), [`fixed:${ABC}`, `fixed:${PINYIN}`, "remember", "ignore", "none"]);
+  assert.equal(chips[1].image.id, "icon-pinyin");
+  assert.equal(model.choiceChips(sources, false).length, 4);
+});

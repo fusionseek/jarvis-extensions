@@ -370,6 +370,13 @@ export interface FrontmostApp {
   icon?: FileHandle;
 }
 
+/** `jarvis.apps.icons` 交回的一项（SDK 2.13，`$defs.appsIconsResult`）：装着的应用有 `icon`，没装的没有。 */
+export interface AppIcon {
+  bundleId: string;
+  /** 64 px 图标句柄（交给 `row.image` / `chip.image` / `image`）。同一会话同一应用只颁一次。 */
+  icon?: FileHandle;
+}
+
 /** `jarvis.hud.show` 的入参（SDK 2.13，`$defs.hudShowRequest`）。 */
 export interface HUDOptions {
   /** 1–24 字。 */

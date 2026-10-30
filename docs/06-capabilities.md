@@ -609,6 +609,7 @@ await jarvis.android.openTool({ tool: "apkScan", package: apps[0]!.package });
 | 方法 | 说明 |
 | --- | --- |
 | `apps.list()` | `[{ id, name, bundleId, path, category, categoryTitle, version, location, locationTitle, lastUsedAt, addedAt, system, deletable }]`，按名字排。`id` 就是标准化之后的路径（同一个 Bundle ID 装两份是两个应用）；`category` 是 App Store 分类键（游戏子类归到 `public.app-category.games`），没有为 `null`、`categoryTitle` 为「其他」；`location` 是 `applications` / `system` / `user` / `other`；时刻是 Unix 毫秒，Spotlight 没记为 `null`；`deletable` = 不是系统应用且所在目录可写 |
+| `apps.icons(bundleIds)`（SDK 2.13） | `[{ bundleId, icon? }]`，与入参同序；1–40 个、去重后上线缆。装着的应用给 64 px 图标句柄（与 `frontmostApp`、`menuBarExtras` 同一份按 bundle 的缓存，同一会话只颁一次），没装的没有 `icon`。宿主每个图标在主线程画一次（约 1 ms）：一次要一屏的量；与 `list` 共用每分钟 60 次（jarvis-mac `specs/20261030-182223-input-source-rules-ux` U-6） |
 
 | 规则 | 值 | 为什么 |
 | --- | --- | --- |

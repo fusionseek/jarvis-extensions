@@ -10,7 +10,14 @@ import { ABC, PINYIN, extensionRoot, sources } from "./support.mjs";
 
 const { createTestHost } = await import(pathToFileURL(join(extensionRoot, "..", "..", "sdk", "dist", "testing.js")).href);
 
-const granted = ["hud.show", "inputSources.read", "inputSources.select", "system.activity"];
+const granted = ["hud.show", "inputSources.read", "inputSources.select", "system.activity", "apps.read"];
+const day = 24 * 60 * 60 * 1000;
+const apps = [
+  { id: "/Applications/Visual Studio Code.app", name: "Visual Studio Code", bundleId: "com.microsoft.VSCode", category: "public.app-category.developer-tools", lastUsedAt: Date.now() - day },
+  { id: "/Applications/WeChat.app", name: "微信", bundleId: "com.tencent.xinWeChat", category: "public.app-category.social-networking", lastUsedAt: Date.now() - 2 * day },
+  { id: "/Applications/Feishu.app", name: "飞书", bundleId: "com.bytedance.lark", category: "public.app-category.business", lastUsedAt: Date.now() - 3 * day },
+  { id: "/Applications/Old.app", name: "很久没用", bundleId: "com.example.old", category: "public.app-category.developer-tools", lastUsedAt: Date.now() - 90 * day },
+];
 const storage = new Map();
 let preferences = {};
 let current = PINYIN;
@@ -38,6 +45,9 @@ const host = createTestHost({
     "frontmostApp.current": async () => frontmost,
     "hud.show": async (params) => void huds.push(params),
     "commands.run": async () => null,
+    "apps.list": async () => apps,
+    "apps.icons": async (params) => params.bundleIds.map((bundleId) => ({ bundleId, icon: { id: `icon-${bundleId}`, name: "a.png", byteCount: 1, extension: "png" } })),
+    "permissions.request": async (params) => ({ granted: [...granted, ...params.ids], denied: [] }),
   },
 });
 await import(pathToFileURL(join(extensionRoot, "dist", "extension.js")).href);
@@ -130,17 +140,74 @@ test("把此刻的输入法定给当前应用", async () => {
   assert.equal(huds.at(-1).text, "备忘录 用 微信输入法");
 });
 
-test("工具箱页：此刻的应用、规则列表；改规则写进存储，删掉规则", async () => {
-  frontmost = { bundleId: "com.apple.dt.Xcode", name: "Xcode", pid: 11 };
+const press = async (node, index = 0) => {
+  host.dispatch({ type: "ui", handler: node.props.actions[index].on.press, payload: {} });
+  await host.settle();
+};
+const openPage = async () => {
   host.dispatch({ type: "activate", context: { surface: "toolbox", entry: "toolbox", granted, preferences, commands: [] } });
   await host.settle();
-  const picker = host.find((node) => node.kind === "picker" && node.key === "now:rule");
-  assert.equal(picker.props.value, `fixed:${ABC}`);
-  await host.fire(picker, "change", "ignore");
+};
+
+test("工具箱页·此刻：一排一点即定，选中的那枚点亮；点「不管它」写进存储", async () => {
+  frontmost = { bundleId: "com.apple.dt.Xcode", name: "Xcode", pid: 11 };
+  await openPage();
+  const selected = host.find((node) => node.kind === "chip" && node.key === `now:fixed:${ABC}`);
+  assert.equal(selected.props.selected, true);
+  assert.ok(host.find((node) => node.kind === "chip" && node.key === "now:none"), "此刻那一排有「不写规则」");
+  await host.fire(host.find((node) => node.kind === "chip" && node.key === "now:ignore"), "press");
   assert.equal(storage.get("rules")["com.apple.dt.Xcode"].mode, "ignore");
-  const row = host.find((node) => node.kind === "row" && node.key === "rule:com.apple.Notes");
-  assert.ok(row, "规则列表里有备忘录");
-  host.dispatch({ type: "ui", handler: row.props.actions[0].on.press, payload: {} });
-  await host.settle();
-  assert.ok(!("com.apple.Notes" in storage.get("rules")));
+});
+
+test("工具箱页·分组：每个输入法一组（空的也画），有内容才画「不管它」；有「没写规则的应用」那一项偏好", async () => {
+  assert.ok(host.find((node) => node.kind === "section" && node.key === `group:fixed:${ABC}`));
+  assert.ok(host.find((node) => node.kind === "section" && node.key === `group:fixed:${PINYIN}`));
+  assert.ok(host.find((node) => node.kind === "section" && node.key === "group:ignore"));
+  assert.equal(host.find((node) => node.kind === "preference" && node.key === "others").props.preference, "others");
+});
+
+test("工具箱页·推荐：开发工具 → ABC、社交 → 中文；一个月没用的不推；全部添加之后卡片不再出现", async () => {
+  const note = host.find((node) => node.kind === "note" && node.key === "suggestions");
+  assert.ok(note, "有推荐卡");
+  assert.match(note.props.body, /Visual Studio Code → ABC/);
+  assert.match(note.props.body, /微信 → 微信输入法/);
+  assert.doesNotMatch(note.props.body, /很久没用|飞书/);
+  await press(note, 0);
+  assert.equal(storage.get("rules")["com.microsoft.VSCode"].source, ABC);
+  assert.equal(storage.get("rules")["com.tencent.xinWeChat"].source, PINYIN);
+  assert.equal(storage.get("suggestionsDismissed"), true);
+  assert.equal(host.find((node) => node.kind === "note" && node.key === "suggestions"), undefined);
+});
+
+test("工具箱页·自己加：点「用 ABC」的 +，挑飞书；回到分组页，飞书落在 ABC 组且点亮", async () => {
+  await press(host.find((node) => node.kind === "section" && node.key === `group:fixed:${ABC}`));
+  const feishu = host.find((node) => node.kind === "row" && node.key === "app:com.bytedance.lark");
+  assert.ok(feishu, "加应用那一步列出装着的应用");
+  assert.equal(feishu.props.image.id, "icon-com.bytedance.lark", "带图标");
+  const wechat = host.find((node) => node.kind === "row" && node.key === "app:com.tencent.xinWeChat");
+  assert.equal(wechat.props.subtitle, "现在：用 微信输入法", "已经有规则的写着它在哪一组");
+  await host.fire(feishu, "press");
+  assert.deepEqual(storage.get("rules")["com.bytedance.lark"], { mode: "fixed", source: ABC, name: "飞书" });
+  const row = host.find((node) => node.kind === "row" && node.key === "rule:com.bytedance.lark");
+  assert.equal(row.props.selected, true, "刚加的那一行点亮");
+});
+
+test("工具箱页·搜索：在全部里按名字找", async () => {
+  await press(host.find((node) => node.kind === "section" && node.key === `group:fixed:${PINYIN}`));
+  await host.fire(host.find((node) => node.kind === "search" && node.key === "add:search"), "change", "很久");
+  assert.ok(host.find((node) => node.kind === "row" && node.key === "app:com.example.old"));
+  assert.equal(host.find((node) => node.kind === "row" && node.key === "app:com.bytedance.lark"), undefined);
+  await host.fire(host.find((node) => node.kind === "row" && node.key === "add:back"), "press");
+  assert.ok(host.find((node) => node.kind === "section" && node.key === "now"), "返回分组页");
+});
+
+test("工具箱页·换组与删除：点一行展开「换成」，一点挪组；× 删掉", async () => {
+  await host.fire(host.find((node) => node.kind === "row" && node.key === "rule:com.bytedance.lark"), "press");
+  const move = host.find((node) => node.kind === "chip" && node.key === `rule:com.bytedance.lark:fixed:${PINYIN}`);
+  assert.ok(move, "展开了「换成」");
+  assert.equal(host.find((node) => node.kind === "chip" && node.key === `rule:com.bytedance.lark:fixed:${ABC}`), undefined, "不列它此刻所在的那一组");
+  await host.fire(move, "press");
+  assert.equal(storage.get("rules")["com.bytedance.lark"].source, PINYIN);
+  await press(host.find((node) => node.kind === "row" && node.key === "rule:com.bytedance.lark"));
+  assert.ok(!("com.bytedance.lark" in storage.get("rules")));
 });

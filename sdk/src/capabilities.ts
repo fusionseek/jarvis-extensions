@@ -20,6 +20,7 @@ import type {
   DaemonStatus,
   FilesPickRequest,
   FilesPickResult,
+  AppIcon,
   FrontmostApp,
   HUDOptions,
   InputSource,
@@ -1046,6 +1047,11 @@ export interface MacApp {
 export interface AppsAPI {
   /** `apps.read`。这台 Mac 装了哪些应用，按名字排。每分钟 ≤ 60 次（宿主缓存 5 分钟，不必自己再缓存）。 */
   list(): Promise<MacApp[]>;
+  /**
+   * `apps.read`（SDK 2.13）。这几个应用的图标，与入参同序：1–40 个 bundle id、不重复（重复的 SDK 先去掉）。
+   * 没装的没有 `icon`。宿主每个图标在主线程上画一次（约 1 ms），一次要一屏的量就好；和 `list` 共用每分钟 60 次。
+   */
+  icons(bundleIds: string[]): Promise<AppIcon[]>;
 }
 
 /** 系统。 */

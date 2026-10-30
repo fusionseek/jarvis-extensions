@@ -53,6 +53,7 @@ export type {
   DaemonState,
   DaemonStatus,
   FilesPickRequest,
+  AppIcon,
   FilesPickResult,
   FrontmostApp,
   HostEvent,
@@ -935,6 +936,8 @@ export const jarvis: Jarvis = {
   // 本机应用（SDK 2.5）：不收参数，扫哪几处由宿主定。
   apps: {
     list: () => call.apps("list"),
+    // SDK 2.13：图标按需取，去重后上线缆（宿主拒绝重复）。
+    icons: (bundleIds) => call.apps("icons", { bundleIds: [...new Set(bundleIds)] }),
   },
   system: {
     openURL: (url) => call.system("openURL", { url }),

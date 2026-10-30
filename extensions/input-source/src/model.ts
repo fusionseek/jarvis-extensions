@@ -4,7 +4,7 @@
  * 宿主不认识「规则」：它只给读 / 切输入源、前台应用、提示这几样通用的东西（jarvis-mac `specs/20261030-170731-input-source-switch-p1`），
  * 哪个应用用哪个输入法、没写规则的怎么办，全在这里。
  */
-import type { InputSource, MenuBarItem, MenuBarModel } from "@fusionseek/jarvis-extension-sdk";
+import type { FileHandle, InputSource, MacApp, MenuBarItem, MenuBarModel } from "@fusionseek/jarvis-extension-sdk";
 
 /** 一个应用的规则。`name` 是定规则时的应用名：列表里要画，而那个应用此刻未必开着。 */
 export type Rule =
@@ -286,6 +286,204 @@ export function menuModel(state: MenuState): MenuBarModel {
     tooltip: clip(current ? `此刻：${current.name}${state.settings.paused ? "（自动切换已暂停）" : ""}` : "输入法切换", 80),
     items,
   };
+}
+
+// MARK: - 第二轮：按输入法分组、自己加应用、推荐（jarvis-mac `specs/20261030-182223-input-source-rules-ux`）
+
+/**
+ * 一个选择的名字：「用 ABC」「记住上次用的」「不管它」「不写规则」。
+ * @param choice 选择器的值。
+ * @param sources 此刻启用的输入法。
+ * @returns 名字。
+ */
+export function choiceTitle(choice: RuleChoice, sources: readonly InputSource[]): string {
+  if (choice.startsWith("fixed:")) {
+    const id = choice.slice("fixed:".length);
+    const source = sources.find((candidate) => candidate.id === id);
+    return source ? `用 ${source.name}` : "用一个已停用的输入法";
+  }
+  if (choice === "remember") return "记住上次用的";
+  if (choice === "ignore") return "不管它";
+  return "不写规则";
+}
+
+/** 一枚一点即定的选项。 */
+export interface ChoiceChip {
+  value: RuleChoice;
+  /** chip 上那几个字（短）。 */
+  title: string;
+  /** 悬停说明（长）。 */
+  help: string;
+  image?: FileHandle;
+  symbol: string;
+}
+
+/**
+ * 「此刻」与「换成」那一排：每个输入法一枚（带它的图标），再加记住上次、不管它；`withNone` 时加「不写规则」。
+ * @param sources 此刻启用的输入法。
+ * @param withNone 要不要「不写规则」。
+ * @returns 选项。
+ */
+export function choiceChips(sources: readonly InputSource[], withNone: boolean): ChoiceChip[] {
+  const chips: ChoiceChip[] = sources.map((source) => ({
+    value: `fixed:${source.id}`,
+    title: source.name,
+    help: `切到这个应用就换成 ${source.name}`,
+    image: source.icon,
+    symbol: "keyboard",
+  }));
+  chips.push(
+    { value: "remember", title: "记住上次", help: "换成你上次在这个应用里手动用的那个", symbol: "arrow.uturn.backward" },
+    { value: "ignore", title: "不管它", help: "切到这个应用时不换输入法", symbol: "minus.circle" },
+  );
+  if (withNone) chips.push({ value: "none", title: "不写规则", help: "跟着「没写规则的应用」那一条走", symbol: "circle.dashed" });
+  return chips;
+}
+
+/** 一组规则。 */
+export interface RuleGroup {
+  /** 这一组的选择（`fixed:<id>` / `remember` / `ignore`），停用的那一组是 `stale`。 */
+  key: string;
+  title: string;
+  source?: InputSource;
+  entries: { bundleId: string; rule: Rule }[];
+  /** 能不能往这一组里加应用（停用的那一组不能）。 */
+  addable: boolean;
+}
+
+/**
+ * 按输入法分组：每个启用的输入法一组（空的也给：用户第一眼就看得到「我可以给 ABC 加应用」），
+ * 记住上次、不管它两组有内容才给；指向已停用输入法的规则单独一组。组内按应用名排。
+ * @param rules 规则。
+ * @param sources 此刻启用的输入法。
+ * @returns 分组，顺序同系统输入法菜单，然后是记住上次、不管它、已停用。
+ */
+export function groupRules(rules: Rules, sources: readonly InputSource[]): RuleGroup[] {
+  const byName = (a: { rule: Rule; bundleId: string }, b: { rule: Rule; bundleId: string }) =>
+    (a.rule.name || a.bundleId).localeCompare(b.rule.name || b.bundleId, "zh-Hans");
+  const entries = Object.entries(rules).map(([bundleId, rule]) => ({ bundleId, rule }));
+  const enabled = new Set(sources.map((source) => source.id));
+  const groups: RuleGroup[] = sources.map((source) => ({
+    key: `fixed:${source.id}`,
+    title: `用 ${source.name}`,
+    source,
+    entries: entries.filter((entry) => entry.rule.mode === "fixed" && entry.rule.source === source.id).sort(byName),
+    addable: true,
+  }));
+  const remembered = entries.filter((entry) => entry.rule.mode === "remember").sort(byName);
+  if (remembered.length > 0) groups.push({ key: "remember", title: "记住上次用的", entries: remembered, addable: true });
+  const ignored = entries.filter((entry) => entry.rule.mode === "ignore").sort(byName);
+  if (ignored.length > 0) groups.push({ key: "ignore", title: "不管它", entries: ignored, addable: true });
+  const stale = entries.filter((entry) => entry.rule.mode === "fixed" && !enabled.has(entry.rule.source)).sort(byName);
+  if (stale.length > 0) groups.push({ key: "stale", title: "输入法已停用", entries: stale, addable: false });
+  return groups;
+}
+
+/** 加应用那一步的一行。 */
+export interface AppCandidate {
+  bundleId: string;
+  name: string;
+  lastUsedAt: number | null;
+  category: string | null;
+}
+
+/** 加应用那一步至多列几行：一行一个节点，60 行在 520 高的面板里要滚四五屏，再多就该搜了。 */
+export const maximumCandidates = 60;
+
+/**
+ * 加应用那一步的列表：有 bundle id 的应用（同一个 bundle 装了两份只留最近用过的那份），按最近一次打开排、没打开过的按名字排在后面；
+ * 有搜索词时在全部里按名字或 bundle id 找。
+ * @param apps `apps.list()` 的结果。
+ * @param query 搜索词。
+ * @returns 至多 60 行，以及是不是还有没列出来的。
+ */
+export function candidates(apps: readonly MacApp[], query: string): { list: AppCandidate[]; truncated: boolean } {
+  const byBundle = new Map<string, AppCandidate>();
+  for (const app of apps) {
+    if (!app.bundleId) continue;
+    const existing = byBundle.get(app.bundleId);
+    if (existing && (existing.lastUsedAt ?? -1) >= (app.lastUsedAt ?? -1)) continue;
+    byBundle.set(app.bundleId, { bundleId: app.bundleId, name: app.name, lastUsedAt: app.lastUsedAt, category: app.category });
+  }
+  const needle = query.trim().toLowerCase();
+  const all = [...byBundle.values()]
+    .filter((app) => !needle || app.name.toLowerCase().includes(needle) || app.bundleId.toLowerCase().includes(needle))
+    .sort((a, b) => {
+      if (a.lastUsedAt !== b.lastUsedAt) return (b.lastUsedAt ?? -1) - (a.lastUsedAt ?? -1);
+      return a.name.localeCompare(b.name, "zh-Hans");
+    });
+  return { list: all.slice(0, maximumCandidates), truncated: all.length > maximumCandidates };
+}
+
+/** 一条推荐。 */
+export interface Suggestion {
+  bundleId: string;
+  name: string;
+  choice: RuleChoice;
+}
+
+/** 推荐至多几条：一张卡一句话说得完的量。 */
+export const maximumSuggestions = 6;
+/** 只推一个月内打开过的：装了没用的应用不该占这张卡。 */
+export const suggestionWindowMs = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * 按 App Store 分类猜几条规则：开发工具 → 第一个键盘布局（ABC），社交 / 聊天 → 第一个中日韩输入法。
+ * 没有分类的不猜——猜错一个比少推一个更招人烦。已经有规则的不推。
+ * @param apps `apps.list()` 的结果。
+ * @param rules 规则。
+ * @param sources 此刻启用的输入法。
+ * @param now 此刻（Unix 毫秒）。
+ * @returns 至多 6 条，最近用过的在前。
+ */
+export function suggestions(apps: readonly MacApp[], rules: Rules, sources: readonly InputSource[], now: number): Suggestion[] {
+  const layout = sources.find((source) => source.kind === "keyboardLayout");
+  const cjk = sources.find((source) => source.languages.some((language) => /^(zh|ja|ko)/.test(language)));
+  const targetFor = (category: string | null): InputSource | undefined => {
+    if (category === "public.app-category.developer-tools") return layout;
+    if (category === "public.app-category.social-networking") return cjk;
+    return undefined;
+  };
+  const seen = new Set<string>();
+  return candidates(apps, "").list
+    .filter((app) => app.lastUsedAt !== null && now - app.lastUsedAt <= suggestionWindowMs && !(app.bundleId in rules))
+    .flatMap((app) => {
+      const target = targetFor(app.category);
+      if (!target || seen.has(app.bundleId)) return [];
+      seen.add(app.bundleId);
+      return [{ bundleId: app.bundleId, name: app.name, choice: `fixed:${target.id}` }];
+    })
+    .slice(0, maximumSuggestions);
+}
+
+/**
+ * 推荐卡上那一句：「Xcode、终端 → ABC；微信 → 微信输入法」。
+ * @param list 推荐。
+ * @param sources 此刻启用的输入法。
+ * @returns 一句话。
+ */
+export function suggestionSummary(list: readonly Suggestion[], sources: readonly InputSource[]): string {
+  const byChoice = new Map<string, string[]>();
+  for (const item of list) byChoice.set(item.choice, [...(byChoice.get(item.choice) ?? []), item.name]);
+  return [...byChoice.entries()]
+    .map(([choice, names]) => `${names.join("、")} → ${choiceTitle(choice, sources).replace(/^用 /, "")}`)
+    .join("；");
+}
+
+/**
+ * 「3 天前用过」这样的一句；没记过为 `undefined`。
+ * @param lastUsedAt 最近一次打开（Unix 毫秒）。
+ * @param now 此刻（Unix 毫秒）。
+ * @returns 一句或 `undefined`。
+ */
+export function lastUsedTitle(lastUsedAt: number | null, now: number): string | undefined {
+  if (lastUsedAt === null) return undefined;
+  const days = Math.floor((now - lastUsedAt) / (24 * 60 * 60 * 1000));
+  if (days <= 0) return "今天用过";
+  if (days === 1) return "昨天用过";
+  if (days < 30) return `${days} 天前用过`;
+  const months = Math.floor(days / 30);
+  return months < 12 ? `${months} 个月前用过` : "一年多没用过";
 }
 
 function clip(text: string, limit: number): string {
