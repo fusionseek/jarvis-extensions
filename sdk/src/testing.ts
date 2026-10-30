@@ -115,8 +115,11 @@ export interface TestHost {
    * 还没推过为 `undefined`。
    */
   statusItem(id: string): MenuBarModel | undefined;
-  /** 某个命名空间最近一次订阅的 token（`menuBarPointer` / `menuBarExtras` / `screens` …）；没订过为 `undefined`。 */
-  subscriptionToken(namespace: string): string | undefined;
+  /**
+   * 某个命名空间最近一次订阅的 token（`menuBarPointer` / `menuBarExtras` / `screens` …）；没订过为 `undefined`。
+   * `method` 省略为 `observe`；不叫 `observe` 的订阅（SDK 2.13 `browser.watchActiveTab`）要写出来。
+   */
+  subscriptionToken(namespace: string, method?: string): string | undefined;
   /** 给 SDK 发一个宿主事件。 */
   dispatch(event: HostEvent): void;
   /** 往一个订阅 token 上推一次事件。 */
@@ -256,8 +259,8 @@ export function createTestHost(options: TestHostOptions = {}): TestHost {
     statusItem(id) {
       return [...menuBarModels].reverse().find((model) => (model.statusItem ?? "main") === id);
     },
-    subscriptionToken(namespace) {
-      const request = [...invocations].reverse().find((entry) => entry.namespace === namespace && entry.method === "observe");
+    subscriptionToken(namespace, method = "observe") {
+      const request = [...invocations].reverse().find((entry) => entry.namespace === namespace && entry.method === method);
       return (request?.params as { token?: string } | undefined)?.token;
     },
     get nextCallId() {

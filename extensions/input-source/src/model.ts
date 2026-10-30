@@ -62,16 +62,35 @@ export function readSettings(preferences: Record<string, unknown>): Settings {
   };
 }
 
-/** 存在 `jarvis.storage` 里的三样。 */
+/**
+ * 一条网站规则（jarvis-mac `specs/20261030-234919-input-source-site-rules` S-2）：在这个网站上用哪个输入法。
+ * `pattern` 是规范化过的主机名（`github.com`，同时管子域）或「主机名 + 路径前缀」（`docs.google.com/spreadsheets`，按段对齐）。
+ * 网站上没有「记住上次」：同一个应用里的「上次」已经由应用规则管。
+ */
+export interface SiteRule {
+  pattern: string;
+  source: string;
+}
+
+/** 存在 `jarvis.storage` 里的四样。 */
 export interface Memory {
   rules: Rules;
   /** bundle id → 你在那个应用里最后一次**手动**换到的输入法。 */
   lastUsed: Record<string, string>;
   /** 「换成默认输入法」换成哪一个。 */
   fallbackSource?: string;
+  /** 网站规则。 */
+  sites: SiteRule[];
 }
 
-export const emptyMemory: Memory = { rules: {}, lastUsed: {} };
+export const emptyMemory: Memory = { rules: {}, lastUsed: {}, sites: [] };
+
+/** 此刻前台浏览器的当前页（宿主 `browser.watchActiveTab` 推来的、或 `browser.activeTab()` 读到的、状态是 `ok` 的那一页）。 */
+export interface Page {
+  /** 哪个浏览器。网站规则只在它就是此刻前台时生效。 */
+  bundleId: string;
+  url: string;
+}
 
 /** 规则存多少条：每条几十字节，宿主给每个扩展 2 MB / 2000 条，这里只占一个键。300 个应用已经远超一个人会写规则的数。 */
 export const maximumRules = 300;
@@ -81,6 +100,7 @@ export const maximumRemembered = 300;
 /**
  * 切到这个应用时该换成哪一个；不换为 `undefined`。
  *
+ * - 前台是浏览器、它的当前页命中网站规则（且那个输入法还启用着）：换成网站规则的那一个——网站规则比应用规则具体（S-2）。
  * - 应用有规则：`fixed` 换成那一个；`remember` 换成上次手动用的（没记过就不动）。
  * - 无规则：按「无规则的应用」——不动 / 记住上次 / 默认输入法。
  * - 目标此刻没启用（用户在系统设置里删掉了）：不动，不报错。
@@ -89,9 +109,20 @@ export const maximumRemembered = 300;
  * @param memory 规则与记忆。
  * @param settings 偏好。
  * @param enabled 此刻启用的输入法 id。
+ * @param page 此刻的页面；只有 `page.bundleId === bundleId`（这个浏览器就是前台）时才看。
  * @returns 目标 id 或 `undefined`。
  */
-export function resolveTarget(bundleId: string, memory: Memory, settings: Settings, enabled: readonly string[]): string | undefined {
+export function resolveTarget(
+  bundleId: string,
+  memory: Memory,
+  settings: Settings,
+  enabled: readonly string[],
+  page?: Page,
+): string | undefined {
+  if (page && page.bundleId === bundleId) {
+    const site = matchSite(page.url, memory.sites);
+    if (site && enabled.includes(site.source)) return site.source;
+  }
   const rule = memory.rules[bundleId];
   let target: string | undefined;
   if (rule) {
@@ -223,6 +254,9 @@ export function shortLabel(source: InputSource | undefined): string {
 export interface MenuState {
   /** 此刻在前台的应用（点菜单栏图标不换前台，所以就是你刚才在用的那个）。 */
   app?: { bundleId: string; name: string };
+  /** 前台浏览器的当前页（S-2）：有它时菜单多一段「在 github.com 上用」。 */
+  page?: Page;
+  sites?: readonly SiteRule[];
   rules: Rules;
   sources: readonly InputSource[];
   currentId?: string;
@@ -243,6 +277,7 @@ export function fixedItemID(index: number): string {
 export function choiceFromMenuItem(itemId: string, sources: readonly InputSource[]): RuleChoice | "pause" | undefined {
   if (itemId === "pause") return "pause";
   if (itemId === "remember" || itemId === "none") return itemId;
+  if (itemId.startsWith("site:")) return undefined;
   const match = /^fixed:(\d+)$/.exec(itemId);
   if (!match) return undefined;
   const source = sources[Number(match[1])];
@@ -272,6 +307,24 @@ export function menuModel(state: MenuState): MenuBarModel {
         title: "无规则",
         subtitle: clip(`跟着「无规则的应用」：${othersTitle(state.settings.others)}`, 80),
         checked: choice === "none",
+      },
+      { kind: "separator" },
+    );
+  }
+  const site = state.page ? sitePatternFor(state.page.url, state.sites ?? []) : undefined;
+  if (site) {
+    const matched = matchSite(state.page!.url, state.sites ?? []);
+    items.push({ kind: "header", title: clip(`在「${site}」上用`, 80) });
+    state.sources.forEach((source, index) => {
+      items.push({ kind: "item", id: siteItemID(index), title: clip(source.name, 80), checked: matched?.source === source.id });
+    });
+    items.push(
+      {
+        kind: "item",
+        id: "site:none",
+        title: "跟随应用",
+        subtitle: matched ? "删掉这个网站的规则" : "这个网站没有规则，按应用的来",
+        checked: !matched,
       },
       { kind: "separator" },
     );
@@ -348,33 +401,41 @@ export interface RuleGroup {
   title: string;
   source?: InputSource;
   entries: { bundleId: string; rule: Rule }[];
+  /** 这一组的网站（S-3）：只有输入法组与已停用组有。 */
+  sites: SiteRule[];
   /** 能不能往这一组里加应用（停用的那一组不能）。 */
   addable: boolean;
 }
 
 /**
  * 按输入法分组：每个启用的输入法一组（空的也给：用户第一眼就看得到「我可以给 ABC 加应用」），
- * 记住上次那一组有内容才给；指向已停用输入法的规则单独一组。组内按应用名排。
+ * 记住上次那一组有内容才给；指向已停用输入法的规则单独一组。组内按应用名排，网站按 pattern 排、列在应用之后。
  * @param rules 规则。
  * @param sources 此刻启用的输入法。
+ * @param sites 网站规则。
  * @returns 分组，顺序同系统输入法菜单，然后是记住上次、已停用。
  */
-export function groupRules(rules: Rules, sources: readonly InputSource[]): RuleGroup[] {
+export function groupRules(rules: Rules, sources: readonly InputSource[], sites: readonly SiteRule[] = []): RuleGroup[] {
   const byName = (a: { rule: Rule; bundleId: string }, b: { rule: Rule; bundleId: string }) =>
     (a.rule.name || a.bundleId).localeCompare(b.rule.name || b.bundleId, "zh-Hans");
   const entries = Object.entries(rules).map(([bundleId, rule]) => ({ bundleId, rule }));
   const enabled = new Set(sources.map((source) => source.id));
+  const sortedSites = [...sites].sort((a, b) => a.pattern.localeCompare(b.pattern));
   const groups: RuleGroup[] = sources.map((source) => ({
     key: `fixed:${source.id}`,
     title: `用 ${source.name}`,
     source,
     entries: entries.filter((entry) => entry.rule.mode === "fixed" && entry.rule.source === source.id).sort(byName),
+    sites: sortedSites.filter((site) => site.source === source.id),
     addable: true,
   }));
   const remembered = entries.filter((entry) => entry.rule.mode === "remember").sort(byName);
-  if (remembered.length > 0) groups.push({ key: "remember", title: "记住上次用的", entries: remembered, addable: true });
+  if (remembered.length > 0) groups.push({ key: "remember", title: "记住上次用的", entries: remembered, sites: [], addable: true });
   const stale = entries.filter((entry) => entry.rule.mode === "fixed" && !enabled.has(entry.rule.source)).sort(byName);
-  if (stale.length > 0) groups.push({ key: "stale", title: "输入法已停用", entries: stale, addable: false });
+  const staleSites = sortedSites.filter((site) => !enabled.has(site.source));
+  if (stale.length > 0 || staleSites.length > 0) {
+    groups.push({ key: "stale", title: "输入法已停用", entries: stale, sites: staleSites, addable: false });
+  }
   return groups;
 }
 
@@ -488,4 +549,123 @@ export function lastUsedTitle(lastUsedAt: number | null, now: number): string | 
 function clip(text: string, limit: number): string {
   const characters = [...text];
   return characters.length <= limit ? text : characters.slice(0, limit).join("");
+}
+
+// MARK: - 网站规则（jarvis-mac `specs/20261030-234919-input-source-site-rules` S-2）
+
+/** 网站规则存多少条：每条几十字节、一个键；200 个网站已经远超一个人会写规则的数。 */
+export const maximumSites = 200;
+
+/** 主机名：字母、数字、连字符的标签以点相连（`localhost` 这样的单标签也收）；IPv4 自然落在里面。 */
+const HOST_PATTERN = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
+
+/** 拆开的一个网址：主机名（小写、去掉 `www.` 与端口）与路径（不带查询与片段，去掉结尾的 `/`）。 */
+interface Location {
+  host: string;
+  path: string;
+}
+
+function locate(text: string): Location | undefined {
+  let rest = text.trim();
+  const scheme = /^[a-z][a-z0-9+.-]*:\/\//i.exec(rest);
+  if (scheme) rest = rest.slice(scheme[0].length);
+  rest = rest.replace(/[?#].*$/, "");
+  const slash = rest.indexOf("/");
+  let host = (slash < 0 ? rest : rest.slice(0, slash)).toLowerCase();
+  let path = slash < 0 ? "" : rest.slice(slash);
+  host = host.replace(/^[^@]*@/, "").replace(/:\d*$/, "").replace(/^\*\./, "").replace(/^\.+/, "").replace(/\.+$/, "");
+  if (host.startsWith("www.")) host = host.slice(4);
+  path = path.replace(/\/{2,}/g, "/").replace(/\/+$/, "");
+  if (!host || host.length > 253 || !HOST_PATTERN.test(host)) return undefined;
+  return { host, path };
+}
+
+/**
+ * 用户填的一个网址或主机名 → 规范化的 pattern：去掉协议、`www.`、端口、查询与片段、结尾的 `/`，主机名小写；
+ * 路径保留大小写（网址的路径区分大小写）。填的不像网址为 `undefined`。
+ * @param input 用户填的。
+ * @returns pattern 或 `undefined`。
+ */
+export function normalizePattern(input: string): string | undefined {
+  const location = locate(input);
+  return location ? location.host + location.path : undefined;
+}
+
+function split(pattern: string): Location {
+  const slash = pattern.indexOf("/");
+  return slash < 0 ? { host: pattern, path: "" } : { host: pattern.slice(0, slash), path: pattern.slice(slash) };
+}
+
+/**
+ * 一个网页命中哪条网站规则：只认 `http(s)`；主机名相同或是它的子域，路径（有的话）按段对齐地以它开头。多条命中取 pattern 最长的。
+ * @param url 网页地址。
+ * @param sites 网站规则。
+ * @returns 命中的那一条或 `undefined`。
+ */
+export function matchSite(url: string, sites: readonly SiteRule[]): SiteRule | undefined {
+  if (!/^https?:\/\//i.test(url)) return undefined;
+  const page = locate(url);
+  if (!page) return undefined;
+  let best: SiteRule | undefined;
+  for (const site of sites) {
+    const { host, path } = split(site.pattern);
+    if (page.host !== host && !page.host.endsWith(`.${host}`)) continue;
+    if (path && page.path !== path && !page.path.startsWith(`${path}/`)) continue;
+    if (!best || site.pattern.length > best.pattern.length) best = site;
+  }
+  return best;
+}
+
+/**
+ * 「给此刻这一页定输入法」落到哪条 pattern 上：已经命中一条就是那一条（改它，不另起一条更短的），否则是这一页的主机名。
+ * 不是 `http(s)` 的页（`chrome://`、本地文件）为 `undefined`。
+ * @param url 网页地址。
+ * @param sites 网站规则。
+ * @returns pattern 或 `undefined`。
+ */
+export function sitePatternFor(url: string, sites: readonly SiteRule[]): string | undefined {
+  if (!/^https?:\/\//i.test(url)) return undefined;
+  return matchSite(url, sites)?.pattern ?? locate(url)?.host;
+}
+
+/**
+ * 写一条网站规则（`source` 为 `undefined` = 删掉）。同一个 pattern 只留一条；超过上限时不加新的。
+ * @param sites 旧的。
+ * @param pattern 规范化过的 pattern。
+ * @param source 输入法 id。
+ * @returns 新的网站规则。
+ */
+export function setSite(sites: readonly SiteRule[], pattern: string, source: string | undefined): SiteRule[] {
+  const others = sites.filter((site) => site.pattern !== pattern);
+  if (source === undefined) return others;
+  if (others.length === sites.length && sites.length >= maximumSites) return [...sites];
+  return [...others, { pattern, source }];
+}
+
+/** 菜单里网站那一段的输入法项（`site:<序号>`，序号按推菜单时的输入法）。 */
+export function siteItemID(index: number): string {
+  return `site:${index}`;
+}
+
+/**
+ * 菜单项 id → 网站那一段的选择：`{ source }` 换成那个输入法，`{ source: undefined }` 删掉这个网站的规则；不是网站那一段为 `undefined`。
+ * @param itemId 菜单项 id。
+ * @param sources 推这份菜单时的输入法。
+ * @returns 选择或 `undefined`。
+ */
+export function siteChoiceFromMenuItem(itemId: string, sources: readonly InputSource[]): { source: string | undefined } | undefined {
+  if (itemId === "site:none") return { source: undefined };
+  const match = /^site:(\d+)$/.exec(itemId);
+  if (!match) return undefined;
+  const source = sources[Number(match[1])];
+  return source ? { source: source.id } : undefined;
+}
+
+/**
+ * 一页的主机名（列表与「此刻」卡上画的那几个字）。
+ * @param url 网页地址。
+ * @returns 主机名；读不出为原样。
+ */
+export function pageHost(url: string): string {
+  return locate(url)?.host ?? url;
 }

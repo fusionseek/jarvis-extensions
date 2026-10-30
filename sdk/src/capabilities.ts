@@ -12,6 +12,7 @@ import type { CapabilityID } from "./manifest.js";
 import type { FileHandle } from "./ui.js";
 import type {
   BrowserActiveTab,
+  BrowserActiveTabPage,
   DaemonEvent,
   DaemonReloadRequest,
   DaemonRequest,
@@ -793,6 +794,18 @@ export interface BrowserAPI {
    * @returns 读到的那一页与状态。
    */
   activeTab(): Promise<BrowserActiveTab>;
+  /**
+   * `browser.activeTab.watch`（SDK 2.13，高档）。订阅**此刻前台那一个浏览器**的当前页：订阅时前台是浏览器就先补发一条；
+   * 之后浏览器成为前台、换标签、翻页（窗口标题变了）时推一条。宿主 120 ms 合并；同一浏览器 `status` 与 `url` 都没变时不推——
+   * 切走再切回来、地址没变也不推，扩展要自己留着每个浏览器的上一页。浏览器不在前台时什么都不推。
+   *
+   * 读法同 `activeTab`（经「自动化」）。换标签就知道要 Jarvis 有辅助功能权限；没有时只在切到浏览器时读一次。
+   * 改地址不改标题的单页应用收不到。订阅跟着这个会话走；后台会话持有它就常驻。
+   *
+   * @param listener 每推一次调一次（`frontmost` 恒为真）。
+   * @returns 退订。
+   */
+  watchActiveTab(listener: (page: BrowserActiveTabPage) => void): Unsubscribe;
 }
 
 /**

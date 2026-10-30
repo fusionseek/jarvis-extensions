@@ -1,9 +1,9 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-30T13:09:03.632Z",
+  "generatedAt": "2026-10-30T16:13:27.742Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "c5f03f1f660c4b981f61decc3ecf2b57c3bd8f4e"
+    "commit": "b23f12392258e140f0a46a343391804b2efbdc64"
   },
   "extensions": [
     {
@@ -51,10 +51,10 @@
       "path": "extensions/android-apps",
       "bundle": {
         "path": "extensions/android-apps/dist/extension.js",
-        "sha256": "7d7d9b9f8d4c3e335d10b68a8c45ce463550e0bc9262bbb1d59416305dfc211b",
-        "byteCount": 67947
+        "sha256": "c5715e34b999fd3f5770f12d9ca0a8ef896ba08c66e2d2219d712fa27080c909",
+        "byteCount": 68164
       },
-      "updatedAt": "2026-10-30T18:33:40+08:00"
+      "updatedAt": "2026-10-30T21:29:28+08:00"
     },
     {
       "manifest": {
@@ -390,10 +390,10 @@
       "path": "extensions/code-format",
       "bundle": {
         "path": "extensions/code-format/dist/extension.js",
-        "sha256": "c9f905f2b035ac992d35ce62f09dae6953b20a17858e0fd93653c9e2fdfad9ed",
-        "byteCount": 42263
+        "sha256": "dfd7f0bedcc7d512ba83899a60f3d250d2b0dc57e5fccf150f4a810bf9728ff9",
+        "byteCount": 42480
       },
-      "updatedAt": "2026-10-30T18:33:40+08:00"
+      "updatedAt": "2026-10-30T21:29:28+08:00"
     },
     {
       "manifest": {
@@ -430,10 +430,10 @@
       "path": "extensions/code-highlight",
       "bundle": {
         "path": "extensions/code-highlight/dist/extension.js",
-        "sha256": "cbf52dc89d782c74fc50dc90428d27512622122989330251964900a4f4adec1d",
-        "byteCount": 64488
+        "sha256": "ed0f9a20ad0c73bec4d2a21879080f9e2216266db4b7b8b22333aca76fb35946",
+        "byteCount": 64705
       },
-      "updatedAt": "2026-10-30T18:33:40+08:00"
+      "updatedAt": "2026-10-30T21:29:28+08:00"
     },
     {
       "manifest": {
@@ -511,10 +511,10 @@
       "path": "extensions/github-project",
       "bundle": {
         "path": "extensions/github-project/dist/extension.js",
-        "sha256": "859ec5bd250213ba219aa8b5d4b90e6af1ed05c3857cc85230f1cbeddf046831",
-        "byteCount": 96407
+        "sha256": "34ea1304686b42f261a68060ce4522ac10f1b9eabd335174cbb80f7ec86ebae4",
+        "byteCount": 96624
       },
-      "updatedAt": "2026-10-30T18:33:40+08:00"
+      "updatedAt": "2026-10-30T21:29:28+08:00"
     },
     {
       "manifest": {
@@ -652,10 +652,10 @@
       "path": "extensions/http-status",
       "bundle": {
         "path": "extensions/http-status/dist/extension.js",
-        "sha256": "e225330af2920a320f292ec0e958e54de60d970d505316e7dcd7fe8215d95186",
-        "byteCount": 128289
+        "sha256": "ae11cc96885ccb39b24951d90360e00770dde5b0084ab5b3673f8b226b49b99c",
+        "byteCount": 128506
       },
-      "updatedAt": "2026-10-30T18:33:40+08:00"
+      "updatedAt": "2026-10-30T21:29:28+08:00"
     },
     {
       "manifest": {
@@ -664,7 +664,7 @@
         "version": "1.0.0",
         "name": "输入法切换",
         "symbol": "keyboard",
-        "description": "切到哪个应用，就自动换成你给它定的输入法：写代码的地方用 ABC，聊天的地方用拼音。无规则的应用可以不动、记住上次用的，或者换成默认输入法。规则在菜单栏图标里给此刻的应用选一下就定了；换过去的那一下，在屏幕中间偏下或悬浮球旁闪一下告诉你换成了什么。只在切换应用的那一刻做事，空闲不占 CPU。",
+        "description": "切到哪个应用，就自动换成你给它定的输入法：写代码的地方用 ABC，聊天的地方用拼音；网站也能单独定，比所在的浏览器优先。无规则的应用可以不动、记住上次用的，或者换成默认输入法。规则在菜单栏图标里给此刻的应用选一下就定了；换过去的那一下，在屏幕中间偏下或悬浮球旁闪一下告诉你换成了什么。只在切换应用的那一刻做事，空闲不占 CPU。",
         "author": {
           "name": "fusionseek",
           "github": "fusionseek"
@@ -692,11 +692,19 @@
           {
             "id": "apps.read",
             "reason": "自己加规则时列出你装的应用、配上图标；第一次用时按应用分类推荐几条"
+          },
+          {
+            "id": "browser.activeTab",
+            "reason": "给网站定输入法时读一次你此刻在看的那一页，一点就加上"
+          },
+          {
+            "id": "browser.activeTab.watch",
+            "reason": "有网站规则时跟着前台浏览器换页，换到哪个网站就换成它的输入法；没有网站规则时不订"
           }
         ],
         "contributes": {
           "toolbox": {
-            "subtitle": "按应用自动切换输入法",
+            "subtitle": "按应用、按网站自动切换输入法",
             "keywords": [
               "input source",
               "input method",
@@ -815,10 +823,10 @@
       "path": "extensions/input-source",
       "bundle": {
         "path": "extensions/input-source/dist/extension.js",
-        "sha256": "52649f6d77fb9fb7887b9a30f1e67a4178c6c65ef1852012f31ac51e77215da5",
-        "byteCount": 77029
+        "sha256": "5fc1ede45ecac96936dfe911a09335efdcfd13b253de7f61edfb08d45f4e40d4",
+        "byteCount": 98776
       },
-      "updatedAt": "2026-10-30T20:40:39+08:00"
+      "updatedAt": "2026-10-30T21:29:28+08:00"
     },
     {
       "manifest": {
@@ -869,10 +877,10 @@
       "path": "extensions/mac-apps",
       "bundle": {
         "path": "extensions/mac-apps/dist/extension.js",
-        "sha256": "d4dc7b57cdcfd634247b155273f78dd2c705437167a50001ef4552e89eb8d0e6",
-        "byteCount": 45519
+        "sha256": "c560807d740deed7a1e42e90fb7917bdadbe391f059536c2ae8d71d765c6bae9",
+        "byteCount": 45736
       },
-      "updatedAt": "2026-10-30T18:33:40+08:00"
+      "updatedAt": "2026-10-30T21:29:28+08:00"
     },
     {
       "manifest": {
@@ -1048,10 +1056,10 @@
       "path": "extensions/menubar",
       "bundle": {
         "path": "extensions/menubar/dist/extension.js",
-        "sha256": "8f14fbe64758defda9aa43f04b198c9b67590c5023c4aa4e3d8dbdea602eab10",
-        "byteCount": 65928
+        "sha256": "9513109bed4271955df7ddc230166ef56be3e176a53ff1147fe879b0e518a820",
+        "byteCount": 66145
       },
-      "updatedAt": "2026-10-30T18:33:40+08:00"
+      "updatedAt": "2026-10-30T21:29:28+08:00"
     },
     {
       "manifest": {
@@ -1172,10 +1180,10 @@
       "path": "extensions/mole-clean",
       "bundle": {
         "path": "extensions/mole-clean/dist/extension.js",
-        "sha256": "cdb6a1f2c480e8b04a99b84a51c9101f7764c45f0fc04064b53df911eede8166",
-        "byteCount": 62338
+        "sha256": "b3c8cb9325da5d9da424084833a9a5a5b04d48cf099f60b6a3fa8746c2476ef3",
+        "byteCount": 62555
       },
-      "updatedAt": "2026-10-30T18:33:40+08:00"
+      "updatedAt": "2026-10-30T21:29:28+08:00"
     },
     {
       "manifest": {
@@ -1532,10 +1540,10 @@
       "path": "extensions/proxy",
       "bundle": {
         "path": "extensions/proxy/dist/extension.js",
-        "sha256": "edb261ecc67d9f8ad8ca653a0ec8919923c73d5d7cc9ad0184f64a19d53fb9ea",
-        "byteCount": 346861
+        "sha256": "e112f0fe30cbaccfc97908eaa24805672a4faee50e9fcf81b4085ca3dcf44586",
+        "byteCount": 347078
       },
-      "updatedAt": "2026-10-30T18:33:40+08:00"
+      "updatedAt": "2026-10-30T21:29:28+08:00"
     },
     {
       "manifest": {
@@ -1624,10 +1632,10 @@
       "path": "extensions/send-to-phone",
       "bundle": {
         "path": "extensions/send-to-phone/dist/extension.js",
-        "sha256": "db2b9afb626c5dcb5ad5e0ae39243b6b1b74ae94cecc834f6ae17ff1267c2202",
-        "byteCount": 47326
+        "sha256": "164b86b268fd9abb42867a127a105125eda34ccf6f27a3ac47b010fa8c2479a2",
+        "byteCount": 47543
       },
-      "updatedAt": "2026-10-30T18:33:40+08:00"
+      "updatedAt": "2026-10-30T21:29:28+08:00"
     },
     {
       "manifest": {
@@ -1863,10 +1871,10 @@
       "path": "extensions/translation",
       "bundle": {
         "path": "extensions/translation/dist/extension.js",
-        "sha256": "6ab97849f379a0fee69fe7e07db56532a032a6fca572417169247afdf5cdba97",
-        "byteCount": 92555
+        "sha256": "158bb0e7f882cc566f20a21afd183ddc60aad0135ea89bece45a0c3a5986e563",
+        "byteCount": 92772
       },
-      "updatedAt": "2026-10-30T18:33:40+08:00"
+      "updatedAt": "2026-10-30T21:29:28+08:00"
     }
   ]
 }

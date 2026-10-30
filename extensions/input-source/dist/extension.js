@@ -802,7 +802,9 @@
       update: (model) => runtime.invoke("orb", "update", model)
     },
     browser: {
-      activeTab: () => call.browser("activeTab")
+      activeTab: () => call.browser("activeTab"),
+      // SDK 2.13（jarvis-mac `specs/20261030-234919-input-source-site-rules` S-1）：退订走 `browser.unsubscribe`。
+      watchActiveTab: (listener) => runtime.subscribe("browser", "watchActiveTab", listener)
     },
     git: {
       repositories: () => call.git("repositories"),
@@ -853,10 +855,14 @@
       paused: flag(preferences.paused, defaultSettings.paused)
     };
   }
-  var emptyMemory = { rules: {}, lastUsed: {} };
+  var emptyMemory = { rules: {}, lastUsed: {}, sites: [] };
   var maximumRules = 300;
   var maximumRemembered = 300;
-  function resolveTarget(bundleId, memory, settings, enabled) {
+  function resolveTarget(bundleId, memory, settings, enabled, page2) {
+    if (page2 && page2.bundleId === bundleId) {
+      const site = matchSite(page2.url, memory.sites);
+      if (site && enabled.includes(site.source)) return site.source;
+    }
     const rule = memory.rules[bundleId];
     let target;
     if (rule) {
@@ -921,6 +927,7 @@
   function choiceFromMenuItem(itemId, sources) {
     if (itemId === "pause") return "pause";
     if (itemId === "remember" || itemId === "none") return itemId;
+    if (itemId.startsWith("site:")) return void 0;
     const match = /^fixed:(\d+)$/.exec(itemId);
     if (!match) return void 0;
     const source = sources[Number(match[1])];
@@ -944,6 +951,24 @@
           title: "\u65E0\u89C4\u5219",
           subtitle: clip(`\u8DDF\u7740\u300C\u65E0\u89C4\u5219\u7684\u5E94\u7528\u300D\uFF1A${othersTitle(state.settings.others)}`, 80),
           checked: choice === "none"
+        },
+        { kind: "separator" }
+      );
+    }
+    const site = state.page ? sitePatternFor(state.page.url, state.sites ?? []) : void 0;
+    if (site) {
+      const matched = matchSite(state.page.url, state.sites ?? []);
+      items.push({ kind: "header", title: clip(`\u5728\u300C${site}\u300D\u4E0A\u7528`, 80) });
+      state.sources.forEach((source, index) => {
+        items.push({ kind: "item", id: siteItemID(index), title: clip(source.name, 80), checked: matched?.source === source.id });
+      });
+      items.push(
+        {
+          kind: "item",
+          id: "site:none",
+          title: "\u8DDF\u968F\u5E94\u7528",
+          subtitle: matched ? "\u5220\u6389\u8FD9\u4E2A\u7F51\u7AD9\u7684\u89C4\u5219" : "\u8FD9\u4E2A\u7F51\u7AD9\u6CA1\u6709\u89C4\u5219\uFF0C\u6309\u5E94\u7528\u7684\u6765",
+          checked: !matched
         },
         { kind: "separator" }
       );
@@ -986,21 +1011,26 @@
     );
     return chips;
   }
-  function groupRules(rules, sources) {
+  function groupRules(rules, sources, sites = []) {
     const byName = (a, b) => (a.rule.name || a.bundleId).localeCompare(b.rule.name || b.bundleId, "zh-Hans");
     const entries = Object.entries(rules).map(([bundleId, rule]) => ({ bundleId, rule }));
     const enabled = new Set(sources.map((source) => source.id));
+    const sortedSites = [...sites].sort((a, b) => a.pattern.localeCompare(b.pattern));
     const groups = sources.map((source) => ({
       key: `fixed:${source.id}`,
       title: `\u7528 ${source.name}`,
       source,
       entries: entries.filter((entry) => entry.rule.mode === "fixed" && entry.rule.source === source.id).sort(byName),
+      sites: sortedSites.filter((site) => site.source === source.id),
       addable: true
     }));
     const remembered = entries.filter((entry) => entry.rule.mode === "remember").sort(byName);
-    if (remembered.length > 0) groups.push({ key: "remember", title: "\u8BB0\u4F4F\u4E0A\u6B21\u7528\u7684", entries: remembered, addable: true });
+    if (remembered.length > 0) groups.push({ key: "remember", title: "\u8BB0\u4F4F\u4E0A\u6B21\u7528\u7684", entries: remembered, sites: [], addable: true });
     const stale = entries.filter((entry) => entry.rule.mode === "fixed" && !enabled.has(entry.rule.source)).sort(byName);
-    if (stale.length > 0) groups.push({ key: "stale", title: "\u8F93\u5165\u6CD5\u5DF2\u505C\u7528", entries: stale, addable: false });
+    const staleSites = sortedSites.filter((site) => !enabled.has(site.source));
+    if (stale.length > 0 || staleSites.length > 0) {
+      groups.push({ key: "stale", title: "\u8F93\u5165\u6CD5\u5DF2\u505C\u7528", entries: stale, sites: staleSites, addable: false });
+    }
     return groups;
   }
   var maximumCandidates = 60;
@@ -1055,12 +1085,70 @@
     const characters = [...text];
     return characters.length <= limit ? text : characters.slice(0, limit).join("");
   }
+  var maximumSites = 200;
+  var HOST_PATTERN = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
+  function locate(text) {
+    let rest = text.trim();
+    const scheme = /^[a-z][a-z0-9+.-]*:\/\//i.exec(rest);
+    if (scheme) rest = rest.slice(scheme[0].length);
+    rest = rest.replace(/[?#].*$/, "");
+    const slash = rest.indexOf("/");
+    let host = (slash < 0 ? rest : rest.slice(0, slash)).toLowerCase();
+    let path = slash < 0 ? "" : rest.slice(slash);
+    host = host.replace(/^[^@]*@/, "").replace(/:\d*$/, "").replace(/^\*\./, "").replace(/^\.+/, "").replace(/\.+$/, "");
+    if (host.startsWith("www.")) host = host.slice(4);
+    path = path.replace(/\/{2,}/g, "/").replace(/\/+$/, "");
+    if (!host || host.length > 253 || !HOST_PATTERN.test(host)) return void 0;
+    return { host, path };
+  }
+  function normalizePattern(input) {
+    const location = locate(input);
+    return location ? location.host + location.path : void 0;
+  }
+  function split(pattern) {
+    const slash = pattern.indexOf("/");
+    return slash < 0 ? { host: pattern, path: "" } : { host: pattern.slice(0, slash), path: pattern.slice(slash) };
+  }
+  function matchSite(url, sites) {
+    if (!/^https?:\/\//i.test(url)) return void 0;
+    const page2 = locate(url);
+    if (!page2) return void 0;
+    let best;
+    for (const site of sites) {
+      const { host, path } = split(site.pattern);
+      if (page2.host !== host && !page2.host.endsWith(`.${host}`)) continue;
+      if (path && page2.path !== path && !page2.path.startsWith(`${path}/`)) continue;
+      if (!best || site.pattern.length > best.pattern.length) best = site;
+    }
+    return best;
+  }
+  function sitePatternFor(url, sites) {
+    if (!/^https?:\/\//i.test(url)) return void 0;
+    return matchSite(url, sites)?.pattern ?? locate(url)?.host;
+  }
+  function setSite(sites, pattern, source) {
+    const others = sites.filter((site) => site.pattern !== pattern);
+    if (source === void 0) return others;
+    if (others.length === sites.length && sites.length >= maximumSites) return [...sites];
+    return [...others, { pattern, source }];
+  }
+  function siteItemID(index) {
+    return `site:${index}`;
+  }
+  function siteChoiceFromMenuItem(itemId, sources) {
+    if (itemId === "site:none") return { source: void 0 };
+    const match = /^site:(\d+)$/.exec(itemId);
+    if (!match) return void 0;
+    const source = sources[Number(match[1])];
+    return source ? { source: source.id } : void 0;
+  }
 
   // extensions/input-source/src/storage.ts
   var storageKeys = {
     rules: "rules",
     lastUsed: "lastUsed",
-    fallbackSource: "fallbackSource"
+    fallbackSource: "fallbackSource",
+    sites: "sites"
   };
   function isRule(value) {
     if (typeof value !== "object" || value === null) return false;
@@ -1089,6 +1177,23 @@
     const raw = await jarvis.storage.get(storageKeys.fallbackSource).catch(() => null);
     return typeof raw === "string" && raw ? raw : void 0;
   }
+  async function readSites() {
+    const raw = await jarvis.storage.get(storageKeys.sites).catch(() => null);
+    const sites = [];
+    if (!Array.isArray(raw)) return sites;
+    const seen = /* @__PURE__ */ new Set();
+    for (const item of raw) {
+      if (typeof item !== "object" || item === null) continue;
+      const { pattern, source } = item;
+      if (typeof pattern !== "string" || typeof source !== "string" || !source) continue;
+      const normalized = normalizePattern(pattern);
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      sites.push({ pattern: normalized, source });
+      if (sites.length >= maximumSites) break;
+    }
+    return sites;
+  }
 
   // extensions/input-source/src/controller.ts
   var HUD_LIMIT = 24;
@@ -1107,8 +1212,15 @@
       this.primed = false;
       /** 前台事件一条一条处理（F-1）：并发处理时，切到上一个应用的那一次可能晚落地，把这一次覆盖掉。 */
       this.queue = Promise.resolve();
-      /** 第几次换前台：处理到一条时后面已经又换了，这一条作废（只认最新一次）。 */
+      /** 第几次换前台（或换了页）：处理到一条时后面已经又换了，这一条作废（只认最新一次）。 */
       this.activation = 0;
+      /** 每个浏览器的上一页（S-2）：切回浏览器、地址没变时宿主不再推，靠这份缓存当场对上。 */
+      this.pages = /* @__PURE__ */ new Map();
+      /**
+       * 跳过下一条网页事件：启动、刚允许、从菜单定了第一条网站规则时订阅，宿主补发的那一条只记下、不切（同 `primed`）。
+       * 至多跳一条；下一次真的换了前台就不再跳。订阅发生在「切到浏览器」的那一次处理里时不跳——那一条正是用户刚切过来的那一页。
+       */
+      this.skipReplay = false;
     }
     /** 此刻在前台的应用（测试读）。 */
     get frontmost() {
@@ -1137,6 +1249,7 @@
     async open(context) {
       await this.ensureStarted(context);
       await this.loadRules();
+      await this.readPageOnce();
       await this.render();
     }
     /**
@@ -1146,6 +1259,8 @@
      */
     async select(itemId, context) {
       await this.ensureStarted(context);
+      const site = siteChoiceFromMenuItem(itemId, this.menuSources);
+      if (site) return this.applySite(site.source);
       const choice = choiceFromMenuItem(itemId, this.menuSources);
       if (choice === void 0) return;
       if (choice === "pause") return this.togglePause();
@@ -1200,7 +1315,37 @@
         this.stopFrontmost?.();
         this.stopFrontmost = void 0;
       }
+      this.memory = { ...this.memory, sites: await readSites() };
+      this.updateBrowserWatch(false);
       await this.render();
+    }
+    /**
+     * 订 / 退前台浏览器当前页（S-2）：有 `browser.activeTab.watch` 授权、且至少一条网站规则才订——没有网站规则的人不付这份代价。
+     * @param actOnReplay 订阅时宿主补发的那一条要不要照规则切（在「切到浏览器」的那一次处理里订的才要）。
+     */
+    updateBrowserWatch(actOnReplay) {
+      const wanted = this.granted.includes("browser.activeTab.watch") && this.memory.sites.length > 0;
+      if (wanted && !this.stopBrowser) {
+        this.skipReplay = !actOnReplay;
+        this.stopBrowser = jarvis.browser.watchActiveTab((page2) => void this.onPage(page2));
+      } else if (!wanted && this.stopBrowser) {
+        this.stopBrowser();
+        this.stopBrowser = void 0;
+        this.pages.clear();
+      }
+    }
+    /** 前台那个浏览器缓存着的一页；不是浏览器、没读到为 `undefined`。 */
+    pageFor(bundleId) {
+      const url = this.pages.get(bundleId);
+      return url === void 0 ? void 0 : { bundleId, url };
+    }
+    /** 菜单点开时，没订着当前页就读一次（有 `browser.activeTab` 授权才读）：第一条网站规则也能从菜单里定。 */
+    async readPageOnce() {
+      if (this.stopBrowser || !this.app || !this.granted.includes("browser.activeTab")) return;
+      const tab = await jarvis.browser.activeTab().catch(() => null);
+      if (!tab || tab.browser.bundleId !== this.app.bundleId || !tab.frontmost) return;
+      if (tab.status === "ok" && tab.url) this.pages.set(tab.browser.bundleId, tab.url);
+      else this.pages.delete(tab.browser.bundleId);
     }
     async reloadSources() {
       try {
@@ -1225,18 +1370,52 @@
       const token = ++this.activation;
       const primed = this.primed;
       this.primed = true;
+      if (primed) this.skipReplay = false;
       return this.enqueue(async () => {
         if (!primed) return this.render();
         if (token !== this.activation) return;
         if (!switched || this.settings.paused || !this.granted.includes("inputSources.select")) return this.render();
         await this.loadRules();
+        this.updateBrowserWatch(true);
         if (this.sources.length === 0) await this.reloadSources();
-        const target = resolveTarget(app.bundleId, this.memory, this.settings, this.sources.map((source) => source.id));
+        const target = resolveTarget(app.bundleId, this.memory, this.settings, this.sources.map((source) => source.id), this.pageFor(app.bundleId));
+        this.decided = target;
         if (target !== void 0 && token === this.activation) {
           const actual = (await jarvis.inputSources.current().catch(() => void 0))?.id;
           if (token !== this.activation) return;
           if (actual !== target) await this.switchTo(target, token);
         }
+        await this.render();
+      });
+    }
+    /**
+     * 前台浏览器换了页（宿主 `browser.watchActiveTab`，S-2）。缓存先记下（同步：下一次切回这个浏览器要用）；
+     * 决定出来的目标和这一次停留里已经决定过的一样就不切——同一网站里翻页不切，你在这一页上手动换了的也不换回去。
+     * @param page 宿主推来的一页。
+     */
+    onPage(page2) {
+      const bundleId = page2.browser.bundleId;
+      if (page2.status === "ok" && page2.url) this.pages.set(bundleId, page2.url);
+      else this.pages.delete(bundleId);
+      const acts = !this.skipReplay;
+      this.skipReplay = false;
+      const token = ++this.activation;
+      return this.enqueue(async () => {
+        if (token !== this.activation) return;
+        const app = this.app;
+        if (!app || app.bundleId !== bundleId) return this.render();
+        await this.loadRules();
+        if (this.sources.length === 0) await this.reloadSources();
+        const target = resolveTarget(bundleId, this.memory, this.settings, this.sources.map((source) => source.id), this.pageFor(bundleId));
+        if (!acts || target === this.decided) {
+          this.decided = target;
+          return this.render();
+        }
+        this.decided = target;
+        if (target === void 0 || this.settings.paused || !this.granted.includes("inputSources.select")) return this.render();
+        const actual = (await jarvis.inputSources.current().catch(() => void 0))?.id;
+        if (token !== this.activation) return;
+        if (actual !== target) await this.switchTo(target, token);
         await this.render();
       });
     }
@@ -1305,6 +1484,25 @@
       if (rule?.mode === "fixed" && rule.source !== this.currentId && this.granted.includes("inputSources.select")) await this.switchTo(rule.source);
       await this.render();
     }
+    /**
+     * 菜单里给此刻这一页定输入法（`source` 为 `undefined` = 删掉，跟随应用）。落到已经命中的那条上，没有就是这一页的主机名。
+     * @param source 输入法 id。
+     */
+    async applySite(source) {
+      const app = this.app;
+      const url = app ? this.pages.get(app.bundleId) : void 0;
+      if (!app || url === void 0) return;
+      await this.loadRules();
+      const pattern = sitePatternFor(url, this.memory.sites);
+      if (!pattern) return;
+      const sites = setSite(this.memory.sites, pattern, source);
+      this.memory = { ...this.memory, sites };
+      await jarvis.storage.set(storageKeys.sites, sites).catch(() => void 0);
+      this.updateBrowserWatch(false);
+      this.decided = resolveTarget(app.bundleId, this.memory, this.settings, this.sources.map((item) => item.id), this.pageFor(app.bundleId));
+      if (this.decided !== void 0 && this.decided !== this.currentId && this.granted.includes("inputSources.select")) await this.switchTo(this.decided);
+      await this.render();
+    }
     async togglePause() {
       const paused = !this.settings.paused;
       this.settings = { ...this.settings, paused };
@@ -1328,16 +1526,26 @@
     }
     // MARK: - 存储
     async loadMemory() {
-      const [rules, lastUsed, fallbackSource] = await Promise.all([readRules(), readLastUsed(), readFallback()]);
-      this.memory = { rules, lastUsed, fallbackSource };
+      const [rules, lastUsed, fallbackSource, sites] = await Promise.all([readRules(), readLastUsed(), readFallback(), readSites()]);
+      this.memory = { rules, lastUsed, fallbackSource, sites };
     }
     async loadRules() {
-      const [rules, fallbackSource] = await Promise.all([readRules(), readFallback()]);
-      this.memory = { ...this.memory, rules, fallbackSource };
+      const [rules, fallbackSource, sites] = await Promise.all([readRules(), readFallback(), readSites()]);
+      this.memory = { ...this.memory, rules, fallbackSource, sites };
     }
     async render() {
       this.menuSources = this.sources;
-      await jarvis.menuBar.update(menuModel({ app: this.app, rules: this.memory.rules, sources: this.sources, currentId: this.currentId, settings: this.settings })).catch(() => void 0);
+      await jarvis.menuBar.update(
+        menuModel({
+          app: this.app,
+          page: this.app ? this.pageFor(this.app.bundleId) : void 0,
+          sites: this.memory.sites,
+          rules: this.memory.rules,
+          sources: this.sources,
+          currentId: this.currentId,
+          settings: this.settings
+        })
+      ).catch(() => void 0);
     }
   };
   function hudArt(source, symbol) {
@@ -1351,6 +1559,7 @@
 
   // extensions/input-source/src/page.ts
   var pageCapabilities = ["system.activity", "inputSources.read", "inputSources.select", "hud.show", "apps.read"];
+  var siteCapabilities = ["browser.activeTab", "browser.activeTab.watch"];
   var ICON_BATCH = 40;
   var ICON_DEBOUNCE_MS = 300;
   var SUGGESTIONS_DISMISSED = "suggestionsDismissed";
@@ -1362,6 +1571,9 @@
       this.stage = { kind: "groups" };
       this.sources = [];
       this.rules = {};
+      this.sites = [];
+      /** 加网站那一步填的字。 */
+      this.siteDraft = "";
       this.settings = readSettings({});
       /** 加应用那一步的搜索词。 */
       this.query = "";
@@ -1407,14 +1619,18 @@
         return;
       }
       try {
-        const [sources, current, app, rules, fallbackSource, dismissed] = await Promise.all([
+        const [sources, current, app, rules, fallbackSource, dismissed, sites, page2] = await Promise.all([
           jarvis.inputSources.list(),
           jarvis.inputSources.current(),
           jarvis.frontmostApp.current(),
           readRules(),
           readFallback(),
-          jarvis.storage.get(SUGGESTIONS_DISMISSED).catch(() => void 0)
+          jarvis.storage.get(SUGGESTIONS_DISMISSED).catch(() => void 0),
+          readSites(),
+          this.readPage()
         ]);
+        this.sites = sites;
+        this.page = page2;
         this.sources = sources;
         this.currentId = current.id;
         this.app = app ?? void 0;
@@ -1426,6 +1642,11 @@
       } catch (error) {
         this.status = { kind: "failed", message: error instanceof Error ? error.message : String(error) };
       }
+    }
+    /** 读一次此刻这一页（有 `browser.activeTab` 授权才读；读不到不当错）。 */
+    async readPage() {
+      if (!this.granted.includes("browser.activeTab")) return void 0;
+      return jarvis.browser.activeTab().catch(() => null);
     }
     async loadApps() {
       if (this.apps !== void 0 || !this.granted.includes("apps.read")) return;
@@ -1467,6 +1688,71 @@
       if (this.highlight === bundleId) this.highlight = void 0;
       await this.assign(bundleId, "", "none");
     }
+    /**
+     * 给一个网站定输入法（`none` = 删掉，跟随应用）。
+     * @param pattern 规范化过的 pattern。
+     * @param choice 选择：`fixed:<id>` 或 `none`。
+     */
+    async assignSite(pattern, choice) {
+      const source = choice.startsWith("fixed:") ? choice.slice("fixed:".length) : void 0;
+      this.sites = setSite(this.sites, pattern, source);
+      this.highlight = source === void 0 ? void 0 : siteKey(pattern);
+      this.editing = void 0;
+      await jarvis.storage.set(storageKeys.sites, this.sites);
+    }
+    /**
+     * 删掉一条网站规则。
+     * @param pattern 哪个网站。
+     */
+    async removeSite(pattern) {
+      if (this.editing === siteKey(pattern)) this.editing = void 0;
+      if (this.highlight === siteKey(pattern)) this.highlight = void 0;
+      await this.assignSite(pattern, "none");
+    }
+    /**
+     * 往一组里加网站。还没给读地址的两项授权时先问（只在按钮回调里调）；不给也照样能填，只是后台跟不上网页。
+     * @param target 那一组的选择（`fixed:<id>`）。
+     */
+    async startAddSite(target) {
+      if (!this.hasSiteAccess()) {
+        const result = await jarvis.permissions.request([...siteCapabilities]);
+        this.granted = result.granted;
+      }
+      this.stage = { kind: "addSite", target };
+      this.siteDraft = "";
+      this.editing = void 0;
+      this.page = await this.readPage();
+      jarvis.ui.update();
+    }
+    /** 再问一次读地址的两项授权（加网站那一步的「允许」，只在按钮回调里调）。 */
+    async requestSiteAccess() {
+      const result = await jarvis.permissions.request([...siteCapabilities]);
+      this.granted = result.granted;
+      this.page = await this.readPage();
+      jarvis.ui.update();
+    }
+    /** 此刻有没有读地址的两项授权（渲染读）。 */
+    hasSiteAccess() {
+      return siteCapabilities.every((id) => this.granted.includes(id));
+    }
+    /**
+     * 加网站那一步填的字变了。
+     * @param text 填的字。
+     */
+    setSiteDraft(text) {
+      this.siteDraft = text;
+    }
+    /**
+     * 加进那一组，回到分组页。
+     * @param pattern 规范化过的 pattern。
+     */
+    async pickSite(pattern) {
+      if (this.stage.kind !== "addSite") return;
+      const target = this.stage.target;
+      this.stage = { kind: "groups" };
+      this.siteDraft = "";
+      await this.assignSite(pattern, target);
+    }
     /** 展开 / 收起一条规则的「换成」。 */
     toggleEditing(bundleId) {
       this.editing = this.editing === bundleId ? void 0 : bundleId;
@@ -1503,6 +1789,7 @@
     /** 不加了，回到分组页。 */
     cancelAdd() {
       this.stage = { kind: "groups" };
+      this.siteDraft = "";
     }
     /**
      * 搜索词变了：停下 300 ms 再补图标。
@@ -1583,7 +1870,9 @@
       case "failed":
         return ui.empty({ key: "failed", symbol: "exclamationmark.triangle", title: "\u6CA1\u8BFB\u51FA\u6765", hint: status.message });
       case "ready":
-        return session.stage.kind === "add" ? addStage(session, session.stage.target) : groupsStage(session);
+        if (session.stage.kind === "add") return addStage(session, session.stage.target);
+        if (session.stage.kind === "addSite") return addSiteStage(session, session.stage.target);
+        return groupsStage(session);
     }
   }
   function groupsStage(session) {
@@ -1616,7 +1905,7 @@
         })
       );
     }
-    for (const group of groupRules(session.rules, session.sources)) children.push(groupCard(session, group));
+    for (const group of groupRules(session.rules, session.sources, session.sites)) children.push(groupCard(session, group));
     children.push(othersCard(session));
     return ui.scroll({ key: "page", children: [ui.stack({ key: "content", children })] });
   }
@@ -1638,7 +1927,8 @@
           subtitle: choice === "none" ? `\u65E0\u89C4\u5219 \xB7 ${othersTitle(session.settings.others)}` : choiceTitle(choice, session.sources),
           accessory: "none"
         }),
-        chipGrid("now", session, choice, (value) => void session.assign(app.bundleId, app.name, value))
+        chipGrid("now", choiceChips(session.sources), choice, (value) => void session.assign(app.bundleId, app.name, value)),
+        ...nowPage(session, app.bundleId)
       );
     } else {
       children.push(ui.text({ key: "now:none", style: "footnote", text: "\u5207\u5230\u4E00\u4E2A\u5E94\u7528\u518D\u70B9\u53F3\u4E0A\u89D2\u7684\u5237\u65B0\uFF0C\u5C31\u80FD\u4E00\u70B9\u7ED9\u5B83\u5B9A\u8F93\u5165\u6CD5" }));
@@ -1653,8 +1943,45 @@
       children
     });
   }
-  function chipGrid(keyPrefix, session, selected, onPick, exclude) {
-    const chips = choiceChips(session.sources).filter((chip) => chip.value !== exclude);
+  function nowPage(session, bundleId) {
+    const page2 = session.page;
+    if (!page2 || page2.browser.bundleId !== bundleId) return [];
+    if (page2.status === "denied") {
+      return [
+        ui.text({
+          key: "now:site:denied",
+          style: "footnote",
+          text: `\u8BFB\u4E0D\u5230\u8FD9\u4E00\u9875\u7684\u5730\u5740\uFF1A\u5728 \u7CFB\u7EDF\u8BBE\u7F6E \u203A \u9690\u79C1\u4E0E\u5B89\u5168\u6027 \u203A \u81EA\u52A8\u5316 \u91CC\u5141\u8BB8 Jarvis \u63A7\u5236\u300C${page2.browser.name}\u300D`
+        })
+      ];
+    }
+    const url = page2.status === "ok" ? page2.url : void 0;
+    const pattern = url ? sitePatternFor(url, session.sites) : void 0;
+    if (!url || !pattern) return [];
+    const matched = matchSite(url, session.sites);
+    const source = matched ? session.sources.find((item) => item.id === matched.source) : void 0;
+    return [
+      ui.row({
+        key: "now:site",
+        symbol: "globe",
+        title: pattern,
+        subtitle: matched ? `\u7F51\u7AD9\u89C4\u5219 \xB7 \u7528 ${source?.name ?? "\u4E00\u4E2A\u5DF2\u505C\u7528\u7684\u8F93\u5165\u6CD5"}` : "\u8FD9\u4E2A\u7F51\u7AD9\u6CA1\u6709\u89C4\u5219\uFF0C\u8DDF\u7740\u5E94\u7528\u7684",
+        accessory: "none"
+      }),
+      chipGrid("now:site", siteChips(session.sources), matched ? `fixed:${matched.source}` : "none", (value) => void session.assignSite(pattern, value))
+    ];
+  }
+  function siteChips(sources) {
+    return [
+      ...choiceChips(sources).filter((chip) => chip.value.startsWith("fixed:")),
+      { value: "none", title: "\u8DDF\u968F\u5E94\u7528", help: "\u4E0D\u7ED9\u8FD9\u4E2A\u7F51\u7AD9\u5B9A\u89C4\u5219\uFF0C\u6309\u6D4F\u89C8\u5668\u8FD9\u4E2A\u5E94\u7528\u7684\u89C4\u5219\u8D70", symbol: "arrow.turn.down.right" }
+    ];
+  }
+  function siteKey(pattern) {
+    return `site:${pattern}`;
+  }
+  function chipGrid(keyPrefix, all, selected, onPick, exclude) {
+    const chips = all.filter((chip) => chip.value !== exclude);
     return layout.grid({
       key: `${keyPrefix}:choices`,
       minimum: CHIP_COLUMN_MINIMUM,
@@ -1700,18 +2027,46 @@
       if (editing) {
         children.push(
           ui.text({ key: `rule:${bundleId}:label`, style: "footnote", text: `\u300C${name}\u300D\u6362\u6210` }),
-          chipGrid(`rule:${bundleId}`, session, ruleChoice(rule), (value) => void session.assign(bundleId, name, value), group.key)
+          chipGrid(`rule:${bundleId}`, choiceChips(session.sources), ruleChoice(rule), (value) => void session.assign(bundleId, name, value), group.key)
         );
       }
     }
-    if (group.entries.length === 0) {
-      children.push(ui.text({ key: `${group.key}:empty`, style: "footnote", text: "\u8FD8\u6CA1\u6709\u5E94\u7528\u3002\u70B9\u53F3\u4E0A\u89D2\u7684 + \u52A0\u51E0\u4E2A" }));
+    const here = session.page?.status === "ok" && session.page.url ? matchSite(session.page.url, session.sites)?.pattern : void 0;
+    for (const site of group.sites) {
+      const key = siteKey(site.pattern);
+      const editing = session.editing === key;
+      children.push(
+        ui.row({
+          key: `site:${site.pattern}`,
+          symbol: "globe",
+          title: site.pattern,
+          subtitle: here === site.pattern ? "\u6B64\u523B\u5728\u770B" : group.key === "stale" ? "\u70B9\u4E00\u4E0B\uFF0C\u6362\u4E00\u4E2A\u8FD8\u542F\u7528\u7740\u7684" : "\u7F51\u7AD9",
+          selected: editing || session.highlight === key,
+          accessory: "none",
+          onPress: () => session.toggleEditing(key),
+          actions: [{ id: "remove", title: "\u5220\u9664\u89C4\u5219", symbol: "xmark", help: `\u5220\u9664\u300C${site.pattern}\u300D\u7684\u89C4\u5219`, onPress: () => void session.removeSite(site.pattern) }]
+        })
+      );
+      if (editing) {
+        children.push(
+          ui.text({ key: `site:${site.pattern}:label`, style: "footnote", text: `\u5728\u300C${site.pattern}\u300D\u4E0A\u6362\u6210` }),
+          chipGrid(`site:${site.pattern}`, siteChips(session.sources), `fixed:${site.source}`, (value) => void session.assignSite(site.pattern, value), group.key)
+        );
+      }
+    }
+    if (group.entries.length === 0 && group.sites.length === 0) {
+      const text = group.key.startsWith("fixed:") ? "\u8FD8\u6CA1\u6709\u5E94\u7528\u6216\u7F51\u7AD9\u3002\u70B9\u53F3\u4E0A\u89D2\u7684 + \u6216\u5730\u7403\u52A0\u51E0\u4E2A" : "\u8FD8\u6CA1\u6709\u5E94\u7528\u3002\u70B9\u53F3\u4E0A\u89D2\u7684 + \u52A0\u51E0\u4E2A";
+      children.push(ui.text({ key: `${group.key}:empty`, style: "footnote", text }));
+    }
+    const actions = group.addable ? [{ id: "add", title: "\u6DFB\u52A0\u5E94\u7528", symbol: "plus", help: `\u6DFB\u52A0${group.title}\u7684\u5E94\u7528`, onPress: () => void session.startAdd(group.key) }] : [];
+    if (group.addable && group.key.startsWith("fixed:")) {
+      actions.push({ id: "addSite", title: "\u6DFB\u52A0\u7F51\u7AD9", symbol: "globe", help: `\u6DFB\u52A0${group.title}\u7684\u7F51\u7AD9`, onPress: () => void session.startAddSite(group.key) });
     }
     return card(`group:${group.key}`, groupTint(group, session.sources), {
       key: `group:${group.key}`,
       title: group.title,
-      trailing: `${group.entries.length} \u4E2A\u5E94\u7528`,
-      actions: group.addable ? [{ id: "add", title: "\u6DFB\u52A0\u5E94\u7528", symbol: "plus", help: `\u6DFB\u52A0${group.title}\u7684\u5E94\u7528`, onPress: () => void session.startAdd(group.key) }] : void 0,
+      trailing: group.sites.length > 0 ? `${group.entries.length} \u4E2A\u5E94\u7528 \xB7 ${group.sites.length} \u4E2A\u7F51\u7AD9` : `${group.entries.length} \u4E2A\u5E94\u7528`,
+      actions: actions.length > 0 ? actions : void 0,
       children
     });
   }
@@ -1735,7 +2090,7 @@
       ui.text({
         key: "how",
         style: "footnote",
-        text: "\u4E5F\u53EF\u4EE5\u5728\u4EFB\u4F55\u5E94\u7528\u91CC\u70B9\u83DC\u5355\u680F\u4E0A\u7684\u952E\u76D8\u56FE\u6807\uFF0C\u7ED9\u5B83\u4E00\u70B9\u5373\u5B9A\u3002\u4E2D\u6587\u8F93\u5165\u6CD5\u91CC\u6309 \u21E7 \u5207\u5230\u7684\u82F1\u6587\u6A21\u5F0F\u4E0D\u7B97\u6362\u4E86\u8F93\u5165\u6CD5\uFF0C\u89C4\u5219\u7BA1\u4E0D\u5230\u5B83\u3002"
+        text: "\u4E5F\u53EF\u4EE5\u5728\u4EFB\u4F55\u5E94\u7528\u91CC\u70B9\u83DC\u5355\u680F\u4E0A\u7684\u952E\u76D8\u56FE\u6807\uFF0C\u7ED9\u5B83\u4E00\u70B9\u5373\u5B9A\u3002\u7F51\u7AD9\u89C4\u5219\u6BD4\u5E94\u7528\u89C4\u5219\u4F18\u5148\uFF0C\u53EA\u5728\u90A3\u4E00\u9875\u5F00\u5728\u524D\u53F0\u7684\u6D4F\u89C8\u5668\u91CC\u65F6\u751F\u6548\u3002\u4E2D\u6587\u8F93\u5165\u6CD5\u91CC\u6309 \u21E7 \u5207\u5230\u7684\u82F1\u6587\u6A21\u5F0F\u4E0D\u7B97\u6362\u4E86\u8F93\u5165\u6CD5\uFF0C\u89C4\u5219\u7BA1\u4E0D\u5230\u5B83\u3002"
       })
     );
     return card("others", void 0, { key: "others", title: "\u65E0\u89C4\u5219\u7684\u5E94\u7528 \xB7 OTHERS", children });
@@ -1780,6 +2135,93 @@
       if (truncated) children.push(ui.text({ key: "add:more", style: "footnote", text: "\u53EA\u5217\u4E86\u6700\u8FD1\u7528\u8FC7\u7684 60 \u4E2A\uFF0C\u8F93\u5165\u540D\u5B57\u627E\u522B\u7684" }));
     }
     return ui.scroll({ key: "add", children: [ui.stack({ key: "add:content", children })] });
+  }
+  function addSiteStage(session, target) {
+    const title = choiceTitle(target, session.sources);
+    const children = [
+      ui.row({
+        key: "addSite:back",
+        symbol: "chevron.left",
+        title: `\u52A0\u7F51\u7AD9\u5230\u300C${title}\u300D`,
+        subtitle: "\u586B\u7F51\u5740\u6216\u4E3B\u673A\u540D\uFF1Bgithub.com \u4E5F\u7BA1\u5B83\u7684\u5B50\u57DF",
+        accessory: "none",
+        onPress: () => session.cancelAdd(),
+        label: `\u8FD4\u56DE\u3002\u52A0\u7F51\u7AD9\u5230\u300C${title}\u300D`
+      })
+    ];
+    if (!session.hasSiteAccess()) {
+      children.push(
+        ui.note({
+          key: "addSite:access",
+          tint: "amber",
+          symbol: "lock",
+          body: "\u8FD8\u6CA1\u5141\u8BB8\u8BFB\u6D4F\u89C8\u5668\u5F53\u524D\u9875\uFF1A\u89C4\u5219\u7167\u6837\u80FD\u52A0\uFF0C\u4F46\u4E0D\u4F1A\u8DDF\u7740\u7F51\u9875\u6362\u8F93\u5165\u6CD5",
+          actions: [{ id: "grant", title: "\u5141\u8BB8", onPress: () => void session.requestSiteAccess() }]
+        })
+      );
+    }
+    children.push(
+      ui.field({
+        key: "addSite:field",
+        value: session.siteDraft,
+        placeholder: "github.com \u6216 docs.google.com/spreadsheets",
+        label: "\u7F51\u5740\u6216\u4E3B\u673A\u540D",
+        mono: true,
+        autoFocus: true,
+        onChange: (text) => session.setSiteDraft(text),
+        onSubmit: (text) => {
+          const pattern = normalizePattern(text);
+          if (pattern) void session.pickSite(pattern);
+        }
+      })
+    );
+    const draft = session.siteDraft.trim();
+    if (draft) {
+      const pattern = normalizePattern(draft);
+      if (pattern) {
+        const existing = session.sites.find((site) => site.pattern === pattern);
+        const already = existing !== void 0 && `fixed:${existing.source}` === target;
+        let subtitle = `\u4E5F\u7BA1 docs.${pattern} \u8FD9\u6837\u7684\u5B50\u57DF`;
+        if (pattern.includes("/")) subtitle = "\u8FD9\u4E2A\u7F51\u7AD9\u4E0A\u4EE5\u8FD9\u6BB5\u8DEF\u5F84\u5F00\u5934\u7684\u9875";
+        if (existing && !already) subtitle = `\u73B0\u5728\uFF1A${choiceTitle(`fixed:${existing.source}`, session.sources)}\uFF0C\u70B9\u4E00\u4E0B\u632A\u8FC7\u6765`;
+        children.push(
+          ui.row({
+            key: "addSite:add",
+            symbol: "plus.circle",
+            title: already ? `${pattern} \u5DF2\u7ECF\u5728\u8FD9\u4E00\u7EC4` : `\u6DFB\u52A0 ${pattern}`,
+            subtitle,
+            selected: already,
+            accessory: "none",
+            onPress: () => void session.pickSite(pattern)
+          })
+        );
+      } else {
+        children.push(ui.text({ key: "addSite:invalid", style: "footnote", text: "\u8FD9\u4E0D\u50CF\u4E00\u4E2A\u7F51\u5740\uFF1A\u586B\u4E3B\u673A\u540D\uFF08github.com\uFF09\u6216\u6574\u4E2A\u7F51\u5740" }));
+      }
+    }
+    const page2 = session.page;
+    const url = page2?.status === "ok" ? page2.url : void 0;
+    const current = url ? sitePatternFor(url, session.sites) : void 0;
+    if (page2 && current) {
+      children.push(
+        ui.row({
+          key: "addSite:current",
+          symbol: "safari",
+          title: current,
+          subtitle: `${page2.frontmost ? "\u6B64\u523B" : "\u521A\u624D"}\u5728\u300C${page2.browser.name}\u300D\u91CC\u770B\u7684\u8FD9\u4E00\u9875`,
+          accessory: "none",
+          onPress: () => void session.pickSite(current)
+        })
+      );
+    }
+    children.push(
+      ui.text({
+        key: "addSite:how",
+        style: "footnote",
+        text: "\u8BFB\u5730\u5740\u65F6\u7CFB\u7EDF\u4F1A\u95EE\u4E00\u6B21\u662F\u5426\u5141\u8BB8 Jarvis \u63A7\u5236\u8FD9\u4E2A\u6D4F\u89C8\u5668\uFF08\u7CFB\u7EDF\u8BBE\u7F6E \u203A \u9690\u79C1\u4E0E\u5B89\u5168\u6027 \u203A \u81EA\u52A8\u5316\uFF09\u3002\u6362\u6807\u7B7E\u5C31\u8DDF\u7740\u6362\uFF0C\u8981 Jarvis \u6709\u8F85\u52A9\u529F\u80FD\u6743\u9650\uFF1B\u6CA1\u6709\u65F6\u53EA\u5728\u5207\u5230\u6D4F\u89C8\u5668\u65F6\u5BF9\u4E00\u6B21\u3002Firefox \u8BFB\u4E0D\u4E86\u5730\u5740\u3002"
+      })
+    );
+    return ui.scroll({ key: "addSite", children: [ui.stack({ key: "addSite:content", children })] });
   }
 
   // extensions/input-source/src/index.ts

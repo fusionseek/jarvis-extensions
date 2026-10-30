@@ -40,6 +40,7 @@ export * from "./layout.js";
 export type {
   ActivationContext,
   BrowserActiveTab,
+  BrowserActiveTabPage,
   BrowserActiveTabStatus,
   CommandContext,
   CommandSummary,
@@ -918,6 +919,8 @@ export const jarvis: Jarvis = {
   },
   browser: {
     activeTab: () => call.browser("activeTab"),
+    // SDK 2.13（jarvis-mac `specs/20261030-234919-input-source-site-rules` S-1）：退订走 `browser.unsubscribe`。
+    watchActiveTab: (listener) => runtime.subscribe("browser", "watchActiveTab", listener as (payload: unknown) => void),
   },
   git: {
     repositories: () => call.git("repositories"),

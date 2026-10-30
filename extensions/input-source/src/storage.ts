@@ -1,14 +1,15 @@
 /**
- * `jarvis.storage` 里的三样：规则、你在每个应用里手动用过的输入法、默认输入法。读出来的东西一律验形状：
+ * `jarvis.storage` 里的四样：规则、你在每个应用里手动用过的输入法、默认输入法、网站规则。读出来的东西一律验形状：
  * 存储是扩展自己的，但它活得比任何一个版本都久——上一版写坏的一条不该让这一版起不来。
  */
 import { jarvis } from "@fusionseek/jarvis-extension-sdk";
-import type { Rule, Rules } from "./model.js";
+import { maximumSites, normalizePattern, type Rule, type Rules, type SiteRule } from "./model.js";
 
 export const storageKeys = {
   rules: "rules",
   lastUsed: "lastUsed",
   fallbackSource: "fallbackSource",
+  sites: "sites",
 } as const;
 
 function isRule(value: unknown): value is Rule {
@@ -53,4 +54,26 @@ export async function readLastUsed(): Promise<Record<string, string>> {
 export async function readFallback(): Promise<string | undefined> {
   const raw = await jarvis.storage.get<unknown>(storageKeys.fallbackSource).catch(() => null);
   return typeof raw === "string" && raw ? raw : undefined;
+}
+
+/**
+ * 网站规则（jarvis-mac `specs/20261030-234919-input-source-site-rules` S-2）：坏掉的条目丢掉，pattern 重新规范化一遍、同一个只留第一条。
+ * @returns 网站规则。
+ */
+export async function readSites(): Promise<SiteRule[]> {
+  const raw = await jarvis.storage.get<unknown>(storageKeys.sites).catch(() => null);
+  const sites: SiteRule[] = [];
+  if (!Array.isArray(raw)) return sites;
+  const seen = new Set<string>();
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue;
+    const { pattern, source } = item as Record<string, unknown>;
+    if (typeof pattern !== "string" || typeof source !== "string" || !source) continue;
+    const normalized = normalizePattern(pattern);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    sites.push({ pattern: normalized, source });
+    if (sites.length >= maximumSites) break;
+  }
+  return sites;
 }

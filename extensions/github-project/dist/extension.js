@@ -789,7 +789,9 @@
       update: (model) => runtime.invoke("orb", "update", model)
     },
     browser: {
-      activeTab: () => call.browser("activeTab")
+      activeTab: () => call.browser("activeTab"),
+      // SDK 2.13（jarvis-mac `specs/20261030-234919-input-source-site-rules` S-1）：退订走 `browser.unsubscribe`。
+      watchActiveTab: (listener) => runtime.subscribe("browser", "watchActiveTab", listener)
     },
     git: {
       repositories: () => call.git("repositories"),

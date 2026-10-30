@@ -100,7 +100,12 @@ export type CapabilityID =
   /**
    * 在文字插入点或指针旁边弹一枚一闪而过的小牌子（SDK 2.13）：宿主画、不抢焦点、鼠标穿透；插入点的位置由宿主读，不交给扩展。
    */
-  | "hud.show";
+  | "hud.show"
+  /**
+   * 订阅前台浏览器的当前页（SDK 2.13，jarvis-mac `specs/20261030-234919-input-source-site-rules` S-1）：浏览器成为前台、换标签、翻页时推地址与标题。
+   * 读法同 `browser.activeTab`（经「自动化」）；换标签就知道要 Jarvis 有辅助功能，没有时只在切到浏览器时读。持续知道看过的每一页，接近浏览记录，高档。
+   */
+  | "browser.activeTab.watch";
 
 /** 授权屏按风险分组；一档一个标签，颜色由宿主决定。 */
 export type CapabilityTier = "low" | "medium" | "high";
@@ -160,6 +165,7 @@ export const capabilityTiers: Readonly<Record<CapabilityID, CapabilityTier>> = {
   "system.proxy": "high",
   "network.tunnel": "high",
   "git.hosting.write": "high",
+  "browser.activeTab.watch": "high",
 };
 
 /** 一项能力申请。 */

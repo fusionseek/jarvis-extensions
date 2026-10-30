@@ -7,12 +7,16 @@
  * 加规则有两条路（jarvis-mac `specs/20261030-182223-input-source-rules-ux` U-1）：此刻的应用在顶上一点即定；
  * 别的应用在每一组右上角点「+」，从这台 Mac 装的应用里挑。页面跑在前台会话，只读写 `jarvis.storage` 与偏好；
  * 后台每次切应用、每次点开菜单都重读规则，不需要另开一条线把改动推过去。
+ *
+ * 网站规则（jarvis-mac `specs/20261030-234919-input-source-site-rules` S-3）：此刻是浏览器时，「此刻」卡上多一行当前页、一点即定；
+ * 每组卡头的地球进「加网站」那一步，填网址或主机名。网站列在同一组的应用之后。读地址的两项授权只在点了加网站时才问。
  */
 import {
   jarvis,
   layout,
   ui,
   type ActivationContext,
+  type BrowserActiveTab,
   type FileHandle,
   type FrontmostApp,
   type InputSource,
@@ -27,23 +31,31 @@ import {
   choiceTitle,
   groupRules,
   lastUsedTitle,
+  matchSite,
+  normalizePattern,
   othersTitle,
   readSettings,
   ruleChoice,
   ruleFromChoice,
   setRule,
+  setSite,
+  sitePatternFor,
   suggestions,
   suggestionSummary,
+  type ChoiceChip,
   type RuleChoice,
   type RuleGroup,
   type Rules,
   type Settings,
+  type SiteRule,
   type Suggestion,
 } from "./model.js";
-import { readFallback, readRules, storageKeys } from "./storage.js";
+import { readFallback, readRules, readSites, storageKeys } from "./storage.js";
 
 /** 这一页要的授权：读输入法与知道前台是必须的，切与提示是后台的事，应用列表给「+」与推荐，一起问掉。 */
 export const pageCapabilities = ["system.activity", "inputSources.read", "inputSources.select", "hud.show", "apps.read"] as const;
+/** 网站规则要的两项（S-3）：读一次此刻这一页、跟着前台浏览器换页。只在点了「加网站」时问。 */
+export const siteCapabilities = ["browser.activeTab", "browser.activeTab.watch"] as const;
 
 /** 一次向宿主要几个图标（宿主上限 40）。 */
 const ICON_BATCH = 40;
@@ -60,7 +72,7 @@ const GROUP_TINTS: readonly Tint[] = ["blue", "violet", "amber", "live"];
 const CHIP_COLUMN_MINIMUM = 80;
 
 type Status = { kind: "loading" } | { kind: "denied" } | { kind: "ready" } | { kind: "failed"; message: string };
-type Stage = { kind: "groups" } | { kind: "add"; target: RuleChoice };
+type Stage = { kind: "groups" } | { kind: "add"; target: RuleChoice } | { kind: "addSite"; target: RuleChoice };
 
 export class PageSession {
   status: Status = { kind: "loading" };
@@ -69,9 +81,14 @@ export class PageSession {
   currentId: string | undefined;
   app: FrontmostApp | undefined;
   rules: Rules = {};
+  sites: SiteRule[] = [];
+  /** 此刻（或最近一次）浏览器的当前页；没有 `browser.activeTab` 授权为 `undefined`，从没用过浏览器为 `null`。 */
+  page: BrowserActiveTab | undefined;
+  /** 加网站那一步填的字。 */
+  siteDraft = "";
   fallbackSource: string | undefined;
   settings: Settings = readSettings({});
-  /** 展开着「换成」那一排的规则。 */
+  /** 展开着「换成」那一排的规则：应用是 bundle id，网站是 `site:<pattern>`。 */
   editing: string | undefined;
   /** 刚加进来的那一行（点亮一下，用户找得到它落在哪）。 */
   highlight: string | undefined;
@@ -127,14 +144,18 @@ export class PageSession {
       return;
     }
     try {
-      const [sources, current, app, rules, fallbackSource, dismissed] = await Promise.all([
+      const [sources, current, app, rules, fallbackSource, dismissed, sites, page] = await Promise.all([
         jarvis.inputSources.list(),
         jarvis.inputSources.current(),
         jarvis.frontmostApp.current(),
         readRules(),
         readFallback(),
         jarvis.storage.get<boolean>(SUGGESTIONS_DISMISSED).catch(() => undefined),
+        readSites(),
+        this.readPage(),
       ]);
+      this.sites = sites;
+      this.page = page;
       this.sources = sources;
       this.currentId = current.id;
       this.app = app ?? undefined;
@@ -146,6 +167,12 @@ export class PageSession {
     } catch (error) {
       this.status = { kind: "failed", message: error instanceof Error ? error.message : String(error) };
     }
+  }
+
+  /** 读一次此刻这一页（有 `browser.activeTab` 授权才读；读不到不当错）。 */
+  private async readPage(): Promise<BrowserActiveTab | undefined> {
+    if (!this.granted.includes("browser.activeTab")) return undefined;
+    return jarvis.browser.activeTab().catch(() => null);
   }
 
   private async loadApps(): Promise<void> {
@@ -194,6 +221,78 @@ export class PageSession {
     await this.assign(bundleId, "", "none");
   }
 
+  /**
+   * 给一个网站定输入法（`none` = 删掉，跟随应用）。
+   * @param pattern 规范化过的 pattern。
+   * @param choice 选择：`fixed:<id>` 或 `none`。
+   */
+  async assignSite(pattern: string, choice: RuleChoice): Promise<void> {
+    const source = choice.startsWith("fixed:") ? choice.slice("fixed:".length) : undefined;
+    this.sites = setSite(this.sites, pattern, source);
+    this.highlight = source === undefined ? undefined : siteKey(pattern);
+    this.editing = undefined;
+    await jarvis.storage.set(storageKeys.sites, this.sites);
+  }
+
+  /**
+   * 删掉一条网站规则。
+   * @param pattern 哪个网站。
+   */
+  async removeSite(pattern: string): Promise<void> {
+    if (this.editing === siteKey(pattern)) this.editing = undefined;
+    if (this.highlight === siteKey(pattern)) this.highlight = undefined;
+    await this.assignSite(pattern, "none");
+  }
+
+  /**
+   * 往一组里加网站。还没给读地址的两项授权时先问（只在按钮回调里调）；不给也照样能填，只是后台跟不上网页。
+   * @param target 那一组的选择（`fixed:<id>`）。
+   */
+  async startAddSite(target: RuleChoice): Promise<void> {
+    if (!this.hasSiteAccess()) {
+      const result = await jarvis.permissions.request([...siteCapabilities]);
+      this.granted = result.granted;
+    }
+    this.stage = { kind: "addSite", target };
+    this.siteDraft = "";
+    this.editing = undefined;
+    this.page = await this.readPage();
+    jarvis.ui.update();
+  }
+
+  /** 再问一次读地址的两项授权（加网站那一步的「允许」，只在按钮回调里调）。 */
+  async requestSiteAccess(): Promise<void> {
+    const result = await jarvis.permissions.request([...siteCapabilities]);
+    this.granted = result.granted;
+    this.page = await this.readPage();
+    jarvis.ui.update();
+  }
+
+  /** 此刻有没有读地址的两项授权（渲染读）。 */
+  hasSiteAccess(): boolean {
+    return siteCapabilities.every((id) => this.granted.includes(id));
+  }
+
+  /**
+   * 加网站那一步填的字变了。
+   * @param text 填的字。
+   */
+  setSiteDraft(text: string): void {
+    this.siteDraft = text;
+  }
+
+  /**
+   * 加进那一组，回到分组页。
+   * @param pattern 规范化过的 pattern。
+   */
+  async pickSite(pattern: string): Promise<void> {
+    if (this.stage.kind !== "addSite") return;
+    const target = this.stage.target;
+    this.stage = { kind: "groups" };
+    this.siteDraft = "";
+    await this.assignSite(pattern, target);
+  }
+
   /** 展开 / 收起一条规则的「换成」。 */
   toggleEditing(bundleId: string): void {
     this.editing = this.editing === bundleId ? undefined : bundleId;
@@ -235,6 +334,7 @@ export class PageSession {
   /** 不加了，回到分组页。 */
   cancelAdd(): void {
     this.stage = { kind: "groups" };
+    this.siteDraft = "";
   }
 
   /**
@@ -331,7 +431,9 @@ export function renderPage(session: PageSession): UINode {
     case "failed":
       return ui.empty({ key: "failed", symbol: "exclamationmark.triangle", title: "没读出来", hint: status.message });
     case "ready":
-      return session.stage.kind === "add" ? addStage(session, session.stage.target) : groupsStage(session);
+      if (session.stage.kind === "add") return addStage(session, session.stage.target);
+      if (session.stage.kind === "addSite") return addSiteStage(session, session.stage.target);
+      return groupsStage(session);
   }
 }
 
@@ -367,7 +469,7 @@ function groupsStage(session: PageSession): UINode {
       }),
     );
   }
-  for (const group of groupRules(session.rules, session.sources)) children.push(groupCard(session, group));
+  for (const group of groupRules(session.rules, session.sources, session.sites)) children.push(groupCard(session, group));
   children.push(othersCard(session));
   return ui.scroll({ key: "page", children: [ui.stack({ key: "content", children })] });
 }
@@ -392,7 +494,8 @@ function nowCard(session: PageSession): UINode {
         subtitle: choice === "none" ? `无规则 · ${othersTitle(session.settings.others)}` : choiceTitle(choice, session.sources),
         accessory: "none",
       }),
-      chipGrid("now", session, choice, (value) => void session.assign(app.bundleId, app.name, value)),
+      chipGrid("now", choiceChips(session.sources), choice, (value) => void session.assign(app.bundleId, app.name, value)),
+      ...nowPage(session, app.bundleId),
     );
   } else {
     children.push(ui.text({ key: "now:none", style: "footnote", text: "切到一个应用再点右上角的刷新，就能一点给它定输入法" }));
@@ -408,9 +511,55 @@ function nowCard(session: PageSession): UINode {
   });
 }
 
+/**
+ * 「此刻」卡上的当前页（S-3）：前台就是那个浏览器时，一行地球 + 网站，下面一排各输入法与「跟随应用」，一点即定这个网站。
+ * 读不到地址（没在「自动化」里允许）时只给一句去哪里允许。
+ */
+function nowPage(session: PageSession, bundleId: string): UINode[] {
+  const page = session.page;
+  if (!page || page.browser.bundleId !== bundleId) return [];
+  if (page.status === "denied") {
+    return [
+      ui.text({
+        key: "now:site:denied",
+        style: "footnote",
+        text: `读不到这一页的地址：在 系统设置 › 隐私与安全性 › 自动化 里允许 Jarvis 控制「${page.browser.name}」`,
+      }),
+    ];
+  }
+  const url = page.status === "ok" ? page.url : undefined;
+  const pattern = url ? sitePatternFor(url, session.sites) : undefined;
+  if (!url || !pattern) return [];
+  const matched = matchSite(url, session.sites);
+  const source = matched ? session.sources.find((item) => item.id === matched.source) : undefined;
+  return [
+    ui.row({
+      key: "now:site",
+      symbol: "globe",
+      title: pattern,
+      subtitle: matched ? `网站规则 · 用 ${source?.name ?? "一个已停用的输入法"}` : "这个网站没有规则，跟着应用的",
+      accessory: "none",
+    }),
+    chipGrid("now:site", siteChips(session.sources), matched ? `fixed:${matched.source}` : "none", (value) => void session.assignSite(pattern, value)),
+  ];
+}
+
+/** 网站那一排：每个输入法一枚，再加「跟随应用」（删掉这个网站的规则）。网站上没有「记住上次」（S-2）。 */
+function siteChips(sources: PageSession["sources"]): ChoiceChip[] {
+  return [
+    ...choiceChips(sources).filter((chip) => chip.value.startsWith("fixed:")),
+    { value: "none", title: "跟随应用", help: "不给这个网站定规则，按浏览器这个应用的规则走", symbol: "arrow.turn.down.right" },
+  ];
+}
+
+/** 网站行的 key（`editing` / `highlight` 与应用的 bundle id 分开）。 */
+function siteKey(pattern: string): string {
+  return `site:${pattern}`;
+}
+
 /** 一排一点即定的选项，排成等宽的一行（宿主把网格里的 chip 撑满格子，C-3）；选中的那枚点亮。 */
-function chipGrid(keyPrefix: string, session: PageSession, selected: RuleChoice, onPick: (value: RuleChoice) => void, exclude?: RuleChoice): UINode {
-  const chips = choiceChips(session.sources).filter((chip) => chip.value !== exclude);
+function chipGrid(keyPrefix: string, all: readonly ChoiceChip[], selected: RuleChoice, onPick: (value: RuleChoice) => void, exclude?: RuleChoice): UINode {
+  const chips = all.filter((chip) => chip.value !== exclude);
   return layout.grid({
     key: `${keyPrefix}:choices`,
     minimum: CHIP_COLUMN_MINIMUM,
@@ -459,20 +608,49 @@ function groupCard(session: PageSession, group: RuleGroup): UINode {
     if (editing) {
       children.push(
         ui.text({ key: `rule:${bundleId}:label`, style: "footnote", text: `「${name}」换成` }),
-        chipGrid(`rule:${bundleId}`, session, ruleChoice(rule), (value) => void session.assign(bundleId, name, value), group.key),
+        chipGrid(`rule:${bundleId}`, choiceChips(session.sources), ruleChoice(rule), (value) => void session.assign(bundleId, name, value), group.key),
       );
     }
   }
-  if (group.entries.length === 0) {
-    children.push(ui.text({ key: `${group.key}:empty`, style: "footnote", text: "还没有应用。点右上角的 + 加几个" }));
+  const here = session.page?.status === "ok" && session.page.url ? matchSite(session.page.url, session.sites)?.pattern : undefined;
+  for (const site of group.sites) {
+    const key = siteKey(site.pattern);
+    const editing = session.editing === key;
+    children.push(
+      ui.row({
+        key: `site:${site.pattern}`,
+        symbol: "globe",
+        title: site.pattern,
+        subtitle: here === site.pattern ? "此刻在看" : group.key === "stale" ? "点一下，换一个还启用着的" : "网站",
+        selected: editing || session.highlight === key,
+        accessory: "none",
+        onPress: () => session.toggleEditing(key),
+        actions: [{ id: "remove", title: "删除规则", symbol: "xmark", help: `删除「${site.pattern}」的规则`, onPress: () => void session.removeSite(site.pattern) }],
+      }),
+    );
+    if (editing) {
+      children.push(
+        ui.text({ key: `site:${site.pattern}:label`, style: "footnote", text: `在「${site.pattern}」上换成` }),
+        chipGrid(`site:${site.pattern}`, siteChips(session.sources), `fixed:${site.source}`, (value) => void session.assignSite(site.pattern, value), group.key),
+      );
+    }
+  }
+  if (group.entries.length === 0 && group.sites.length === 0) {
+    const text = group.key.startsWith("fixed:") ? "还没有应用或网站。点右上角的 + 或地球加几个" : "还没有应用。点右上角的 + 加几个";
+    children.push(ui.text({ key: `${group.key}:empty`, style: "footnote", text }));
+  }
+  const actions = group.addable
+    ? [{ id: "add", title: "添加应用", symbol: "plus", help: `添加${group.title}的应用`, onPress: () => void session.startAdd(group.key) }]
+    : [];
+  // 网站上没有「记住上次」：只有输入法那几组能加网站。
+  if (group.addable && group.key.startsWith("fixed:")) {
+    actions.push({ id: "addSite", title: "添加网站", symbol: "globe", help: `添加${group.title}的网站`, onPress: () => void session.startAddSite(group.key) });
   }
   return card(`group:${group.key}`, groupTint(group, session.sources), {
     key: `group:${group.key}`,
     title: group.title,
-    trailing: `${group.entries.length} 个应用`,
-    actions: group.addable
-      ? [{ id: "add", title: "添加应用", symbol: "plus", help: `添加${group.title}的应用`, onPress: () => void session.startAdd(group.key) }]
-      : undefined,
+    trailing: group.sites.length > 0 ? `${group.entries.length} 个应用 · ${group.sites.length} 个网站` : `${group.entries.length} 个应用`,
+    actions: actions.length > 0 ? actions : undefined,
     children,
   });
 }
@@ -497,7 +675,8 @@ function othersCard(session: PageSession): UINode {
     ui.text({
       key: "how",
       style: "footnote",
-      text: "也可以在任何应用里点菜单栏上的键盘图标，给它一点即定。中文输入法里按 ⇧ 切到的英文模式不算换了输入法，规则管不到它。",
+      text:
+        "也可以在任何应用里点菜单栏上的键盘图标，给它一点即定。网站规则比应用规则优先，只在那一页开在前台的浏览器里时生效。中文输入法里按 ⇧ 切到的英文模式不算换了输入法，规则管不到它。",
     }),
   );
   // 这一块是设置，不是一类规则：不带色条。
@@ -546,4 +725,95 @@ function addStage(session: PageSession, target: RuleChoice): UINode {
     if (truncated) children.push(ui.text({ key: "add:more", style: "footnote", text: "只列了最近用过的 60 个，输入名字找别的" }));
   }
   return ui.scroll({ key: "add", children: [ui.stack({ key: "add:content", children })] });
+}
+
+// MARK: - 加网站那一步（S-3）
+
+function addSiteStage(session: PageSession, target: RuleChoice): UINode {
+  const title = choiceTitle(target, session.sources);
+  const children: UINode[] = [
+    ui.row({
+      key: "addSite:back",
+      symbol: "chevron.left",
+      title: `加网站到「${title}」`,
+      subtitle: "填网址或主机名；github.com 也管它的子域",
+      accessory: "none",
+      onPress: () => session.cancelAdd(),
+      label: `返回。加网站到「${title}」`,
+    }),
+  ];
+  if (!session.hasSiteAccess()) {
+    children.push(
+      ui.note({
+        key: "addSite:access",
+        tint: "amber",
+        symbol: "lock",
+        body: "还没允许读浏览器当前页：规则照样能加，但不会跟着网页换输入法",
+        actions: [{ id: "grant", title: "允许", onPress: () => void session.requestSiteAccess() }],
+      }),
+    );
+  }
+  children.push(
+    ui.field({
+      key: "addSite:field",
+      value: session.siteDraft,
+      placeholder: "github.com 或 docs.google.com/spreadsheets",
+      label: "网址或主机名",
+      mono: true,
+      autoFocus: true,
+      onChange: (text) => session.setSiteDraft(text),
+      onSubmit: (text) => {
+        const pattern = normalizePattern(text);
+        if (pattern) void session.pickSite(pattern);
+      },
+    }),
+  );
+  const draft = session.siteDraft.trim();
+  if (draft) {
+    const pattern = normalizePattern(draft);
+    if (pattern) {
+      const existing = session.sites.find((site) => site.pattern === pattern);
+      const already = existing !== undefined && `fixed:${existing.source}` === target;
+      let subtitle = `也管 docs.${pattern} 这样的子域`;
+      if (pattern.includes("/")) subtitle = "这个网站上以这段路径开头的页";
+      if (existing && !already) subtitle = `现在：${choiceTitle(`fixed:${existing.source}`, session.sources)}，点一下挪过来`;
+      children.push(
+        ui.row({
+          key: "addSite:add",
+          symbol: "plus.circle",
+          title: already ? `${pattern} 已经在这一组` : `添加 ${pattern}`,
+          subtitle,
+          selected: already,
+          accessory: "none",
+          onPress: () => void session.pickSite(pattern),
+        }),
+      );
+    } else {
+      children.push(ui.text({ key: "addSite:invalid", style: "footnote", text: "这不像一个网址：填主机名（github.com）或整个网址" }));
+    }
+  }
+  const page = session.page;
+  const url = page?.status === "ok" ? page.url : undefined;
+  const current = url ? sitePatternFor(url, session.sites) : undefined;
+  if (page && current) {
+    children.push(
+      ui.row({
+        key: "addSite:current",
+        symbol: "safari",
+        title: current,
+        subtitle: `${page.frontmost ? "此刻" : "刚才"}在「${page.browser.name}」里看的这一页`,
+        accessory: "none",
+        onPress: () => void session.pickSite(current),
+      }),
+    );
+  }
+  children.push(
+    ui.text({
+      key: "addSite:how",
+      style: "footnote",
+      text:
+        "读地址时系统会问一次是否允许 Jarvis 控制这个浏览器（系统设置 › 隐私与安全性 › 自动化）。换标签就跟着换，要 Jarvis 有辅助功能权限；没有时只在切到浏览器时对一次。Firefox 读不了地址。",
+    }),
+  );
+  return ui.scroll({ key: "addSite", children: [ui.stack({ key: "addSite:content", children })] });
 }

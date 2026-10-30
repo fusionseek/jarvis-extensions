@@ -1,10 +1,20 @@
 /**
  * 后台会话里的那一份：订前台应用与输入法的变化，切应用时按规则换输入法，记下你手动换的，推菜单栏模型，跑三条静默命令。
+ * 有网站规则时再订前台浏览器的当前页（jarvis-mac `specs/20261030-234919-input-source-site-rules` S-2）：换了页、决定出来的输入法变了才切。
  *
  * **空闲时什么都不做**：一个定时器都不挂。前台换了、输入法换了，宿主才推一条事件过来；两条订阅让后台会话常驻
  * （jarvis-mac `specs/20261030-170731-input-source-switch-p1` N-4），关掉菜单栏图标也照样在切。
  */
-import { jarvis, type CommandContext, type FrontmostApp, type InputSource, type InputSourcesEvent, type MenuBarContext, type Unsubscribe } from "@fusionseek/jarvis-extension-sdk";
+import {
+  jarvis,
+  type BrowserActiveTabPage,
+  type CommandContext,
+  type FrontmostApp,
+  type InputSource,
+  type InputSourcesEvent,
+  type MenuBarContext,
+  type Unsubscribe,
+} from "@fusionseek/jarvis-extension-sdk";
 import {
   choiceFromMenuItem,
   defaultSettings,
@@ -16,13 +26,17 @@ import {
   resolveTarget,
   ruleFromChoice,
   setRule,
+  setSite,
   shortLabel,
+  siteChoiceFromMenuItem,
+  sitePatternFor,
   type Memory,
+  type Page,
   type RuleChoice,
   type Rules,
   type Settings,
 } from "./model.js";
-import { readFallback, readLastUsed, readRules, storageKeys } from "./storage.js";
+import { readFallback, readLastUsed, readRules, readSites, storageKeys } from "./storage.js";
 
 /** 提示一行至多几个字（宿主 `hud.show` 的上限）。 */
 const HUD_LIMIT = 24;
@@ -54,8 +68,18 @@ export class Controller {
   private stopPermissions: Unsubscribe | undefined;
   /** 前台事件一条一条处理（F-1）：并发处理时，切到上一个应用的那一次可能晚落地，把这一次覆盖掉。 */
   private queue: Promise<void> = Promise.resolve();
-  /** 第几次换前台：处理到一条时后面已经又换了，这一条作废（只认最新一次）。 */
+  /** 第几次换前台（或换了页）：处理到一条时后面已经又换了，这一条作废（只认最新一次）。 */
   private activation = 0;
+  private stopBrowser: Unsubscribe | undefined;
+  /** 每个浏览器的上一页（S-2）：切回浏览器、地址没变时宿主不再推，靠这份缓存当场对上。 */
+  private readonly pages = new Map<string, string>();
+  /**
+   * 跳过下一条网页事件：启动、刚允许、从菜单定了第一条网站规则时订阅，宿主补发的那一条只记下、不切（同 `primed`）。
+   * 至多跳一条；下一次真的换了前台就不再跳。订阅发生在「切到浏览器」的那一次处理里时不跳——那一条正是用户刚切过来的那一页。
+   */
+  private skipReplay = false;
+  /** 这一次停留里决定过的目标（S-2）：页面换了、决定没变就不切——你在这一页上手动换了的，不替你换回去。 */
+  private decided: string | undefined;
 
   /** 此刻在前台的应用（测试读）。 */
   get frontmost(): FrontmostApp | undefined {
@@ -87,6 +111,7 @@ export class Controller {
   async open(context: MenuBarContext): Promise<void> {
     await this.ensureStarted(context);
     await this.loadRules();
+    await this.readPageOnce();
     await this.render();
   }
 
@@ -97,6 +122,8 @@ export class Controller {
    */
   async select(itemId: string, context: MenuBarContext): Promise<void> {
     await this.ensureStarted(context);
+    const site = siteChoiceFromMenuItem(itemId, this.menuSources);
+    if (site) return this.applySite(site.source);
     const choice = choiceFromMenuItem(itemId, this.menuSources);
     if (choice === undefined) return;
     if (choice === "pause") return this.togglePause();
@@ -157,7 +184,40 @@ export class Controller {
       this.stopFrontmost?.();
       this.stopFrontmost = undefined;
     }
+    this.memory = { ...this.memory, sites: await readSites() };
+    this.updateBrowserWatch(false);
     await this.render();
+  }
+
+  /**
+   * 订 / 退前台浏览器当前页（S-2）：有 `browser.activeTab.watch` 授权、且至少一条网站规则才订——没有网站规则的人不付这份代价。
+   * @param actOnReplay 订阅时宿主补发的那一条要不要照规则切（在「切到浏览器」的那一次处理里订的才要）。
+   */
+  private updateBrowserWatch(actOnReplay: boolean): void {
+    const wanted = this.granted.includes("browser.activeTab.watch") && this.memory.sites.length > 0;
+    if (wanted && !this.stopBrowser) {
+      this.skipReplay = !actOnReplay;
+      this.stopBrowser = jarvis.browser.watchActiveTab((page) => void this.onPage(page));
+    } else if (!wanted && this.stopBrowser) {
+      this.stopBrowser();
+      this.stopBrowser = undefined;
+      this.pages.clear();
+    }
+  }
+
+  /** 前台那个浏览器缓存着的一页；不是浏览器、没读到为 `undefined`。 */
+  private pageFor(bundleId: string): Page | undefined {
+    const url = this.pages.get(bundleId);
+    return url === undefined ? undefined : { bundleId, url };
+  }
+
+  /** 菜单点开时，没订着当前页就读一次（有 `browser.activeTab` 授权才读）：第一条网站规则也能从菜单里定。 */
+  private async readPageOnce(): Promise<void> {
+    if (this.stopBrowser || !this.app || !this.granted.includes("browser.activeTab")) return;
+    const tab = await jarvis.browser.activeTab().catch(() => null);
+    if (!tab || tab.browser.bundleId !== this.app.bundleId || !tab.frontmost) return;
+    if (tab.status === "ok" && tab.url) this.pages.set(tab.browser.bundleId, tab.url);
+    else this.pages.delete(tab.browser.bundleId);
   }
 
   private async reloadSources(): Promise<void> {
@@ -186,20 +246,58 @@ export class Controller {
     const token = ++this.activation;
     const primed = this.primed;
     this.primed = true;
+    // 真的换了一次前台（不是订阅时补发的那一条）：之后的网页事件都是用户切过去、翻过去的（S-2）。
+    if (primed) this.skipReplay = false;
     return this.enqueue(async () => {
       if (!primed) return this.render();
       if (token !== this.activation) return;
       if (!switched || this.settings.paused || !this.granted.includes("inputSources.select")) return this.render();
-      // 页面可能刚改过规则：规则与默认输入法每次切应用读一次（两次本机库读，毫秒级）；「上次用的」只有这里写，内存里就是最新的。
+      // 页面可能刚改过规则：规则与默认输入法每次切应用读一次（三次本机库读，毫秒级）；「上次用的」只有这里写，内存里就是最新的。
       await this.loadRules();
+      // 页面里刚加了第一条网站规则：这一次切进来就订上，宿主补发的那一页正是用户切过来的这一页。
+      this.updateBrowserWatch(true);
       if (this.sources.length === 0) await this.reloadSources();
-      const target = resolveTarget(app.bundleId, this.memory, this.settings, this.sources.map((source) => source.id));
+      const target = resolveTarget(app.bundleId, this.memory, this.settings, this.sources.map((source) => source.id), this.pageFor(app.bundleId));
+      this.decided = target;
       if (target !== undefined && token === this.activation) {
         // 以系统此刻的为准，不用自己记的：自己记的那个可能还是被顶掉的那一次之前的。
         const actual = (await jarvis.inputSources.current().catch(() => undefined))?.id;
         if (token !== this.activation) return;
         if (actual !== target) await this.switchTo(target, token);
       }
+      await this.render();
+    });
+  }
+
+  /**
+   * 前台浏览器换了页（宿主 `browser.watchActiveTab`，S-2）。缓存先记下（同步：下一次切回这个浏览器要用）；
+   * 决定出来的目标和这一次停留里已经决定过的一样就不切——同一网站里翻页不切，你在这一页上手动换了的也不换回去。
+   * @param page 宿主推来的一页。
+   */
+  onPage(page: BrowserActiveTabPage): Promise<void> {
+    const bundleId = page.browser.bundleId;
+    if (page.status === "ok" && page.url) this.pages.set(bundleId, page.url);
+    else this.pages.delete(bundleId);
+    const acts = !this.skipReplay;
+    this.skipReplay = false;
+    const token = ++this.activation;
+    return this.enqueue(async () => {
+      if (token !== this.activation) return;
+      const app = this.app;
+      // 读的那几十毫秒里切走了：这一页不是此刻前台的了。
+      if (!app || app.bundleId !== bundleId) return this.render();
+      await this.loadRules();
+      if (this.sources.length === 0) await this.reloadSources();
+      const target = resolveTarget(bundleId, this.memory, this.settings, this.sources.map((source) => source.id), this.pageFor(bundleId));
+      if (!acts || target === this.decided) {
+        this.decided = target;
+        return this.render();
+      }
+      this.decided = target;
+      if (target === undefined || this.settings.paused || !this.granted.includes("inputSources.select")) return this.render();
+      const actual = (await jarvis.inputSources.current().catch(() => undefined))?.id;
+      if (token !== this.activation) return;
+      if (actual !== target) await this.switchTo(target, token);
       await this.render();
     });
   }
@@ -277,6 +375,27 @@ export class Controller {
     await this.render();
   }
 
+  /**
+   * 菜单里给此刻这一页定输入法（`source` 为 `undefined` = 删掉，跟随应用）。落到已经命中的那条上，没有就是这一页的主机名。
+   * @param source 输入法 id。
+   */
+  private async applySite(source: string | undefined): Promise<void> {
+    const app = this.app;
+    const url = app ? this.pages.get(app.bundleId) : undefined;
+    if (!app || url === undefined) return;
+    await this.loadRules();
+    const pattern = sitePatternFor(url, this.memory.sites);
+    if (!pattern) return;
+    const sites = setSite(this.memory.sites, pattern, source);
+    this.memory = { ...this.memory, sites };
+    await jarvis.storage.set(storageKeys.sites, sites).catch(() => undefined);
+    // 第一条网站规则：订上当前页。你此刻就在这一页上，下面直接换过去，补发的那一条不必再切。
+    this.updateBrowserWatch(false);
+    this.decided = resolveTarget(app.bundleId, this.memory, this.settings, this.sources.map((item) => item.id), this.pageFor(app.bundleId));
+    if (this.decided !== undefined && this.decided !== this.currentId && this.granted.includes("inputSources.select")) await this.switchTo(this.decided);
+    await this.render();
+  }
+
   private async togglePause(): Promise<void> {
     const paused = !this.settings.paused;
     this.settings = { ...this.settings, paused };
@@ -305,19 +424,29 @@ export class Controller {
   // MARK: - 存储
 
   private async loadMemory(): Promise<void> {
-    const [rules, lastUsed, fallbackSource] = await Promise.all([readRules(), readLastUsed(), readFallback()]);
-    this.memory = { rules, lastUsed, fallbackSource };
+    const [rules, lastUsed, fallbackSource, sites] = await Promise.all([readRules(), readLastUsed(), readFallback(), readSites()]);
+    this.memory = { rules, lastUsed, fallbackSource, sites };
   }
 
   private async loadRules(): Promise<void> {
-    const [rules, fallbackSource] = await Promise.all([readRules(), readFallback()]);
-    this.memory = { ...this.memory, rules, fallbackSource };
+    const [rules, fallbackSource, sites] = await Promise.all([readRules(), readFallback(), readSites()]);
+    this.memory = { ...this.memory, rules, fallbackSource, sites };
   }
 
   private async render(): Promise<void> {
     this.menuSources = this.sources;
     await jarvis.menuBar
-      .update(menuModel({ app: this.app, rules: this.memory.rules as Rules, sources: this.sources, currentId: this.currentId, settings: this.settings }))
+      .update(
+        menuModel({
+          app: this.app,
+          page: this.app ? this.pageFor(this.app.bundleId) : undefined,
+          sites: this.memory.sites,
+          rules: this.memory.rules as Rules,
+          sources: this.sources,
+          currentId: this.currentId,
+          settings: this.settings,
+        }),
+      )
       .catch(() => undefined);
   }
 }

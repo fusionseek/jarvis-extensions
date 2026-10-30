@@ -678,7 +678,13 @@ export type BrowserActiveTabStatus = "ok" | "denied" | "unsupported" | "noWindow
  * `browser.activeTab()` 的返回。此刻前台是浏览器就读它，否则读**最近一次激活过的**浏览器（`frontmost: false`）——
  * 点开菜单栏图标不改变前台 App，所以从菜单栏读到的正是用户刚才在看的那一页。从没用过任何浏览器为 `null`。
  */
-export type BrowserActiveTab = {
+export type BrowserActiveTab = BrowserActiveTabPage | null;
+
+/**
+ * 浏览器当前标签的一次读数（`$defs.browserActiveTabPage`）：`browser.activeTab()` 读到的（不为 `null` 时）与
+ * `browser.watchActiveTab` 推来的（SDK 2.13，`frontmost` 恒为真）是同一个形状。
+ */
+export type BrowserActiveTabPage = {
   browser: {
     bundleId: string;
     name: string;
@@ -691,7 +697,7 @@ export type BrowserActiveTab = {
   url?: string;
   title?: string;
   message?: string;
-} | null;
+};
 
 /** `files.pick` 的入参：宿主画打开面板的起点与可挑的扩展名。 */
 export interface FilesPickRequest {
