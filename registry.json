@@ -1,9 +1,9 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-30T10:28:17.188Z",
+  "generatedAt": "2026-10-30T11:11:05.997Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "8382783721a8b5f90e3d86fcfffaa5dfafbeb632"
+    "commit": "6e24054ed607e2ece844095dd198e970e69b9486"
   },
   "extensions": [
     {
@@ -54,7 +54,7 @@
         "sha256": "57bc13d593ff00c8fd7ba37d72d7493a50cd7b77748a73f545a44f4bfb319d57",
         "byteCount": 67867
       },
-      "updatedAt": "2026-10-30T18:02:10+08:00"
+      "updatedAt": "2026-10-30T18:33:40+08:00"
     },
     {
       "manifest": {
@@ -393,7 +393,7 @@
         "sha256": "00c5ebe5987ade32e88013603bc26042ae2024e296d6a96ff3a647927d46c279",
         "byteCount": 42183
       },
-      "updatedAt": "2026-10-30T18:02:10+08:00"
+      "updatedAt": "2026-10-30T18:33:40+08:00"
     },
     {
       "manifest": {
@@ -433,7 +433,7 @@
         "sha256": "bf91361776c29111e2e23b00cfe85222e0b415147d78852547acf40d737b7600",
         "byteCount": 64408
       },
-      "updatedAt": "2026-10-30T18:02:10+08:00"
+      "updatedAt": "2026-10-30T18:33:40+08:00"
     },
     {
       "manifest": {
@@ -514,7 +514,7 @@
         "sha256": "b415ce62bd92f14736b1523cbc95b830393e70406f1b8f0195e906d062299a50",
         "byteCount": 96327
       },
-      "updatedAt": "2026-10-30T18:02:10+08:00"
+      "updatedAt": "2026-10-30T18:33:40+08:00"
     },
     {
       "manifest": {
@@ -655,7 +655,7 @@
         "sha256": "70952417aece13ffd09b123f3b9fd2789021f1df2081a0ea417a099c08595f6e",
         "byteCount": 128209
       },
-      "updatedAt": "2026-10-30T18:02:10+08:00"
+      "updatedAt": "2026-10-30T18:33:40+08:00"
     },
     {
       "manifest": {
@@ -773,20 +773,24 @@
                 "key": "hudAnchor",
                 "type": "select",
                 "title": "提示的位置",
-                "description": "读不到文字光标的应用（终端、部分网页）一律在指针旁边",
+                "description": "「输入框旁」读不到输入框的应用（企业微信这类）放在窗口正中，不跟着指针跑；要每次都在同一处就选「屏幕下方正中」",
                 "default": "caret",
                 "options": [
                   {
                     "value": "caret",
-                    "title": "文字光标下方"
+                    "title": "输入框旁"
+                  },
+                  {
+                    "value": "window",
+                    "title": "当前窗口正中"
+                  },
+                  {
+                    "value": "screen",
+                    "title": "屏幕下方正中（固定）"
                   },
                   {
                     "value": "pointer",
                     "title": "指针旁边"
-                  },
-                  {
-                    "value": "screen",
-                    "title": "屏幕下方"
                   }
                 ]
               },
@@ -819,10 +823,10 @@
       "path": "extensions/input-source",
       "bundle": {
         "path": "extensions/input-source/dist/extension.js",
-        "sha256": "ae02a8a13b86e9c11a9ef6eeb590c4418d2c8ae54430bd35d6175ed9cb638c02",
-        "byteCount": 73537
+        "sha256": "697b4d5c343b212ec24ba1ff5de1119c6e87fa9de8c0cfb519fcf3614708ce68",
+        "byteCount": 75587
       },
-      "updatedAt": "2026-10-30T18:02:10+08:00"
+      "updatedAt": "2026-10-30T18:33:40+08:00"
     },
     {
       "manifest": {
@@ -876,7 +880,7 @@
         "sha256": "5c5e6f4d6ce4f73d59795b30d4976defa22bc7bd931e75eaa43b2a8a9f5b5db2",
         "byteCount": 45439
       },
-      "updatedAt": "2026-10-30T18:02:10+08:00"
+      "updatedAt": "2026-10-30T18:33:40+08:00"
     },
     {
       "manifest": {
@@ -1055,7 +1059,7 @@
         "sha256": "5a5d485cccbd50e60e15559a499148f166f1189529875d600726e17fa9397368",
         "byteCount": 65848
       },
-      "updatedAt": "2026-10-30T18:02:10+08:00"
+      "updatedAt": "2026-10-30T18:33:40+08:00"
     },
     {
       "manifest": {
@@ -1179,7 +1183,7 @@
         "sha256": "5c83f6f0eae9e04bd5f955c184f47f2f15ddbb169703fcef478e0fca9eb9e0ab",
         "byteCount": 62258
       },
-      "updatedAt": "2026-10-30T18:02:10+08:00"
+      "updatedAt": "2026-10-30T18:33:40+08:00"
     },
     {
       "manifest": {
@@ -1539,7 +1543,7 @@
         "sha256": "1c878576df2270d20fdff105b2db2a76d20e9a2ca77af1d3153c6b4509ac7ebc",
         "byteCount": 346781
       },
-      "updatedAt": "2026-10-30T18:02:10+08:00"
+      "updatedAt": "2026-10-30T18:33:40+08:00"
     },
     {
       "manifest": {
@@ -1631,7 +1635,7 @@
         "sha256": "e8aa99ce6bc606a801e7b39bdc67bf481c77babecf164915a038ffe8b7ebcb7f",
         "byteCount": 47246
       },
-      "updatedAt": "2026-10-30T18:02:10+08:00"
+      "updatedAt": "2026-10-30T18:33:40+08:00"
     },
     {
       "manifest": {
@@ -1870,7 +1874,7 @@
         "sha256": "5a13ce207c062030e0bdb3f891bb00a259b2dcd37a2af637a0c6c6613f419044",
         "byteCount": 92475
       },
-      "updatedAt": "2026-10-30T18:02:10+08:00"
+      "updatedAt": "2026-10-30T18:33:40+08:00"
     }
   ]
 }

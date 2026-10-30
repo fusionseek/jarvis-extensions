@@ -214,8 +214,9 @@ N-2。`current()` → `{ bundleId, name, pid, icon? } | null`；`observe(listene
 N-3。`show({ text, symbol?, image?, anchor, duration? })`：宿主画一枚胶囊小牌子，不抢焦点、鼠标穿透，`duration`（400–3000 ms，默认 1200）后淡出。
 
 - `text` 1–24 字；`symbol`（SF Symbol）与 `image`（**这个会话**拿到的句柄，例 `InputSource.icon`）至多给一个。
-- `anchor`：`caret` 前台应用的文字插入点下方（Jarvis 没有辅助功能权限、那个应用不报插入点、是密码框、或 150 ms 内没读出来时退回 `pointer`）；
-  `pointer` 指针右下；`screen` 指针所在那块屏的下方居中。**坐标由宿主读，扩展拿不到**。
+- `anchor`：`caret` 前台应用的文字插入点下方；读不到插入点时贴着输入框（下方左对齐、放不下翻上面）；输入框也读不到（没有辅助功能权限、企业微信这类不报的应用、密码框）时放在前台窗口正中——
+  **不退回指针**（指针可能在屏幕任何地方，牌子就飘，jarvis-mac `specs/20261030-190534-input-source-walkthrough-fixes` F-2）。刚切过去时焦点常常还没落定，宿主隔 60 ms 再读一次。
+  `window` 前台应用最前面那扇窗的正中（窗口列表读位置，不要权限；读不到退回 `screen`）；`pointer` 指针右下；`screen` 指针所在那块屏的下方正中。**坐标由宿主读，扩展拿不到**。
 - 同一个扩展同一时刻只有一枚，新的顶掉旧的并重新计时。VoiceOver 低优先级读出 `text`。后台会话可以调：静默命令的执行反馈用它，比系统横幅轻。每分钟 ≤ 60 次。
 
 #### `jarvis.screens` — 屏幕几何（隐式，SDK 2.11）

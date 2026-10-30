@@ -386,10 +386,10 @@ export interface HUDOptions {
   /** 这个会话拿到的图片句柄（例：`InputSource.icon`）；与 `symbol` 至多给一个。 */
   image?: FileHandle;
   /**
-   * 贴在哪：`caret` 前台应用的文字插入点下方（Jarvis 没有辅助功能权限、那个应用不报插入点、或是密码框时退回 `pointer`）；
-   * `pointer` 指针右下；`screen` 指针所在那块屏的下方居中。位置由宿主读，不交给扩展。
+   * 贴在哪：`caret` 前台应用的文字插入点下方，读不到插入点时贴着输入框，输入框也读不到（没有辅助功能权限、企业微信这类不报的应用）时放在前台窗口正中——
+   * 不退回指针；`window`（宿主 ≥ 3.3.2）前台应用最前面那扇窗的正中；`pointer` 指针右下；`screen` 指针所在那块屏的下方正中。位置由宿主读，不交给扩展。
    */
-  anchor: "caret" | "pointer" | "screen";
+  anchor: "caret" | "window" | "pointer" | "screen";
   /** 400–3000 ms，默认 1200。 */
   duration?: number;
 }

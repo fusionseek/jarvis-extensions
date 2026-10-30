@@ -113,20 +113,24 @@
           "key": "hudAnchor",
           "type": "select",
           "title": "提示的位置",
-          "description": "读不到文字光标的应用（终端、部分网页）一律在指针旁边",
+          "description": "「输入框旁」读不到输入框的应用（企业微信这类）放在窗口正中，不跟着指针跑；要每次都在同一处就选「屏幕下方正中」",
           "default": "caret",
           "options": [
             {
               "value": "caret",
-              "title": "文字光标下方"
+              "title": "输入框旁"
+            },
+            {
+              "value": "window",
+              "title": "当前窗口正中"
+            },
+            {
+              "value": "screen",
+              "title": "屏幕下方正中（固定）"
             },
             {
               "value": "pointer",
               "title": "指针旁边"
-            },
-            {
-              "value": "screen",
-              "title": "屏幕下方"
             }
           ]
         },

@@ -845,7 +845,7 @@
     return {
       others: pick(preferences.others, ["keep", "remember", "default"], defaultSettings.others),
       hud: flag(preferences.hud, defaultSettings.hud),
-      hudAnchor: pick(preferences.hudAnchor, ["caret", "pointer", "screen"], defaultSettings.hudAnchor),
+      hudAnchor: pick(preferences.hudAnchor, ["caret", "window", "screen", "pointer"], defaultSettings.hudAnchor),
       hudOnManual: flag(preferences.hudOnManual, defaultSettings.hudOnManual),
       menuBarLabel: flag(preferences.menuBarLabel, defaultSettings.menuBarLabel),
       paused: flag(preferences.paused, defaultSettings.paused)
@@ -1095,6 +1095,7 @@
 
   // extensions/input-source/src/controller.ts
   var HUD_LIMIT = 24;
+  var VERIFY_DELAY_MS = 300;
   var Controller = class {
     constructor() {
       this.settings = defaultSettings;
@@ -1106,6 +1107,10 @@
       this.started = false;
       /** 订阅之后宿主先补发一条此刻的前台：那一条只记下来，不切——启动、点了「允许」不该替你换掉正在用的输入法。 */
       this.primed = false;
+      /** 前台事件一条一条处理（F-1）：并发处理时，切到上一个应用的那一次可能晚落地，把这一次覆盖掉。 */
+      this.queue = Promise.resolve();
+      /** 第几次换前台：处理到一条时后面已经又换了，这一条作废（只认最新一次）。 */
+      this.activation = 0;
     }
     /** 此刻在前台的应用（测试读）。 */
     get frontmost() {
@@ -1216,19 +1221,47 @@
      * 前台换了。
      * @param app 换到的应用。
      */
-    async onFrontmost(app) {
+    onFrontmost(app) {
       const switched = this.app?.bundleId !== app.bundleId;
       this.app = app;
-      if (!this.primed) {
-        this.primed = true;
-        return this.render();
-      }
-      if (!switched || this.settings.paused || !this.granted.includes("inputSources.select")) return this.render();
-      await this.loadRules();
-      if (this.sources.length === 0) await this.reloadSources();
-      const target = resolveTarget(app.bundleId, this.memory, this.settings, this.sources.map((source) => source.id));
-      if (target !== void 0 && target !== this.currentId) await this.switchTo(target);
-      await this.render();
+      const token = ++this.activation;
+      const primed = this.primed;
+      this.primed = true;
+      return this.enqueue(async () => {
+        if (!primed) return this.render();
+        if (token !== this.activation) return;
+        if (!switched || this.settings.paused || !this.granted.includes("inputSources.select")) return this.render();
+        await this.loadRules();
+        if (this.sources.length === 0) await this.reloadSources();
+        const target = resolveTarget(app.bundleId, this.memory, this.settings, this.sources.map((source) => source.id));
+        if (target !== void 0 && token === this.activation) {
+          const actual = (await jarvis.inputSources.current().catch(() => void 0))?.id;
+          if (token !== this.activation) return;
+          if (actual !== target) await this.switchTo(target, token);
+        }
+        await this.render();
+      });
+    }
+    /** 排进前台事件的队列；出错只记日志，队列不断。 */
+    enqueue(task) {
+      const run = this.queue.then(task).catch((error) => {
+        jarvis.log.warn("\u6309\u89C4\u5219\u6362\u8F93\u5165\u6CD5\u65F6\u51FA\u9519", error instanceof Error ? error.message : String(error));
+      });
+      this.queue = run;
+      return run;
+    }
+    /**
+     * 切完 300 ms 核对一次：前台还是它、输入源却不是目标，就再切一次，只补一次（F-1）。不循环：真有别的工具在抢，循环只会和它打架。
+     * @param target 目标。
+     * @param token 切的那一次是第几次换前台。
+     */
+    async verify(target, token) {
+      if (token !== this.activation || this.settings.paused) return;
+      const actual = (await jarvis.inputSources.current().catch(() => void 0))?.id;
+      if (actual === void 0 || actual === target || token !== this.activation) return;
+      jarvis.log.warn("\u5207\u8FC7\u53BB\u4E4B\u540E\u53C8\u88AB\u6539\u56DE\u53BB\u4E86\uFF0C\u518D\u5207\u4E00\u6B21", { target, actual });
+      const result = await jarvis.inputSources.select(target).catch(() => void 0);
+      if (result?.effective) this.note(target);
     }
     /**
      * 输入法换了（谁换的都推）。
@@ -1251,9 +1284,10 @@
       await this.render();
     }
     // MARK: - 动作
-    async switchTo(target) {
+    async switchTo(target, token) {
       try {
         const result = await jarvis.inputSources.select(target);
+        if (token !== void 0) setTimeout(() => void this.enqueue(() => this.verify(target, token)), VERIFY_DELAY_MS);
         if (!result.effective) {
           jarvis.log.warn("\u7CFB\u7EDF\u63A5\u4E86\u5374\u6CA1\u6362\u8FC7\u53BB", target);
           return;

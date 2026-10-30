@@ -18,8 +18,8 @@ export type Rules = Record<string, Rule>;
 /** 没写规则的应用怎么办。 */
 export type Others = "keep" | "remember" | "default";
 
-/** 提示贴在哪。 */
-export type HUDAnchor = "caret" | "pointer" | "screen";
+/** 提示贴在哪：输入框旁（读不到时窗口正中）/ 窗口正中 / 屏幕下方正中（固定）/ 指针旁。 */
+export type HUDAnchor = "caret" | "window" | "screen" | "pointer";
 
 /** 偏好（manifest `contributes.settings`）。 */
 export interface Settings {
@@ -52,7 +52,7 @@ export function readSettings(preferences: Record<string, unknown>): Settings {
   return {
     others: pick(preferences.others, ["keep", "remember", "default"] as const, defaultSettings.others),
     hud: flag(preferences.hud, defaultSettings.hud),
-    hudAnchor: pick(preferences.hudAnchor, ["caret", "pointer", "screen"] as const, defaultSettings.hudAnchor),
+    hudAnchor: pick(preferences.hudAnchor, ["caret", "window", "screen", "pointer"] as const, defaultSettings.hudAnchor),
     hudOnManual: flag(preferences.hudOnManual, defaultSettings.hudOnManual),
     menuBarLabel: flag(preferences.menuBarLabel, defaultSettings.menuBarLabel),
     paused: flag(preferences.paused, defaultSettings.paused),

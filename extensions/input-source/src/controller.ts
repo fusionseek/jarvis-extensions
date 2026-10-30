@@ -24,6 +24,11 @@ import { readFallback, readLastUsed, readRules, storageKeys } from "./storage.js
 
 /** 提示一行至多几个字（宿主 `hud.show` 的上限）。 */
 const HUD_LIMIT = 24;
+/**
+ * 切完多久再核对一次（jarvis-mac `specs/20261030-190534-input-source-walkthrough-fixes` F-1）。
+ * 300 ms 盖得住应用刚激活时自己（或输入法自己）把输入源改回去的那一下，又短到用户还没开始打字。
+ */
+const VERIFY_DELAY_MS = 300;
 
 export class Controller {
   private settings: Settings = defaultSettings;
@@ -43,6 +48,10 @@ export class Controller {
   private stopSources: Unsubscribe | undefined;
   private stopPreferences: Unsubscribe | undefined;
   private stopPermissions: Unsubscribe | undefined;
+  /** 前台事件一条一条处理（F-1）：并发处理时，切到上一个应用的那一次可能晚落地，把这一次覆盖掉。 */
+  private queue: Promise<void> = Promise.resolve();
+  /** 第几次换前台：处理到一条时后面已经又换了，这一条作废（只认最新一次）。 */
+  private activation = 0;
 
   /** 此刻在前台的应用（测试读）。 */
   get frontmost(): FrontmostApp | undefined {
@@ -166,20 +175,52 @@ export class Controller {
    * 前台换了。
    * @param app 换到的应用。
    */
-  async onFrontmost(app: FrontmostApp): Promise<void> {
+  onFrontmost(app: FrontmostApp): Promise<void> {
+    // 记前台是同步的：手动切换的事件随时会来，要记给此刻真正在前台的那个应用。
     const switched = this.app?.bundleId !== app.bundleId;
     this.app = app;
-    if (!this.primed) {
-      this.primed = true;
-      return this.render();
-    }
-    if (!switched || this.settings.paused || !this.granted.includes("inputSources.select")) return this.render();
-    // 页面可能刚改过规则：规则与默认输入法每次切应用读一次（两次本机库读，毫秒级）；「上次用的」只有这里写，内存里就是最新的。
-    await this.loadRules();
-    if (this.sources.length === 0) await this.reloadSources();
-    const target = resolveTarget(app.bundleId, this.memory, this.settings, this.sources.map((source) => source.id));
-    if (target !== undefined && target !== this.currentId) await this.switchTo(target);
-    await this.render();
+    const token = ++this.activation;
+    const primed = this.primed;
+    this.primed = true;
+    return this.enqueue(async () => {
+      if (!primed) return this.render();
+      if (token !== this.activation) return;
+      if (!switched || this.settings.paused || !this.granted.includes("inputSources.select")) return this.render();
+      // 页面可能刚改过规则：规则与默认输入法每次切应用读一次（两次本机库读，毫秒级）；「上次用的」只有这里写，内存里就是最新的。
+      await this.loadRules();
+      if (this.sources.length === 0) await this.reloadSources();
+      const target = resolveTarget(app.bundleId, this.memory, this.settings, this.sources.map((source) => source.id));
+      if (target !== undefined && token === this.activation) {
+        // 以系统此刻的为准，不用自己记的：自己记的那个可能还是被顶掉的那一次之前的。
+        const actual = (await jarvis.inputSources.current().catch(() => undefined))?.id;
+        if (token !== this.activation) return;
+        if (actual !== target) await this.switchTo(target, token);
+      }
+      await this.render();
+    });
+  }
+
+  /** 排进前台事件的队列；出错只记日志，队列不断。 */
+  private enqueue(task: () => Promise<void>): Promise<void> {
+    const run = this.queue.then(task).catch((error: unknown) => {
+      jarvis.log.warn("按规则换输入法时出错", error instanceof Error ? error.message : String(error));
+    });
+    this.queue = run;
+    return run;
+  }
+
+  /**
+   * 切完 300 ms 核对一次：前台还是它、输入源却不是目标，就再切一次，只补一次（F-1）。不循环：真有别的工具在抢，循环只会和它打架。
+   * @param target 目标。
+   * @param token 切的那一次是第几次换前台。
+   */
+  private async verify(target: string, token: number): Promise<void> {
+    if (token !== this.activation || this.settings.paused) return;
+    const actual = (await jarvis.inputSources.current().catch(() => undefined))?.id;
+    if (actual === undefined || actual === target || token !== this.activation) return;
+    jarvis.log.warn("切过去之后又被改回去了，再切一次", { target, actual });
+    const result = await jarvis.inputSources.select(target).catch(() => undefined);
+    if (result?.effective) this.note(target);
   }
 
   /**
@@ -206,9 +247,10 @@ export class Controller {
 
   // MARK: - 动作
 
-  private async switchTo(target: string): Promise<void> {
+  private async switchTo(target: string, token?: number): Promise<void> {
     try {
       const result = await jarvis.inputSources.select(target);
+      if (token !== undefined) setTimeout(() => void this.enqueue(() => this.verify(target, token)), VERIFY_DELAY_MS);
       if (!result.effective) {
         jarvis.log.warn("系统接了却没换过去", target);
         return;
