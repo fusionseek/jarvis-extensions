@@ -1,9 +1,9 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-30T01:03:41.132Z",
+  "generatedAt": "2026-10-30T06:11:44.897Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "c91a82778fd9de3df282bbb3238a55f13bbc1391"
+    "commit": "af8f5c1f55154a20c00c0254dbe7bd73835da9f2"
   },
   "extensions": [
     {
@@ -54,7 +54,7 @@
         "sha256": "8b0a453f125cd8c551d8630f784cbbb74d90ac6bfad229c2896e4b67d828ee28",
         "byteCount": 65600
       },
-      "updatedAt": "2026-10-30T00:30:35+08:00"
+      "updatedAt": "2026-10-30T09:48:38+08:00"
     },
     {
       "manifest": {
@@ -393,7 +393,7 @@
         "sha256": "d4d84482b4de4271373b97f9f5e2c5ca79f6bc87b8238e6da4a418e9191b00d0",
         "byteCount": 39916
       },
-      "updatedAt": "2026-10-30T00:30:35+08:00"
+      "updatedAt": "2026-10-30T09:48:38+08:00"
     },
     {
       "manifest": {
@@ -433,7 +433,7 @@
         "sha256": "1e396bf873bd1e4c03fe5cc72f726adae988912360b79243086698221a005ecb",
         "byteCount": 62141
       },
-      "updatedAt": "2026-10-30T00:30:35+08:00"
+      "updatedAt": "2026-10-30T09:48:38+08:00"
     },
     {
       "manifest": {
@@ -514,7 +514,7 @@
         "sha256": "cd9e3e5db41f0dfcee057f4ef9f52ffff2e9bc34a7e19d79ca19db3482615240",
         "byteCount": 94060
       },
-      "updatedAt": "2026-10-30T00:30:35+08:00"
+      "updatedAt": "2026-10-30T09:48:38+08:00"
     },
     {
       "manifest": {
@@ -655,7 +655,7 @@
         "sha256": "21b822b3197d636bd6186724496853358433e4057247c9bb1a4e889577dea00f",
         "byteCount": 125942
       },
-      "updatedAt": "2026-10-30T00:30:35+08:00"
+      "updatedAt": "2026-10-30T09:48:38+08:00"
     },
     {
       "manifest": {
@@ -709,7 +709,7 @@
         "sha256": "beda7ae41279a166907e823164028deb9f353828d77a1ca605b9abad67b80e9d",
         "byteCount": 43172
       },
-      "updatedAt": "2026-10-30T00:30:35+08:00"
+      "updatedAt": "2026-10-30T09:48:38+08:00"
     },
     {
       "manifest": {
@@ -885,10 +885,10 @@
       "path": "extensions/menubar",
       "bundle": {
         "path": "extensions/menubar/dist/extension.js",
-        "sha256": "16e2922f29a6e854ff5ad75516fa160921fba6c2d379da99d8abb70528d028bf",
-        "byteCount": 63510
+        "sha256": "27793d0f36862b083dee502adae8ed2b8df226cf3320b772403183e88cafde4d",
+        "byteCount": 63581
       },
-      "updatedAt": "2026-10-30T00:30:35+08:00"
+      "updatedAt": "2026-10-30T09:48:38+08:00"
     },
     {
       "manifest": {
@@ -1012,7 +1012,7 @@
         "sha256": "17e1d9782b7f54f0a52df075d2c0a79b9ca2917421b18a27b4d42e0d8d1d3fa4",
         "byteCount": 59991
       },
-      "updatedAt": "2026-10-30T00:30:35+08:00"
+      "updatedAt": "2026-10-30T09:48:38+08:00"
     },
     {
       "manifest": {
@@ -1372,7 +1372,7 @@
         "sha256": "de9a78526ae6634b224d7195615372715e8b69b6fa0bde47bfb05c50674aec5f",
         "byteCount": 344514
       },
-      "updatedAt": "2026-10-30T00:30:35+08:00"
+      "updatedAt": "2026-10-30T09:48:38+08:00"
     },
     {
       "manifest": {
@@ -1464,7 +1464,7 @@
         "sha256": "5d8bd99b414d954ed41fe091a5f09a2b9766b1b656b3d9eaf6898cf4444c2b07",
         "byteCount": 44979
       },
-      "updatedAt": "2026-10-30T00:30:35+08:00"
+      "updatedAt": "2026-10-30T09:48:38+08:00"
     },
     {
       "manifest": {
@@ -1703,7 +1703,7 @@
         "sha256": "30a8842bc6770232a2c260d06c199de4198bab6b7e669fd5a310111c1b38cced",
         "byteCount": 90208
       },
-      "updatedAt": "2026-10-30T00:30:35+08:00"
+      "updatedAt": "2026-10-30T09:48:38+08:00"
     }
   ]
 }

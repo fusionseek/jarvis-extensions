@@ -1,7 +1,7 @@
 // jarvis-extension bundle · menubar@1.1.0 · sdk 2.12.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
-  // ../../sdk/src/capabilities.ts
+  // sdk/src/capabilities.ts
   var JarvisError = class extends Error {
     constructor(shape) {
       super(shape.message);
@@ -11,7 +11,7 @@
     }
   };
 
-  // ../../sdk/src/bridge.ts
+  // sdk/src/bridge.ts
   var bridgeProtocolVersion = 2;
   function eventName(propName) {
     return propName.length > 2 && propName.startsWith("on") ? propName[2].toLowerCase() + propName.slice(3) : propName;
@@ -67,7 +67,7 @@
     return count;
   }
 
-  // ../../sdk/src/ui.ts
+  // sdk/src/ui.ts
   var maximumNodesPerRender = 500;
   function make(kind) {
     return (props) => ({ kind, ...props });
@@ -107,7 +107,7 @@
     chart: make("chart")
   };
 
-  // ../../sdk/src/index.ts
+  // sdk/src/index.ts
   var sdkVersion = "2.12.0";
   var Cancellation = class {
     constructor() {
@@ -763,7 +763,7 @@
     }
   };
 
-  // src/model.ts
+  // extensions/menubar/src/model.ts
   var TOGGLE = "toggle";
   var HIDDEN = "hidden";
   var ALWAYS = "always";
@@ -900,7 +900,7 @@
     return item.ownerName || item.title || item.id;
   }
 
-  // src/bar.ts
+  // extensions/menubar/src/bar.ts
   var BarSession = class {
     constructor() {
       this.status = { kind: "loading" };
@@ -992,7 +992,7 @@
     }
   }
 
-  // src/controller.ts
+  // extensions/menubar/src/controller.ts
   var MAXIMUM_TIMER_MS = 3e4;
   function cancel(timer) {
     if (timer !== void 0) clearTimeout(timer);
@@ -1283,7 +1283,7 @@
     }
   };
 
-  // src/page.ts
+  // extensions/menubar/src/page.ts
   var PageSession = class {
     constructor() {
       this.status = { kind: "loading" };
@@ -1440,7 +1440,7 @@
     return ui.scroll({ key: "page", children: [ui.stack({ key: "content", children })] });
   }
 
-  // src/index.ts
+  // extensions/menubar/src/index.ts
   var controller = new Controller();
   var page = new PageSession();
   var bar = new BarSession();
