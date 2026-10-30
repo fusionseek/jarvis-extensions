@@ -20,7 +20,7 @@ v2 的目录**只列宿主真的做得到的**：声明得到、调不到的能�
 
 | 属性 | 值 |
 | --- | --- |
-| `sdk.version` | SDK 版本，`2.11.0` |
+| `sdk.version` | SDK 版本，`2.13.0` |
 | `host.version` / `host.channel` | 宿主版本（`CFBundleShortVersionString`）、`release` / `development` |
 | `environment` | `reduceMotion` / `reduceTransparency` / `increaseContrast` / `locale`。界面上的适配由宿主做；这里给出来是让扩展自己的逻辑也能让步 |
 
@@ -96,6 +96,7 @@ manifest `contributes.settings.preferences` 与各服务 `preferences` 里声明
 | `granted()` | 此刻拿到的能力 id 列表 |
 | `request(ids)` | 再问一次，只能问 manifest 声明过的；返回 `{ granted, denied }`。后台会话里不弹，直接答此刻的授权 |
 | `openSystemSettings("screenRecording" \| "accessibility")` | 打开系统设置对应隐私面板并上「把 Jarvis 拖进列表」浮窗 |
+| `onChange(listener)`（SDK 2.13） | 授权变了（用户在授权屏或设置里点了头 / 收回）时回调，带此刻的授权；返回退订。只在本地听宿主已有的事件，线缆不变。后台会话没有 `activate`，靠它在用户点了「允许」之后补上订阅 |
 
 #### `jarvis.system`
 
@@ -183,6 +184,39 @@ manifest `contributes.settings.preferences` 与各服务 `preferences` 里声明
 - `onMenu(state)`：这一次点开之后那个应用的菜单——`opened` 开了、`closed` 关了、`none` 1.5 s 内没开菜单（弹的是窗口、自绘面板，或什么都没弹）。
   `closed` / `none` 之后不再推；开着超过 10 分钟的不再观察。宿主只为带了 `onMenu` 的那一次装观察，不常驻。
 - 限频每分钟 ≤ 30 次。
+
+#### `jarvis.inputSources` — 键盘输入源（能力 `inputSources.read` / `inputSources.select`，中档，不借系统权限，SDK 2.13）
+
+jarvis-mac `specs/20261030-170731-input-source-switch-p1` N-1。
+
+| 方法 | 说明 |
+| --- | --- |
+| `list()` | 此刻启用、可选的输入源 `{ id, name, kind, languages, icon? }`，顺序同系统输入法菜单。表情与符号、按住重音这类调色板与不可选的父项（「微信输入法」那一枚只装着模式的）不在里面。`kind`：`keyboardLayout` / `inputMethod` / `inputMode`；`languages` 至多 8 个；`icon` 是 64 px 的图标句柄——单色暗图（不少输入法交的都是黑色单色图）宿主翻成白色，Jarvis 的界面锁定深色 |
+| `current()` | `{ id }` |
+| `select(id)` | `{ id, effective }`（要 `inputSources.select`）。不在 `list()` 里报 `target.unavailable`（`detail: "unknown"`）；已经是当前时宿主不调系统、`effective: true`。切完宿主读回一次，`effective` 为假说明系统没接——记日志，别重试打架。每分钟 ≤ 120 次 |
+| `observe(listener)` | `{ type: "selected", id, bySelf }` / `{ type: "listChanged" }`。`bySelf` 为真：这一次是**你自己** 1 s 内的 `select` 引起的；别的扩展收到同一条时为假——「记住用户手动用的」只认 `bySelf: false` 的。宿主有订阅者才注册那两条系统通知；后台会话持有它就常驻 |
+
+- 读（`list` / `current` / `observe`）每分钟 ≤ 600 次。
+- 中文输入法里按 ⇧ 切到的英文模式不是一个输入源：读不到也切不了。
+- 中日韩输入法「切了打字不生效」的老问题：本机 macOS 26 + 微信输入法实测读回均为目标；宿主不做抢焦点、合成快捷键这类修正（合成的系统快捷键异步落地，会和下一次切换打架）。
+
+#### `jarvis.frontmostApp` — 前台应用（能力 `system.activity`，中档，不借系统权限，SDK 2.13）
+
+N-2。`current()` → `{ bundleId, name, pid, icon? } | null`；`observe(listener)` **订阅时先补发一条此刻的**，之后每换一次前台推一条。
+
+- 没有 bundle id 的进程不报；Jarvis 自己成为前台也照报。
+- 不抢前台的浮层（Spotlight、Alfred、Jarvis 的全局搜索）不算换了前台——系统不发通知，宿主也不轮询。
+- `icon` 与 `menuBarExtras` 的应用图标同一份按 bundle 的句柄。`current` 每分钟 ≤ 120 次；订阅一次就够。
+- 后台会话持有这条订阅就常驻（不参与 60 秒空闲回收），关掉菜单栏图标也照样在。
+
+#### `jarvis.hud` — 一闪而过的提示（能力 `hud.show`，低档，不借系统权限，SDK 2.13）
+
+N-3。`show({ text, symbol?, image?, anchor, duration? })`：宿主画一枚胶囊小牌子，不抢焦点、鼠标穿透，`duration`（400–3000 ms，默认 1200）后淡出。
+
+- `text` 1–24 字；`symbol`（SF Symbol）与 `image`（**这个会话**拿到的句柄，例 `InputSource.icon`）至多给一个。
+- `anchor`：`caret` 前台应用的文字插入点下方（Jarvis 没有辅助功能权限、那个应用不报插入点、是密码框、或 150 ms 内没读出来时退回 `pointer`）；
+  `pointer` 指针右下；`screen` 指针所在那块屏的下方居中。**坐标由宿主读，扩展拿不到**。
+- 同一个扩展同一时刻只有一枚，新的顶掉旧的并重新计时。VoiceOver 低优先级读出 `text`。后台会话可以调：静默命令的执行反馈用它，比系统横幅轻。每分钟 ≤ 60 次。
 
 #### `jarvis.screens` — 屏幕几何（隐式，SDK 2.11）
 

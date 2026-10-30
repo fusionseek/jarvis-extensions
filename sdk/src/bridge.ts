@@ -328,6 +328,65 @@ export interface MenuBarExtra {
   icon?: FileHandle;
 }
 
+/**
+ * 一枚键盘输入源（`jarvis.inputSources.list()`，SDK 2.13，`$defs.inputSource`），顺序同系统输入法菜单。
+ * 只列启用、可选的键盘输入源：表情与符号、按住重音这类调色板与不可选的父项不在里面。
+ */
+export interface InputSource {
+  /** TIS 的输入源 id（`com.apple.keylayout.ABC`、`com.tencent.inputmethod.wetype.pinyin`）。自制布局的 id 可能带空格。 */
+  id: string;
+  /** 系统给的名字（「ABC」「微信输入法」）。 */
+  name: string;
+  /** 键盘布局 / 不分模式的输入法 / 输入法里的一个模式（拼音、平假名）。 */
+  kind: "keyboardLayout" | "inputMethod" | "inputMode";
+  /** TIS 给的语言码，至多 8 个（ABC 自报 97 个）。 */
+  languages: string[];
+  /** 输入源图标的句柄（交给 `image` / `row.image` / `hud.show`）；读不到时省略。 */
+  icon?: FileHandle;
+}
+
+/** `jarvis.inputSources.select` 的结果（SDK 2.13）。 */
+export interface InputSourceSelection {
+  id: string;
+  /** 切完读回的当前输入源就是它；本来就是当前时宿主不调系统，同样为 `true`。 */
+  effective: boolean;
+}
+
+/**
+ * `jarvis.inputSources.observe` 推来的一条（SDK 2.13，`$defs.inputSourcesEvent`）。
+ *
+ * - `selected`：当前输入源变了（每一次真正的切换一条）。`bySelf` 为 `true`：这一次是**你自己** 1 s 内的 `select` 引起的——
+ *   拿它分清「用户手动切的」与「我刚切的」；别的扩展收到同一条时为 `false`。
+ * - `listChanged`：用户在系统设置里增删了输入源，重新 `list()`。
+ */
+export type InputSourcesEvent = { type: "selected"; id: string; bySelf: boolean } | { type: "listChanged" };
+
+/** 此刻在前台的应用（`jarvis.frontmostApp`，SDK 2.13，`$defs.frontmostApp`）。 */
+export interface FrontmostApp {
+  bundleId: string;
+  name: string;
+  pid: number;
+  /** 应用图标的句柄（同一会话同一 bundle 只颁一次）。 */
+  icon?: FileHandle;
+}
+
+/** `jarvis.hud.show` 的入参（SDK 2.13，`$defs.hudShowRequest`）。 */
+export interface HUDOptions {
+  /** 1–24 字。 */
+  text: string;
+  /** SF Symbol；与 `image` 至多给一个。 */
+  symbol?: string;
+  /** 这个会话拿到的图片句柄（例：`InputSource.icon`）；与 `symbol` 至多给一个。 */
+  image?: FileHandle;
+  /**
+   * 贴在哪：`caret` 前台应用的文字插入点下方（Jarvis 没有辅助功能权限、那个应用不报插入点、或是密码框时退回 `pointer`）；
+   * `pointer` 指针右下；`screen` 指针所在那块屏的下方居中。位置由宿主读，不交给扩展。
+   */
+  anchor: "caret" | "pointer" | "screen";
+  /** 400–3000 ms，默认 1200。 */
+  duration?: number;
+}
+
 /** `jarvis.menuBarExtras.observe` 推来的一次变化：只报有哪些项来了、走了；位置随时在变，要位置就 `list()`。 */
 export interface MenuBarExtrasChange {
   added: MenuBarExtra[];

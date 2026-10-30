@@ -1,9 +1,9 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-30T06:11:44.897Z",
+  "generatedAt": "2026-10-30T09:43:04.581Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "af8f5c1f55154a20c00c0254dbe7bd73835da9f2"
+    "commit": "d686b0f514d9165f229accc1f2cfa5559e02ddb1"
   },
   "extensions": [
     {
@@ -51,8 +51,8 @@
       "path": "extensions/android-apps",
       "bundle": {
         "path": "extensions/android-apps/dist/extension.js",
-        "sha256": "8b0a453f125cd8c551d8630f784cbbb74d90ac6bfad229c2896e4b67d828ee28",
-        "byteCount": 65600
+        "sha256": "299f9646765c2fc703b60f41ae4323fd2588370acffeac7957e78ad6b600b2c3",
+        "byteCount": 67695
       },
       "updatedAt": "2026-10-30T09:48:38+08:00"
     },
@@ -390,8 +390,8 @@
       "path": "extensions/code-format",
       "bundle": {
         "path": "extensions/code-format/dist/extension.js",
-        "sha256": "d4d84482b4de4271373b97f9f5e2c5ca79f6bc87b8238e6da4a418e9191b00d0",
-        "byteCount": 39916
+        "sha256": "4787f8aec8fa817014626a00066574cf13abe3438572d88b7892b710dfd2fcd8",
+        "byteCount": 42011
       },
       "updatedAt": "2026-10-30T09:48:38+08:00"
     },
@@ -430,8 +430,8 @@
       "path": "extensions/code-highlight",
       "bundle": {
         "path": "extensions/code-highlight/dist/extension.js",
-        "sha256": "1e396bf873bd1e4c03fe5cc72f726adae988912360b79243086698221a005ecb",
-        "byteCount": 62141
+        "sha256": "f49e9ceb24a804a75ca79b56b2c81fe4e5c79b9ebf6bb06957ec99336d0c29cf",
+        "byteCount": 64236
       },
       "updatedAt": "2026-10-30T09:48:38+08:00"
     },
@@ -511,8 +511,8 @@
       "path": "extensions/github-project",
       "bundle": {
         "path": "extensions/github-project/dist/extension.js",
-        "sha256": "cd9e3e5db41f0dfcee057f4ef9f52ffff2e9bc34a7e19d79ca19db3482615240",
-        "byteCount": 94060
+        "sha256": "a8525b76000294a1b17f0e36e3daf7646f87421179d4f5b2ed0fa84a300cdca8",
+        "byteCount": 96155
       },
       "updatedAt": "2026-10-30T09:48:38+08:00"
     },
@@ -652,10 +652,173 @@
       "path": "extensions/http-status",
       "bundle": {
         "path": "extensions/http-status/dist/extension.js",
-        "sha256": "21b822b3197d636bd6186724496853358433e4057247c9bb1a4e889577dea00f",
-        "byteCount": 125942
+        "sha256": "900d1fc908a9f6443bb01b43b6d975095308f5799d49b4bfee1de42381ba20b6",
+        "byteCount": 128037
       },
       "updatedAt": "2026-10-30T09:48:38+08:00"
+    },
+    {
+      "manifest": {
+        "manifestVersion": 2,
+        "id": "input-source",
+        "version": "1.0.0",
+        "name": "输入法切换",
+        "symbol": "keyboard",
+        "description": "切到哪个应用，就自动换成你给它定的输入法：写代码的地方用 ABC，聊天的地方用拼音。没写规则的应用可以不动、记住上次用的，或者换成默认输入法。规则在菜单栏图标里给此刻的应用选一下就定了；换过去的那一下，在文字光标旁闪一枚小牌子告诉你换成了什么。只在切换应用的那一刻做事，空闲不占 CPU。",
+        "author": {
+          "name": "fusionseek",
+          "github": "fusionseek"
+        },
+        "main": "dist/extension.js",
+        "sdk": "^2.13.0",
+        "minimumJarvisVersion": "3.3.2",
+        "capabilities": [
+          {
+            "id": "system.activity",
+            "reason": "切到另一个应用的那一刻，按它的规则换输入法；只知道是哪个应用，不知道你在里面做什么"
+          },
+          {
+            "id": "inputSources.read",
+            "reason": "列出你启用的输入法，知道此刻用的是哪一个，记住你在每个应用里手动换过的那一个"
+          },
+          {
+            "id": "inputSources.select",
+            "reason": "按规则换到那个输入法"
+          },
+          {
+            "id": "hud.show",
+            "reason": "换过去的那一下，在文字光标旁闪一枚小牌子告诉你换成了什么"
+          }
+        ],
+        "contributes": {
+          "toolbox": {
+            "subtitle": "按应用自动切换输入法",
+            "keywords": [
+              "input source",
+              "input method",
+              "keyboard",
+              "ime",
+              "输入源",
+              "中英文"
+            ]
+          },
+          "menuBar": {
+            "title": "输入法切换",
+            "symbol": "keyboard",
+            "preferences": [
+              "menuBarLabel"
+            ]
+          },
+          "commands": [
+            {
+              "id": "previous",
+              "title": "切回上一个输入法",
+              "description": "在此刻与上一个输入法之间来回切",
+              "presentation": "silent"
+            },
+            {
+              "id": "remember-here",
+              "title": "把此刻输入法定给当前应用",
+              "description": "以后切到这个应用就换成它",
+              "slash": {
+                "keyword": "input-source",
+                "aliases": [
+                  "输入法"
+                ]
+              },
+              "presentation": "silent"
+            },
+            {
+              "id": "pause",
+              "title": "暂停或恢复自动切换",
+              "description": "暂停期间只记下你在各个应用里用的输入法，不替你切",
+              "presentation": "silent"
+            }
+          ],
+          "settings": {
+            "preferences": [
+              {
+                "key": "others",
+                "type": "select",
+                "title": "没写规则的应用",
+                "description": "切到一个还没定规则的应用时怎么办",
+                "default": "keep",
+                "options": [
+                  {
+                    "value": "keep",
+                    "title": "不动"
+                  },
+                  {
+                    "value": "remember",
+                    "title": "记住上次用的"
+                  },
+                  {
+                    "value": "default",
+                    "title": "换成默认输入法"
+                  }
+                ]
+              },
+              {
+                "key": "hud",
+                "type": "toggle",
+                "title": "切换时提示",
+                "description": "替你换了输入法时，在文字光标旁闪一下换成了什么",
+                "default": true
+              },
+              {
+                "key": "hudAnchor",
+                "type": "select",
+                "title": "提示的位置",
+                "description": "读不到文字光标的应用（终端、部分网页）一律在指针旁边",
+                "default": "caret",
+                "options": [
+                  {
+                    "value": "caret",
+                    "title": "文字光标下方"
+                  },
+                  {
+                    "value": "pointer",
+                    "title": "指针旁边"
+                  },
+                  {
+                    "value": "screen",
+                    "title": "屏幕下方"
+                  }
+                ]
+              },
+              {
+                "key": "hudOnManual",
+                "type": "toggle",
+                "title": "手动切换时也提示",
+                "description": "你自己按快捷键换输入法时也闪一下",
+                "default": false
+              },
+              {
+                "key": "menuBarLabel",
+                "type": "toggle",
+                "title": "菜单栏图标旁显示当前输入法",
+                "description": "「中」「A」「あ」这样的一个字",
+                "default": true
+              },
+              {
+                "key": "paused",
+                "type": "toggle",
+                "title": "暂停自动切换",
+                "description": "暂停期间只记下你在各个应用里用的输入法，不替你切",
+                "default": false
+              }
+            ]
+          }
+        },
+        "inbox": false
+      },
+      "path": "extensions/input-source",
+      "bundle": {
+        "path": "extensions/input-source/dist/extension.js",
+        "sha256": "4f0d4875aced15be6aa68234276dd28c15a40334ad25441d171dbaf68d339b48",
+        "byteCount": 60153
+      },
+      "updatedAt": "2026-10-30T09:43:03.777Z"
     },
     {
       "manifest": {
@@ -706,8 +869,8 @@
       "path": "extensions/mac-apps",
       "bundle": {
         "path": "extensions/mac-apps/dist/extension.js",
-        "sha256": "beda7ae41279a166907e823164028deb9f353828d77a1ca605b9abad67b80e9d",
-        "byteCount": 43172
+        "sha256": "56e2b5fad7c51b5a1ad95e9e068cbc424935928218c43f7dbd81ef316e4c03f9",
+        "byteCount": 45267
       },
       "updatedAt": "2026-10-30T09:48:38+08:00"
     },
@@ -885,10 +1048,10 @@
       "path": "extensions/menubar",
       "bundle": {
         "path": "extensions/menubar/dist/extension.js",
-        "sha256": "27793d0f36862b083dee502adae8ed2b8df226cf3320b772403183e88cafde4d",
-        "byteCount": 63581
+        "sha256": "fa51c6510d089ac366ba95e9836f82d73f945bb9cde3bd5b87fdbfabd120d389",
+        "byteCount": 65676
       },
-      "updatedAt": "2026-10-30T09:48:38+08:00"
+      "updatedAt": "2026-10-30T14:12:28+08:00"
     },
     {
       "manifest": {
@@ -1009,8 +1172,8 @@
       "path": "extensions/mole-clean",
       "bundle": {
         "path": "extensions/mole-clean/dist/extension.js",
-        "sha256": "17e1d9782b7f54f0a52df075d2c0a79b9ca2917421b18a27b4d42e0d8d1d3fa4",
-        "byteCount": 59991
+        "sha256": "336529ec66385c9e37013f04498a5615e5b5028f0942555ceb070b5d15697bf7",
+        "byteCount": 62086
       },
       "updatedAt": "2026-10-30T09:48:38+08:00"
     },
@@ -1369,8 +1532,8 @@
       "path": "extensions/proxy",
       "bundle": {
         "path": "extensions/proxy/dist/extension.js",
-        "sha256": "de9a78526ae6634b224d7195615372715e8b69b6fa0bde47bfb05c50674aec5f",
-        "byteCount": 344514
+        "sha256": "a8bfc28c714794b426fe6e4d4c8ff27843dca57f3eef87f211ab74d2ab71bc94",
+        "byteCount": 346609
       },
       "updatedAt": "2026-10-30T09:48:38+08:00"
     },
@@ -1461,8 +1624,8 @@
       "path": "extensions/send-to-phone",
       "bundle": {
         "path": "extensions/send-to-phone/dist/extension.js",
-        "sha256": "5d8bd99b414d954ed41fe091a5f09a2b9766b1b656b3d9eaf6898cf4444c2b07",
-        "byteCount": 44979
+        "sha256": "8c3124ca958916980d79c851081e90ffad0efa22f368704de1cd6fa850fd1d40",
+        "byteCount": 47074
       },
       "updatedAt": "2026-10-30T09:48:38+08:00"
     },
@@ -1700,8 +1863,8 @@
       "path": "extensions/translation",
       "bundle": {
         "path": "extensions/translation/dist/extension.js",
-        "sha256": "30a8842bc6770232a2c260d06c199de4198bab6b7e669fd5a310111c1b38cced",
-        "byteCount": 90208
+        "sha256": "026a34a3434a7d7085fcd5a285b6bc93f79fc4dfc6aa57a068c5e06fb8733bd8",
+        "byteCount": 92303
       },
       "updatedAt": "2026-10-30T09:48:38+08:00"
     }

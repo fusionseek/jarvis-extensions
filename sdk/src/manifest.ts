@@ -84,7 +84,23 @@ export type CapabilityID =
    * 替用户点开菜单栏上的图标（SDK 2.12）：AXPress；那个应用不接时，在它中点合成一次点击再把指针放回原处。借 Jarvis 的辅助功能权限。
    * 在屏幕外的点不了（`target.unavailable`）——宿主不替你把它挪出来。
    */
-  | "menuBarExtras.control";
+  | "menuBarExtras.control"
+  /**
+   * 读此刻启用的键盘输入源与当前那一个、订阅它的变化（SDK 2.13）。不借系统权限。
+   * 只列可选的键盘输入源：表情与符号、按住重音这类调色板不在里面。
+   */
+  | "inputSources.read"
+  /** 切到一个启用着的输入源（SDK 2.13）：宿主调系统、读回是否生效。不借系统权限。 */
+  | "inputSources.select"
+  /**
+   * 知道此刻哪个应用在前台、订阅前台的变化（SDK 2.13）。不借系统权限。
+   * 不抢前台的浮层（Spotlight、Alfred）不算换了前台。
+   */
+  | "system.activity"
+  /**
+   * 在文字插入点或指针旁边弹一枚一闪而过的小牌子（SDK 2.13）：宿主画、不抢焦点、鼠标穿透；插入点的位置由宿主读，不交给扩展。
+   */
+  | "hud.show";
 
 /** 授权屏按风险分组；一档一个标签，颜色由宿主决定。 */
 export type CapabilityTier = "low" | "medium" | "high";
@@ -104,6 +120,9 @@ export type CapabilityTier = "low" | "medium" | "high";
  * SDK 2.11：菜单栏上的指针与读菜单栏上的项都是中——看的是用户在菜单栏上的动作与装了哪些菜单栏应用，不出本机、不改任何东西。
  *
  * SDK 2.12：截菜单栏图标与点开它都是高——前者截的是别的应用画在屏幕上的像素，后者替用户点了别的应用。
+ *
+ * SDK 2.13：读输入源、切输入源、知道前台应用都是中——会知道用户用哪几种语言、此刻在用哪个应用，切换改的是用户此刻的状态（完全可逆、一眼看得见）；
+ * 提示是低——只画一枚几秒就消失的小牌子，读不到任何东西。
  */
 export const capabilityTiers: Readonly<Record<CapabilityID, CapabilityTier>> = {
   "system.openURL": "low",
@@ -111,6 +130,7 @@ export const capabilityTiers: Readonly<Record<CapabilityID, CapabilityTier>> = {
   "ocr.recognize": "low",
   "speech.speak": "low",
   "android.tools.open": "low",
+  "hud.show": "low",
   "clipboard.read": "medium",
   "clipboard.write": "medium",
   "notifications.post": "medium",
@@ -124,6 +144,9 @@ export const capabilityTiers: Readonly<Record<CapabilityID, CapabilityTier>> = {
   "browser.activeTab": "medium",
   "menuBar.pointer": "medium",
   "menuBarExtras.read": "medium",
+  "inputSources.read": "medium",
+  "inputSources.select": "medium",
+  "system.activity": "medium",
   "menuBarExtras.capture": "high",
   "menuBarExtras.control": "high",
   "screenshot.capture": "high",

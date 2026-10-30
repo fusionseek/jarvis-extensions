@@ -17,7 +17,7 @@ const host = createTestHost({
 const { jarvis, capabilityTiers, sdkVersion, JarvisError } = await import("../dist/index.js");
 
 test("SDK 2.12：两项新能力都是高档", () => {
-  assert.equal(sdkVersion, "2.12.0");
+  assert.equal(sdkVersion, "2.13.0");
   assert.equal(capabilityTiers["menuBarExtras.capture"], "high");
   assert.equal(capabilityTiers["menuBarExtras.control"], "high");
 });

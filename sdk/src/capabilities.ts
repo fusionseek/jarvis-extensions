@@ -20,6 +20,11 @@ import type {
   DaemonStatus,
   FilesPickRequest,
   FilesPickResult,
+  FrontmostApp,
+  HUDOptions,
+  InputSource,
+  InputSourceSelection,
+  InputSourcesEvent,
   MenuBarExtra,
   MenuBarExtraCapture,
   MenuBarExtrasChange,
@@ -184,6 +189,11 @@ export interface GrantResult {
 export interface PermissionsAPI {
   granted(): Promise<CapabilityID[]>;
   /**
+   * 授权变了（用户在授权屏或设置里点了头 / 收回）时回调，带此刻的授权（SDK 2.13）。只在本地监听宿主已有的事件，线缆不变。
+   * 后台会话靠它在用户点了「允许」之后补上订阅——那里没有 `activate`。
+   */
+  onChange(listener: (granted: CapabilityID[]) => void): Unsubscribe;
+  /**
    * 再问一次。只允许在用户动作的回调里调用（1 秒内），且只能问 manifest 里声明过的能力；
    * 后台会话里没有授权屏，返回此刻的授权、不弹窗。
    */
@@ -242,6 +252,47 @@ export interface MenuBarExtrasAPI {
    * `onMenu`：这一次点开之后那个应用的菜单开了、关了，或者根本没开菜单（`none`）；`closed` / `none` 之后不再推。
    */
   press(id: string, options?: { button?: "left" | "right"; onMenu?: (state: MenuBarMenuState) => void }): Promise<MenuBarExtrasPressResult>;
+}
+
+/**
+ * 键盘输入源（SDK 2.13）。读与订阅要 `inputSources.read`，切要 `inputSources.select`；都不借系统权限。
+ *
+ * 系统只在真的切换时通知，宿主有订阅者才注册那两条通知：订阅着不花任何东西，直到用户或谁切了一次。
+ */
+export interface InputSourcesAPI {
+  /** 此刻启用、可选的输入源，顺序同系统输入法菜单。 */
+  list(): Promise<InputSource[]>;
+  /** 此刻的输入源。 */
+  current(): Promise<{ id: string }>;
+  /**
+   * 切到一个启用着的输入源（`inputSources.select`）。不在 `list()` 里的以 `target.unavailable` 拒绝。每分钟 ≤ 120 次。
+   * 切完宿主读回一次：`effective` 为假说明系统没接（极少见，记一条日志就好，别重试打架）。
+   */
+  select(id: string): Promise<InputSourceSelection>;
+  /** 订阅变化。订阅跟着这个会话走；后台会话持有它就常驻（不参与 60 秒空闲回收）。 */
+  observe(listener: (event: InputSourcesEvent) => void): Unsubscribe;
+}
+
+/**
+ * 前台应用（SDK 2.13，能力 `system.activity`，不借系统权限）。不抢前台的浮层（Spotlight、Alfred、Jarvis 的全局搜索）不算换了前台。
+ */
+export interface FrontmostAppAPI {
+  /** 此刻在前台的应用；没有带 bundle id 的前台进程时为 `null`。每分钟 ≤ 60 次。 */
+  current(): Promise<FrontmostApp | null>;
+  /**
+   * 订阅前台的变化：**订阅时先补发一条此刻的**，之后每换一次推一条。Jarvis 自己成为前台也照报。
+   * 订阅跟着这个会话走；后台会话持有它就常驻。
+   */
+  observe(listener: (app: FrontmostApp) => void): Unsubscribe;
+}
+
+/** 一闪而过的提示（SDK 2.13，能力 `hud.show`，低档）。 */
+export interface HUDAPI {
+  /**
+   * 弹一枚小牌子：宿主画、不抢焦点、鼠标穿透，`duration` 之后自己消失。同一扩展同一时刻只有一枚，新的顶掉旧的。
+   * 后台会话可以调——静默命令的执行反馈就该用它，而不是系统横幅。每分钟 ≤ 60 次。
+   */
+  show(options: HUDOptions): Promise<void>;
 }
 
 /** 屏幕几何（SDK 2.11，隐式）：每块屏的位置、菜单栏高度、刘海两侧。 */
@@ -1035,6 +1086,12 @@ export interface Jarvis {
   readonly menuBarExtras: MenuBarExtrasAPI;
   /** SDK 2.11。 */
   readonly screens: ScreensAPI;
+  /** SDK 2.13。 */
+  readonly inputSources: InputSourcesAPI;
+  /** SDK 2.13。 */
+  readonly frontmostApp: FrontmostAppAPI;
+  /** SDK 2.13。 */
+  readonly hud: HUDAPI;
   readonly text: TextToolsAPI;
   readonly clipboard: ClipboardAPI;
   readonly quickTransfer: QuickTransferAPI;

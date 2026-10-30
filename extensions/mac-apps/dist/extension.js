@@ -1,4 +1,4 @@
-// jarvis-extension bundle · mac-apps@1.0.6 · sdk 2.12.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · mac-apps@1.0.6 · sdk 2.13.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -108,7 +108,7 @@
   };
 
   // sdk/src/index.ts
-  var sdkVersion = "2.12.0";
+  var sdkVersion = "2.13.0";
   var Cancellation = class {
     constructor() {
       this.listeners = [];
@@ -140,6 +140,8 @@
       this.pending = /* @__PURE__ */ new Map();
       this.handlers = /* @__PURE__ */ new Map();
       this.subscriptions = /* @__PURE__ */ new Map();
+      /** `jarvis.permissions.onChange` 的监听者（SDK 2.13）：只在本地听宿主已有的 `permissionsChanged`，不上线缆。 */
+      this.permissionListeners = /* @__PURE__ */ new Set();
       this.serviceSignals = /* @__PURE__ */ new Map();
       this.updateQueued = false;
       /** 此刻开着的那一面；`null` = 一面都没有，`render()` 不会被调。 */
@@ -201,6 +203,17 @@
     /** 收这个 token 上的订阅事件。 */
     listen(token, listener) {
       this.subscriptions.set(token, listener);
+    }
+    /**
+     * 听授权变化（SDK 2.13）。监听者抛错只记日志，不影响别的监听者与重画。
+     * @param listener 授权变了就调，带此刻的授权。
+     * @returns 退订。
+     */
+    onPermissions(listener) {
+      this.permissionListeners.add(listener);
+      return () => {
+        this.permissionListeners.delete(listener);
+      };
     }
     /** 不再收这个 token 上的事件。 */
     forget(token) {
@@ -476,8 +489,18 @@
           this.handleMenuBar(event.menuBar);
           return;
         }
-        case "preferencesChanged":
+        case "preferencesChanged": {
+          this.requestUpdate();
+          return;
+        }
         case "permissionsChanged": {
+          for (const listener of [...this.permissionListeners]) {
+            try {
+              listener(event.granted);
+            } catch (error) {
+              this.log("error", "permissions.onChange \u7684\u56DE\u8C03\u629B\u9519", error instanceof Error ? error.message : String(error));
+            }
+          }
           this.requestUpdate();
           return;
         }
@@ -522,7 +545,10 @@
     daemon: namespaced("daemon"),
     systemProxy: namespaced("systemProxy"),
     tunnel: namespaced("tunnel"),
-    browser: namespaced("browser")
+    browser: namespaced("browser"),
+    inputSources: namespaced("inputSources"),
+    frontmostApp: namespaced("frontmostApp"),
+    hud: namespaced("hud")
   };
   var sync = {
     text: syncNamespaced("text"),
@@ -609,7 +635,8 @@
     permissions: {
       granted: () => call.permissions("granted"),
       request: (ids) => call.permissions("request", { ids }),
-      openSystemSettings: (kind) => call.permissions("openSystemSettings", { kind })
+      openSystemSettings: (kind) => call.permissions("openSystemSettings", { kind }),
+      onChange: (listener) => runtime.onPermissions(listener)
     },
     log: {
       debug: (message, data) => runtime.log("debug", message, data),
@@ -648,6 +675,28 @@
     screens: {
       list: () => call.screens("list"),
       observe: (listener) => runtime.subscribe("screens", "observe", (payload) => listener(payload.screens))
+    },
+    // SDK 2.13：输入源、前台应用、提示（jarvis-mac `specs/20261030-170731-input-source-switch-p1` N-1…N-3）。
+    inputSources: {
+      list: () => call.inputSources("list"),
+      current: () => call.inputSources("current"),
+      select: (id) => call.inputSources("select", { id }),
+      observe: (listener) => runtime.subscribe("inputSources", "observe", listener)
+    },
+    frontmostApp: {
+      current: () => call.frontmostApp("current"),
+      observe: (listener) => runtime.subscribe("frontmostApp", "observe", listener)
+    },
+    hud: {
+      show: async (options) => {
+        await call.hud("show", {
+          text: options.text,
+          anchor: options.anchor,
+          ...options.symbol === void 0 ? {} : { symbol: options.symbol },
+          ...options.image === void 0 ? {} : { image: options.image },
+          ...options.duration === void 0 ? {} : { duration: options.duration }
+        });
+      }
     },
     text: {
       base64: {

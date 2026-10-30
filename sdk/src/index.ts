@@ -54,7 +54,12 @@ export type {
   DaemonStatus,
   FilesPickRequest,
   FilesPickResult,
+  FrontmostApp,
   HostEvent,
+  HUDOptions,
+  InputSource,
+  InputSourceSelection,
+  InputSourcesEvent,
   MenuBarActionItem,
   MenuBarChart,
   MenuBarChartSeries,
@@ -91,7 +96,7 @@ export type {
 export { bridgeProtocolVersion } from "./bridge.js";
 
 /** SDK 版本。主版本必须与宿主运行时一致。 */
-export const sdkVersion = "2.12.0";
+export const sdkVersion = "2.13.0";
 
 /** 一面的实现：工具箱页面、原地弹窗或窗口标签。 */
 export interface PageDefinition {
@@ -201,6 +206,8 @@ class Runtime {
   private pending = new Map<number, Pending>();
   private handlers = new Map<string, (payload: unknown) => void>();
   private subscriptions = new Map<string, (payload: unknown) => void>();
+  /** `jarvis.permissions.onChange` 的监听者（SDK 2.13）：只在本地听宿主已有的 `permissionsChanged`，不上线缆。 */
+  private permissionListeners = new Set<(granted: string[]) => void>();
   private serviceSignals = new Map<number, Cancellation>();
   private updateQueued = false;
   /** 此刻开着的那一面；`null` = 一面都没有，`render()` 不会被调。 */
@@ -269,6 +276,18 @@ class Runtime {
   /** 收这个 token 上的订阅事件。 */
   listen(token: string, listener: (payload: unknown) => void): void {
     this.subscriptions.set(token, listener);
+  }
+
+  /**
+   * 听授权变化（SDK 2.13）。监听者抛错只记日志，不影响别的监听者与重画。
+   * @param listener 授权变了就调，带此刻的授权。
+   * @returns 退订。
+   */
+  onPermissions(listener: (granted: string[]) => void): Unsubscribe {
+    this.permissionListeners.add(listener);
+    return () => {
+      this.permissionListeners.delete(listener);
+    };
   }
 
   /** 不再收这个 token 上的事件。 */
@@ -570,8 +589,18 @@ class Runtime {
         this.handleMenuBar(event.menuBar);
         return;
       }
-      case "preferencesChanged":
+      case "preferencesChanged": {
+        this.requestUpdate();
+        return;
+      }
       case "permissionsChanged": {
+        for (const listener of [...this.permissionListeners]) {
+          try {
+            listener(event.granted);
+          } catch (error) {
+            this.log("error", "permissions.onChange 的回调抛错", error instanceof Error ? error.message : String(error));
+          }
+        }
         this.requestUpdate();
         return;
       }
@@ -632,6 +661,9 @@ const call = {
   systemProxy: namespaced("systemProxy"),
   tunnel: namespaced("tunnel"),
   browser: namespaced("browser"),
+  inputSources: namespaced("inputSources"),
+  frontmostApp: namespaced("frontmostApp"),
+  hud: namespaced("hud"),
 };
 
 const sync = {
@@ -731,6 +763,7 @@ export const jarvis: Jarvis = {
     granted: () => call.permissions("granted"),
     request: (ids) => call.permissions("request", { ids }),
     openSystemSettings: (kind) => call.permissions("openSystemSettings", { kind }),
+    onChange: (listener) => runtime.onPermissions(listener as (granted: string[]) => void),
   },
   log: {
     debug: (message, data) => runtime.log("debug", message, data),
@@ -772,6 +805,28 @@ export const jarvis: Jarvis = {
     list: () => call.screens("list"),
     observe: (listener) =>
       runtime.subscribe("screens", "observe", (payload) => (listener as (screens: ScreenInfo[]) => void)((payload as { screens: ScreenInfo[] }).screens)),
+  },
+  // SDK 2.13：输入源、前台应用、提示（jarvis-mac `specs/20261030-170731-input-source-switch-p1` N-1…N-3）。
+  inputSources: {
+    list: () => call.inputSources("list"),
+    current: () => call.inputSources("current"),
+    select: (id) => call.inputSources("select", { id }),
+    observe: (listener) => runtime.subscribe("inputSources", "observe", listener as (payload: unknown) => void),
+  },
+  frontmostApp: {
+    current: () => call.frontmostApp("current"),
+    observe: (listener) => runtime.subscribe("frontmostApp", "observe", listener as (payload: unknown) => void),
+  },
+  hud: {
+    show: async (options) => {
+      await call.hud("show", {
+        text: options.text,
+        anchor: options.anchor,
+        ...(options.symbol === undefined ? {} : { symbol: options.symbol }),
+        ...(options.image === undefined ? {} : { image: options.image }),
+        ...(options.duration === undefined ? {} : { duration: options.duration }),
+      });
+    },
   },
   text: {
     base64: {
