@@ -20,6 +20,7 @@ import {
   defaultSettings,
   isSystemSource,
   emptyMemory,
+  learnsOnLeave,
   menuModel,
   readSettings,
   remember,
@@ -241,7 +242,8 @@ export class Controller {
    */
   onFrontmost(app: FrontmostApp): Promise<void> {
     // 记前台是同步的：手动切换的事件随时会来，要记给此刻真正在前台的那个应用。
-    const switched = this.app?.bundleId !== app.bundleId;
+    const left = this.app;
+    const switched = left?.bundleId !== app.bundleId;
     this.app = app;
     const token = ++this.activation;
     const primed = this.primed;
@@ -250,6 +252,9 @@ export class Controller {
     if (primed) this.skipReplay = false;
     return this.enqueue(async () => {
       if (!primed) return this.render();
+      // 先记下换走的那个应用在用什么（W-2）：排在前面的切换都已落地，此刻的输入法就是离开它时真实用着的那一个。
+      // 这一条作废了也照记——用户确实是带着这个输入法离开它的。
+      if (switched && left) this.learn(left.bundleId);
       if (token !== this.activation) return;
       if (!switched || this.settings.paused || !this.granted.includes("inputSources.select")) return this.render();
       // 页面可能刚改过规则：规则与默认输入法每次切应用读一次（三次本机库读，毫秒级）；「上次用的」只有这里写，内存里就是最新的。
@@ -302,6 +307,21 @@ export class Controller {
     });
   }
 
+  /**
+   * 换走一个应用时，把此刻用着的输入法记成「上次在它里面用的」（jarvis-mac `specs/20261031-080909-input-source-walkthrough-fixes` W-2）。
+   * 只从手动换的那一下学，刚装上时谁都没记过：在 Warp 里一直用拼音、切到 Rider 换成 ABC、再切回 Warp，「记住上次」不知道该换回拼音。
+   * 输入法是规则定的（固定规则、命中网站规则的那一页）不记。写库不等：下一次切换马上就要用内存里的这一份。
+   * @param bundleId 被换走的应用。
+   */
+  private learn(bundleId: string): void {
+    const id = this.currentId;
+    if (id === undefined || !learnsOnLeave(bundleId, this.memory, this.pageFor(bundleId))) return;
+    const next = remember(this.memory.lastUsed, bundleId, id);
+    if (next === this.memory.lastUsed) return;
+    this.memory = { ...this.memory, lastUsed: next };
+    void jarvis.storage.set(storageKeys.lastUsed, next).catch(() => undefined);
+  }
+
   /** 排进前台事件的队列；出错只记日志，队列不断。 */
   private enqueue(task: () => Promise<void>): Promise<void> {
     const run = this.queue.then(task).catch((error: unknown) => {
@@ -336,7 +356,7 @@ export class Controller {
     }
     this.note(event.id);
     if (!event.bySelf && this.app) {
-      // 你手动换的：记给此刻的应用（「记住上次」只认这种）。自己刚切的不记，否则规则就成了自己喂自己。
+      // 你手动换的：当场记给此刻的应用。自己刚切的这里不记（换走时 `learn` 记离开那一刻用着的，W-2）。
       const next = remember(this.memory.lastUsed, this.app.bundleId, event.id);
       if (next !== this.memory.lastUsed) {
         this.memory = { ...this.memory, lastUsed: next };

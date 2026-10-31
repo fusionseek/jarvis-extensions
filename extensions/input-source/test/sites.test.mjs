@@ -1,7 +1,7 @@
 /**
  * 网站规则跑在假宿主上（jarvis-mac specs/20261030-234919-input-source-site-rules S-2 / S-3）：有网站规则才订当前页；
  * 订阅时补发的那一页不切；切回浏览器用缓存的上一页；换了页、决定出来的目标变了才切，手动换了的不换回去；
- * 菜单里给此刻这一页定输入法；工具箱页「此刻」卡的当前页与「加网站」那一步。单独一个文件：要一个干净的假宿主。
+ * 菜单里给此刻这一页定输入法；工具箱页「此刻」卡的当前页、「网站」卡（jarvis-mac specs/20261031-080909-input-source-walkthrough-fixes W-3）与「加网站」那一步。单独一个文件：要一个干净的假宿主。
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -145,11 +145,29 @@ test("菜单：没订着当前页时，点开菜单读一次——第一条网�
   assert.ok(watchToken(), "第一条：订上");
 });
 
-const openPage = async () => {
-  host.dispatch({ type: "activate", context: { surface: "toolbox", entry: "toolbox", granted, preferences: {}, commands: [] } });
+const openPage = async (pageGranted = granted) => {
+  host.dispatch({ type: "activate", context: { surface: "toolbox", entry: "toolbox", granted: pageGranted, preferences: {}, commands: [] } });
   await host.settle();
 };
 const byKey = (key) => host.find((node) => node.key === key);
+
+test("工具箱页·网站卡总在：前台不是浏览器、也还没允许读地址（W-3）", async () => {
+  frontmost = WARP;
+  activeTab = null;
+  await openPage(base);
+  assert.equal(byKey("now:site"), undefined, "前台不是浏览器：此刻卡上没有网站那一行");
+  const section = byKey("sites");
+  assert.equal(section.props.title, "网站 · WEBSITES");
+  assert.deepEqual(
+    section.props.actions.map((action) => [action.id, action.title, action.symbol]),
+    [["addSite", "添加网站", undefined]],
+    "文字动作，不是一枚地球",
+  );
+  assert.equal(byKey(`group:fixed:${PINYIN}`).props.actions.some((action) => action.id === "addSite"), false, "分组卡上不再有地球");
+  const cards = host.find((node) => node.key === "content").children.map((node) => node.key);
+  assert.ok(cards.indexOf("card:sites") > cards.indexOf(`card:group:fixed:${PINYIN}`), "在各输入法分组之后");
+  assert.equal(cards.at(-1), "card:others", "「无规则的应用」仍在最后");
+});
 
 test("工具箱页·此刻：前台是浏览器时多一行当前页，一点即定这个网站", async () => {
   frontmost = CHROME;
@@ -164,19 +182,24 @@ test("工具箱页·此刻：前台是浏览器时多一行当前页，一点即
   await host.fire(byKey(`now:site:fixed:${ABC}`), "press");
   assert.deepEqual(storage.get("sites").find((site) => site.pattern === "github.com"), { pattern: "github.com", source: ABC });
   assert.equal(byKey("now:site").props.subtitle, "网站规则 · 用 ABC");
-  assert.ok(byKey("site:github.com"), "也列在 ABC 那一组");
-  assert.match(byKey(`group:fixed:${ABC}`).props.trailing, /个网站/);
+  assert.equal(byKey("site:github.com").props.subtitle, "用 ABC · 此刻在看", "列在网站卡里");
+  assert.match(byKey("sites").props.trailing, /^\d+ 个网站$/);
+  assert.equal(byKey(`group:fixed:${ABC}`).props.trailing, "0 个应用", "分组卡只数应用");
 });
 
-test("工具箱页·加网站：卡头的地球进那一步，填网址规范化后添加", async () => {
-  const section = byKey(`group:fixed:${PINYIN}`);
-  const index = section.props.actions.findIndex((action) => action.id === "addSite");
-  assert.equal(section.props.actions[0].id, "add", "添加应用还在第一位");
-  host.dispatch({ type: "ui", handler: section.props.actions[index].on.press, payload: {} });
+test("工具箱页·加网站：网站卡头「添加网站」进那一步，先选输入法（默认此刻在用的），填网址规范化后添加", async () => {
+  current = ABC;
+  await openPage();
+  const section = byKey("sites");
+  host.dispatch({ type: "ui", handler: section.props.actions[0].on.press, payload: {} });
   await host.settle();
   assert.ok(byKey("addSite:field"), "进了加网站那一步");
   assert.equal(byKey("addSite:access"), undefined, "两项授权都有：不提示");
   assert.equal(byKey("addSite:current").props.title, "github.com", "此刻这一页一点即填");
+  assert.deepEqual(byKey("addSite:choices").children.map((chip) => chip.key), [`addSite:fixed:${ABC}`, `addSite:fixed:${PINYIN}`], "只有输入法，没有「跟随应用」");
+  assert.equal(byKey(`addSite:fixed:${ABC}`).props.selected, true, "默认选此刻正在用的那一个");
+  await host.fire(byKey(`addSite:fixed:${PINYIN}`), "press");
+  assert.equal(byKey(`addSite:fixed:${PINYIN}`).props.selected, true);
 
   await host.fire(byKey("addSite:field"), "change", "not a host");
   assert.ok(byKey("addSite:invalid"));
@@ -184,7 +207,7 @@ test("工具箱页·加网站：卡头的地球进那一步，填网址规范化
   assert.equal(byKey("addSite:add").props.title, "添加 notion.so/team");
   await host.fire(byKey("addSite:add"), "press");
   assert.deepEqual(storage.get("sites").find((site) => site.pattern === "notion.so/team"), { pattern: "notion.so/team", source: PINYIN });
-  assert.ok(byKey("site:notion.so/team"), "回到分组页，落在拼音那一组");
+  assert.equal(byKey("site:notion.so/team").props.subtitle, "用 微信输入法", "回到分组页，在网站卡里，用选中的拼音");
   assert.equal(byKey("site:notion.so/team").props.selected, true, "刚加的那一行点亮");
 });
 

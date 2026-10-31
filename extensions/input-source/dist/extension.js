@@ -1022,32 +1022,35 @@
       symbol: "keyboard"
     }));
     chips.push(
-      { value: "remember", title: "\u8BB0\u4F4F\u4E0A\u6B21", help: "\u6362\u6210\u4F60\u4E0A\u6B21\u5728\u8FD9\u4E2A\u5E94\u7528\u91CC\u624B\u52A8\u7528\u7684\u90A3\u4E2A", symbol: "arrow.uturn.backward" },
+      { value: "remember", title: "\u8BB0\u4F4F\u4E0A\u6B21", help: "\u6362\u6210\u4F60\u4E0A\u6B21\u5728\u8FD9\u4E2A\u5E94\u7528\u91CC\u7528\u7684\u90A3\u4E2A", symbol: "arrow.uturn.backward" },
       { value: "none", title: "\u65E0\u89C4\u5219", help: "\u4E0D\u7ED9\u5B83\u5B9A\u89C4\u5219\uFF0C\u8DDF\u7740\u300C\u65E0\u89C4\u5219\u7684\u5E94\u7528\u300D\u90A3\u4E00\u6761\u8D70\uFF08\u9ED8\u8BA4\u4E0D\u52A8\uFF09", symbol: "circle.dashed" }
     );
     return chips;
   }
-  function groupRules(rules, sources, sites = []) {
+  function groupRules(rules, sources) {
     const byName = (a, b) => (a.rule.name || a.bundleId).localeCompare(b.rule.name || b.bundleId, "zh-Hans");
     const entries = Object.entries(rules).map(([bundleId, rule]) => ({ bundleId, rule }));
     const enabled = new Set(sources.map((source) => source.id));
-    const sortedSites = [...sites].sort((a, b) => a.pattern.localeCompare(b.pattern));
     const groups = sources.map((source) => ({
       key: `fixed:${source.id}`,
       title: `\u7528 ${source.name}`,
       source,
       entries: entries.filter((entry) => entry.rule.mode === "fixed" && entry.rule.source === source.id).sort(byName),
-      sites: sortedSites.filter((site) => site.source === source.id),
       addable: true
     }));
     const remembered = entries.filter((entry) => entry.rule.mode === "remember").sort(byName);
-    if (remembered.length > 0) groups.push({ key: "remember", title: "\u8BB0\u4F4F\u4E0A\u6B21\u7528\u7684", entries: remembered, sites: [], addable: true });
+    if (remembered.length > 0) groups.push({ key: "remember", title: "\u8BB0\u4F4F\u4E0A\u6B21\u7528\u7684", entries: remembered, addable: true });
     const stale = entries.filter((entry) => entry.rule.mode === "fixed" && !enabled.has(entry.rule.source)).sort(byName);
-    const staleSites = sortedSites.filter((site) => !enabled.has(site.source));
-    if (stale.length > 0 || staleSites.length > 0) {
-      groups.push({ key: "stale", title: "\u8F93\u5165\u6CD5\u5DF2\u505C\u7528", entries: stale, sites: staleSites, addable: false });
-    }
+    if (stale.length > 0) groups.push({ key: "stale", title: "\u8F93\u5165\u6CD5\u5DF2\u505C\u7528", entries: stale, addable: false });
     return groups;
+  }
+  function siteList(sites, sources) {
+    return [...sites].sort((a, b) => a.pattern.localeCompare(b.pattern)).map((site) => ({ site, source: sources.find((source) => source.id === site.source) }));
+  }
+  function learnsOnLeave(bundleId, memory, page2) {
+    if (memory.rules[bundleId]?.mode === "fixed") return false;
+    if (page2 && page2.bundleId === bundleId && matchSite(page2.url, memory.sites)) return false;
+    return true;
   }
   var maximumCandidates = 60;
   function candidates(apps, query) {
@@ -1381,7 +1384,8 @@
      * @param app 换到的应用。
      */
     onFrontmost(app) {
-      const switched = this.app?.bundleId !== app.bundleId;
+      const left = this.app;
+      const switched = left?.bundleId !== app.bundleId;
       this.app = app;
       const token = ++this.activation;
       const primed = this.primed;
@@ -1389,6 +1393,7 @@
       if (primed) this.skipReplay = false;
       return this.enqueue(async () => {
         if (!primed) return this.render();
+        if (switched && left) this.learn(left.bundleId);
         if (token !== this.activation) return;
         if (!switched || this.settings.paused || !this.granted.includes("inputSources.select")) return this.render();
         await this.loadRules();
@@ -1434,6 +1439,20 @@
         if (actual !== target) await this.switchTo(target, token);
         await this.render();
       });
+    }
+    /**
+     * 换走一个应用时，把此刻用着的输入法记成「上次在它里面用的」（jarvis-mac `specs/20261031-080909-input-source-walkthrough-fixes` W-2）。
+     * 只从手动换的那一下学，刚装上时谁都没记过：在 Warp 里一直用拼音、切到 Rider 换成 ABC、再切回 Warp，「记住上次」不知道该换回拼音。
+     * 输入法是规则定的（固定规则、命中网站规则的那一页）不记。写库不等：下一次切换马上就要用内存里的这一份。
+     * @param bundleId 被换走的应用。
+     */
+    learn(bundleId) {
+      const id = this.currentId;
+      if (id === void 0 || !learnsOnLeave(bundleId, this.memory, this.pageFor(bundleId))) return;
+      const next = remember(this.memory.lastUsed, bundleId, id);
+      if (next === this.memory.lastUsed) return;
+      this.memory = { ...this.memory, lastUsed: next };
+      void jarvis.storage.set(storageKeys.lastUsed, next).catch(() => void 0);
     }
     /** 排进前台事件的队列；出错只记日志，队列不断。 */
     enqueue(task) {
@@ -1726,10 +1745,10 @@
       await this.assignSite(pattern, "none");
     }
     /**
-     * 往一组里加网站。还没给读地址的两项授权时先问（只在按钮回调里调）；不给也照样能填，只是后台跟不上网页。
-     * @param target 那一组的选择（`fixed:<id>`）。
+     * 加网站。还没给读地址的两项授权时先问（只在按钮回调里调）；不给也照样能填，只是后台跟不上网页。
+     * @param target 先选中的输入法（`fixed:<id>`）；不给时选此刻正在用的那一个（W-3）。
      */
-    async startAddSite(target) {
+    async startAddSite(target = this.defaultSiteTarget()) {
       if (!this.hasSiteAccess()) {
         const result = await jarvis.permissions.request([...siteCapabilities]);
         this.granted = result.granted;
@@ -1739,6 +1758,21 @@
       this.editing = void 0;
       this.page = await this.readPage();
       jarvis.ui.update();
+    }
+    /**
+     * 「添加网站」先选中哪个输入法：此刻正在用的那一个——你在网页里手动换成拼音、想让它以后自动换，打开就是拼音（W-3）。
+     * @returns `fixed:<id>`。
+     */
+    defaultSiteTarget() {
+      const id = this.sources.some((source) => source.id === this.currentId) ? this.currentId : this.sources[0]?.id;
+      return `fixed:${id ?? ""}`;
+    }
+    /**
+     * 加网站那一步换了输入法。
+     * @param target `fixed:<id>`。
+     */
+    setSiteTarget(target) {
+      if (this.stage.kind === "addSite") this.stage = { kind: "addSite", target };
     }
     /** 再问一次读地址的两项授权（加网站那一步的「允许」，只在按钮回调里调）。 */
     async requestSiteAccess() {
@@ -1759,7 +1793,7 @@
       this.siteDraft = text;
     }
     /**
-     * 加进那一组，回到分组页。
+     * 用选中的输入法加上这个网站，回到分组页。
      * @param pattern 规范化过的 pattern。
      */
     async pickSite(pattern) {
@@ -1921,7 +1955,8 @@
         })
       );
     }
-    for (const group of groupRules(session.rules, session.sources, session.sites)) children.push(groupCard(session, group));
+    for (const group of groupRules(session.rules, session.sources)) children.push(groupCard(session, group));
+    children.push(sitesCard(session));
     children.push(othersCard(session));
     return ui.scroll({ key: "page", children: [ui.stack({ key: "content", children })] });
   }
@@ -2047,44 +2082,63 @@
         );
       }
     }
-    const here = session.page?.status === "ok" && session.page.url ? matchSite(session.page.url, session.sites)?.pattern : void 0;
-    for (const site of group.sites) {
-      const key = siteKey(site.pattern);
-      const editing = session.editing === key;
-      children.push(
-        ui.row({
-          key: `site:${site.pattern}`,
-          symbol: "globe",
-          title: site.pattern,
-          subtitle: here === site.pattern ? "\u6B64\u523B\u5728\u770B" : group.key === "stale" ? "\u70B9\u4E00\u4E0B\uFF0C\u6362\u4E00\u4E2A\u8FD8\u542F\u7528\u7740\u7684" : "\u7F51\u7AD9",
-          selected: editing || session.highlight === key,
-          accessory: "none",
-          onPress: () => session.toggleEditing(key),
-          actions: [{ id: "remove", title: "\u5220\u9664\u89C4\u5219", symbol: "xmark", help: `\u5220\u9664\u300C${site.pattern}\u300D\u7684\u89C4\u5219`, onPress: () => void session.removeSite(site.pattern) }]
-        })
-      );
-      if (editing) {
-        children.push(
-          ui.text({ key: `site:${site.pattern}:label`, style: "footnote", text: `\u5728\u300C${site.pattern}\u300D\u4E0A\u6362\u6210` }),
-          chipGrid(`site:${site.pattern}`, siteChips(session.sources), `fixed:${site.source}`, (value) => void session.assignSite(site.pattern, value), group.key)
-        );
-      }
+    if (group.entries.length === 0) {
+      children.push(ui.text({ key: `${group.key}:empty`, style: "footnote", text: "\u8FD8\u6CA1\u6709\u5E94\u7528\u3002\u70B9\u53F3\u4E0A\u89D2\u7684 + \u52A0\u51E0\u4E2A" }));
     }
-    if (group.entries.length === 0 && group.sites.length === 0) {
-      const text = group.key.startsWith("fixed:") ? "\u8FD8\u6CA1\u6709\u5E94\u7528\u6216\u7F51\u7AD9\u3002\u70B9\u53F3\u4E0A\u89D2\u7684 + \u6216\u5730\u7403\u52A0\u51E0\u4E2A" : "\u8FD8\u6CA1\u6709\u5E94\u7528\u3002\u70B9\u53F3\u4E0A\u89D2\u7684 + \u52A0\u51E0\u4E2A";
-      children.push(ui.text({ key: `${group.key}:empty`, style: "footnote", text }));
-    }
-    const actions = group.addable ? [{ id: "add", title: "\u6DFB\u52A0\u5E94\u7528", symbol: "plus", help: `\u6DFB\u52A0${group.title}\u7684\u5E94\u7528`, onPress: () => void session.startAdd(group.key) }] : [];
-    if (group.addable && group.key.startsWith("fixed:")) {
-      actions.push({ id: "addSite", title: "\u6DFB\u52A0\u7F51\u7AD9", symbol: "globe", help: `\u6DFB\u52A0${group.title}\u7684\u7F51\u7AD9`, onPress: () => void session.startAddSite(group.key) });
-    }
+    const actions = group.addable ? [{ id: "add", title: "\u6DFB\u52A0\u5E94\u7528", symbol: "plus", help: `\u6DFB\u52A0${group.title}\u7684\u5E94\u7528`, onPress: () => void session.startAdd(group.key) }] : void 0;
     return card(`group:${group.key}`, groupTint(group, session.sources), {
       key: `group:${group.key}`,
       title: group.title,
-      trailing: group.sites.length > 0 ? `${group.entries.length} \u4E2A\u5E94\u7528 \xB7 ${group.sites.length} \u4E2A\u7F51\u7AD9` : `${group.entries.length} \u4E2A\u5E94\u7528`,
-      actions: actions.length > 0 ? actions : void 0,
+      trailing: `${group.entries.length} \u4E2A\u5E94\u7528`,
+      actions,
       children
     });
+  }
+  function sitesCard(session) {
+    const children = [];
+    const here = session.page?.status === "ok" && session.page.url ? matchSite(session.page.url, session.sites)?.pattern : void 0;
+    for (const entry of siteList(session.sites, session.sources)) children.push(...siteRows(session, entry, here));
+    if (children.length === 0) {
+      children.push(
+        ui.text({
+          key: "sites:empty",
+          style: "footnote",
+          text: "\u8FD8\u6CA1\u6709\u7F51\u7AD9\u89C4\u5219\u3002\u7F51\u7AD9\u89C4\u5219\u6BD4\u6D4F\u89C8\u5668\u81EA\u5DF1\u7684\u89C4\u5219\u4F18\u5148\uFF1A\u6BD4\u5982 Chrome \u7528 ABC\uFF0C\u4F46\u5728 feishu.cn \u4E0A\u7528\u62FC\u97F3\u3002\u70B9\u53F3\u4E0A\u89D2\u7684\u300C\u6DFB\u52A0\u7F51\u7AD9\u300D"
+        })
+      );
+    }
+    return card("sites", "neutral", {
+      key: "sites",
+      title: "\u7F51\u7AD9 \xB7 WEBSITES",
+      trailing: `${session.sites.length} \u4E2A\u7F51\u7AD9`,
+      actions: [{ id: "addSite", title: "\u6DFB\u52A0\u7F51\u7AD9", help: "\u7ED9\u4E00\u4E2A\u7F51\u7AD9\u5B9A\u8F93\u5165\u6CD5", onPress: () => void session.startAddSite() }],
+      children
+    });
+  }
+  function siteRows(session, { site, source }, here) {
+    const key = siteKey(site.pattern);
+    const editing = session.editing === key;
+    let subtitle = source ? `\u7528 ${source.name}` : "\u8F93\u5165\u6CD5\u5DF2\u505C\u7528 \xB7 \u70B9\u4E00\u4E0B\u6362\u4E00\u4E2A\u8FD8\u542F\u7528\u7740\u7684";
+    if (source && here === site.pattern) subtitle += " \xB7 \u6B64\u523B\u5728\u770B";
+    const rows = [
+      ui.row({
+        key: `site:${site.pattern}`,
+        symbol: "globe",
+        title: site.pattern,
+        subtitle,
+        selected: editing || session.highlight === key,
+        accessory: "none",
+        onPress: () => session.toggleEditing(key),
+        actions: [{ id: "remove", title: "\u5220\u9664\u89C4\u5219", symbol: "xmark", help: `\u5220\u9664\u300C${site.pattern}\u300D\u7684\u89C4\u5219`, onPress: () => void session.removeSite(site.pattern) }]
+      })
+    ];
+    if (editing) {
+      rows.push(
+        ui.text({ key: `site:${site.pattern}:label`, style: "footnote", text: `\u5728\u300C${site.pattern}\u300D\u4E0A\u6362\u6210` }),
+        chipGrid(`site:${site.pattern}`, siteChips(session.sources), `fixed:${site.source}`, (value) => void session.assignSite(site.pattern, value))
+      );
+    }
+    return rows;
   }
   function othersCard(session) {
     const children = [layout.preference({ key: "others", preference: "others" })];
@@ -2153,16 +2207,15 @@
     return ui.scroll({ key: "add", children: [ui.stack({ key: "add:content", children })] });
   }
   function addSiteStage(session, target) {
-    const title = choiceTitle(target, session.sources);
     const children = [
       ui.row({
         key: "addSite:back",
         symbol: "chevron.left",
-        title: `\u52A0\u7F51\u7AD9\u5230\u300C${title}\u300D`,
-        subtitle: "\u586B\u7F51\u5740\u6216\u4E3B\u673A\u540D\uFF1Bgithub.com \u4E5F\u7BA1\u5B83\u7684\u5B50\u57DF",
+        title: "\u6DFB\u52A0\u7F51\u7AD9",
+        subtitle: "\u9009\u8FD9\u4E2A\u7F51\u7AD9\u7528\u54EA\u4E2A\u8F93\u5165\u6CD5\uFF0C\u518D\u586B\u7F51\u5740\u6216\u4E3B\u673A\u540D\uFF1Bgithub.com \u4E5F\u7BA1\u5B83\u7684\u5B50\u57DF",
         accessory: "none",
         onPress: () => session.cancelAdd(),
-        label: `\u8FD4\u56DE\u3002\u52A0\u7F51\u7AD9\u5230\u300C${title}\u300D`
+        label: "\u8FD4\u56DE\u3002\u6DFB\u52A0\u7F51\u7AD9"
       })
     ];
     if (!session.hasSiteAccess()) {
@@ -2177,6 +2230,8 @@
       );
     }
     children.push(
+      ui.text({ key: "addSite:sourceLabel", style: "footnote", text: "\u5728\u8FD9\u4E2A\u7F51\u7AD9\u4E0A\u7528" }),
+      chipGrid("addSite", siteChips(session.sources).filter((chip) => chip.value !== "none"), target, (value) => session.setSiteTarget(value)),
       ui.field({
         key: "addSite:field",
         value: session.siteDraft,
@@ -2197,14 +2252,14 @@
       if (pattern) {
         const existing = session.sites.find((site) => site.pattern === pattern);
         const already = existing !== void 0 && `fixed:${existing.source}` === target;
-        let subtitle = `\u4E5F\u7BA1 docs.${pattern} \u8FD9\u6837\u7684\u5B50\u57DF`;
-        if (pattern.includes("/")) subtitle = "\u8FD9\u4E2A\u7F51\u7AD9\u4E0A\u4EE5\u8FD9\u6BB5\u8DEF\u5F84\u5F00\u5934\u7684\u9875";
-        if (existing && !already) subtitle = `\u73B0\u5728\uFF1A${choiceTitle(`fixed:${existing.source}`, session.sources)}\uFF0C\u70B9\u4E00\u4E0B\u632A\u8FC7\u6765`;
+        let subtitle = `${choiceTitle(target, session.sources)}\uFF1B\u4E5F\u7BA1 docs.${pattern} \u8FD9\u6837\u7684\u5B50\u57DF`;
+        if (pattern.includes("/")) subtitle = `${choiceTitle(target, session.sources)}\uFF1B\u8FD9\u4E2A\u7F51\u7AD9\u4E0A\u4EE5\u8FD9\u6BB5\u8DEF\u5F84\u5F00\u5934\u7684\u9875`;
+        if (existing && !already) subtitle = `\u73B0\u5728\uFF1A${choiceTitle(`fixed:${existing.source}`, session.sources)}\uFF0C\u70B9\u4E00\u4E0B\u6539\u6210${choiceTitle(target, session.sources)}`;
         children.push(
           ui.row({
             key: "addSite:add",
             symbol: "plus.circle",
-            title: already ? `${pattern} \u5DF2\u7ECF\u5728\u8FD9\u4E00\u7EC4` : `\u6DFB\u52A0 ${pattern}`,
+            title: already ? `${pattern} \u5DF2\u7ECF\u662F\u8FD9\u4E2A\u8F93\u5165\u6CD5` : `\u6DFB\u52A0 ${pattern}`,
             subtitle,
             selected: already,
             accessory: "none",
