@@ -1,9 +1,9 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-31T15:42:49.528Z",
+  "generatedAt": "2026-10-31T16:30:16.284Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "2a20baf9298540d0b9a236d08feff0641a651905"
+    "commit": "136ce9b0330d16297cd811185261708752c891b3"
   },
   "extensions": [
     {
@@ -449,7 +449,7 @@
         },
         "main": "dist/extension.js",
         "sdk": "^2.14.0",
-        "minimumJarvisVersion": "3.3.2",
+        "minimumJarvisVersion": "3.3.3",
         "capabilities": [
           {
             "id": "process.run",
@@ -1713,7 +1713,7 @@
         "sha256": "1231fd9550bd98cbe8e1542ef728e99d9abd982f4ac54768a0832a1bec99a29c",
         "byteCount": 58207
       },
-      "updatedAt": "2026-10-31T23:38:15+08:00"
+      "updatedAt": "2026-10-31T23:44:32+08:00"
     },
     {
       "manifest": {
