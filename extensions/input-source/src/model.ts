@@ -75,7 +75,10 @@ export interface SiteRule {
 /** 存在 `jarvis.storage` 里的四样。 */
 export interface Memory {
   rules: Rules;
-  /** bundle id → 你在那个应用里最后一次**手动**换到的输入法。 */
+  /**
+   * bundle id → 你上次在那个应用里用的输入法：手动换的那一下当场记；换走时那一刻用着的也记
+   * （jarvis-mac `specs/20261031-080909-input-source-walkthrough-fixes` W-2：从没手动换过的应用也学得会）。
+   */
   lastUsed: Record<string, string>;
   /** 「换成默认输入法」换成哪一个。 */
   fallbackSource?: string;
@@ -101,7 +104,7 @@ export const maximumRemembered = 300;
  * 切到这个应用时该换成哪一个；不换为 `undefined`。
  *
  * - 前台是浏览器、它的当前页命中网站规则（且那个输入法还启用着）：换成网站规则的那一个——网站规则比应用规则具体（S-2）。
- * - 应用有规则：`fixed` 换成那一个；`remember` 换成上次手动用的（没记过就不动）。
+ * - 应用有规则：`fixed` 换成那一个；`remember` 换成上次在那里用的（没记过就不动）。
  * - 无规则：按「无规则的应用」——不动 / 记住上次 / 默认输入法。
  * - 目标此刻没启用（用户在系统设置里删掉了）：不动，不报错。
  *
@@ -136,7 +139,7 @@ export function resolveTarget(
 }
 
 /**
- * 记一次手动切换：最近的放到最后，超过上限丢最旧的。
+ * 记一次「在这个应用里用的是它」（手动换的那一下、或换走时用着的那一个）：最近的放到最后，超过上限丢最旧的。
  * @param lastUsed 旧的记忆。
  * @param bundleId 哪个应用。
  * @param source 换到的输入法。
@@ -388,7 +391,7 @@ export function choiceChips(sources: readonly InputSource[]): ChoiceChip[] {
     symbol: "keyboard",
   }));
   chips.push(
-    { value: "remember", title: "记住上次", help: "换成你上次在这个应用里手动用的那个", symbol: "arrow.uturn.backward" },
+    { value: "remember", title: "记住上次", help: "换成你上次在这个应用里用的那个", symbol: "arrow.uturn.backward" },
     { value: "none", title: "无规则", help: "不给它定规则，跟着「无规则的应用」那一条走（默认不动）", symbol: "circle.dashed" },
   );
   return chips;
@@ -401,42 +404,69 @@ export interface RuleGroup {
   title: string;
   source?: InputSource;
   entries: { bundleId: string; rule: Rule }[];
-  /** 这一组的网站（S-3）：只有输入法组与已停用组有。 */
-  sites: SiteRule[];
   /** 能不能往这一组里加应用（停用的那一组不能）。 */
   addable: boolean;
 }
 
 /**
  * 按输入法分组：每个启用的输入法一组（空的也给：用户第一眼就看得到「我可以给 ABC 加应用」），
- * 记住上次那一组有内容才给；指向已停用输入法的规则单独一组。组内按应用名排，网站按 pattern 排、列在应用之后。
+ * 记住上次那一组有内容才给；指向已停用输入法的规则单独一组。组内按应用名排。
+ * 网站不在这里分组：它们在自己的那张「网站」卡里（`siteList`，W-3）。
  * @param rules 规则。
  * @param sources 此刻启用的输入法。
- * @param sites 网站规则。
  * @returns 分组，顺序同系统输入法菜单，然后是记住上次、已停用。
  */
-export function groupRules(rules: Rules, sources: readonly InputSource[], sites: readonly SiteRule[] = []): RuleGroup[] {
+export function groupRules(rules: Rules, sources: readonly InputSource[]): RuleGroup[] {
   const byName = (a: { rule: Rule; bundleId: string }, b: { rule: Rule; bundleId: string }) =>
     (a.rule.name || a.bundleId).localeCompare(b.rule.name || b.bundleId, "zh-Hans");
   const entries = Object.entries(rules).map(([bundleId, rule]) => ({ bundleId, rule }));
   const enabled = new Set(sources.map((source) => source.id));
-  const sortedSites = [...sites].sort((a, b) => a.pattern.localeCompare(b.pattern));
   const groups: RuleGroup[] = sources.map((source) => ({
     key: `fixed:${source.id}`,
     title: `用 ${source.name}`,
     source,
     entries: entries.filter((entry) => entry.rule.mode === "fixed" && entry.rule.source === source.id).sort(byName),
-    sites: sortedSites.filter((site) => site.source === source.id),
     addable: true,
   }));
   const remembered = entries.filter((entry) => entry.rule.mode === "remember").sort(byName);
-  if (remembered.length > 0) groups.push({ key: "remember", title: "记住上次用的", entries: remembered, sites: [], addable: true });
+  if (remembered.length > 0) groups.push({ key: "remember", title: "记住上次用的", entries: remembered, addable: true });
   const stale = entries.filter((entry) => entry.rule.mode === "fixed" && !enabled.has(entry.rule.source)).sort(byName);
-  const staleSites = sortedSites.filter((site) => !enabled.has(site.source));
-  if (stale.length > 0 || staleSites.length > 0) {
-    groups.push({ key: "stale", title: "输入法已停用", entries: stale, sites: staleSites, addable: false });
-  }
+  if (stale.length > 0) groups.push({ key: "stale", title: "输入法已停用", entries: stale, addable: false });
   return groups;
+}
+
+/** 「网站」卡上的一行（W-3）。 */
+export interface SiteEntry {
+  site: SiteRule;
+  /** 它用的输入法；停用了为 `undefined`。 */
+  source?: InputSource;
+}
+
+/**
+ * 「网站」卡上的全部网站规则：按 pattern 排，每条带上它用的输入法（停用的标出来，点一下换一个还启用着的）。
+ * @param sites 网站规则。
+ * @param sources 此刻启用的输入法。
+ * @returns 一行一条。
+ */
+export function siteList(sites: readonly SiteRule[], sources: readonly InputSource[]): SiteEntry[] {
+  return [...sites]
+    .sort((a, b) => a.pattern.localeCompare(b.pattern))
+    .map((site) => ({ site, source: sources.find((source) => source.id === site.source) }));
+}
+
+/**
+ * 换走的那一刻，要不要把这个应用此刻用着的输入法记成「上次在它里面用的」（W-2）。
+ * 输入法是规则定的就不记：应用有固定规则；它是浏览器、此刻这一页命中了网站规则。其余（记住上次、无规则）都记——
+ * 「无规则的应用」此刻不是「记住上次」也记，换成那一档时就不用从头学。
+ * @param bundleId 被换走的应用。
+ * @param memory 规则与网站规则。
+ * @param page 这个应用（若是浏览器）此刻的那一页。
+ * @returns 该记为真。
+ */
+export function learnsOnLeave(bundleId: string, memory: Pick<Memory, "rules" | "sites">, page?: Page): boolean {
+  if (memory.rules[bundleId]?.mode === "fixed") return false;
+  if (page && page.bundleId === bundleId && matchSite(page.url, memory.sites)) return false;
+  return true;
 }
 
 /** 加应用那一步的一行。 */

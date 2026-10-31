@@ -1,6 +1,6 @@
 /**
  * 网站规则的纯函数（jarvis-mac specs/20261030-234919-input-source-site-rules S-2）：规范化、匹配（子域、按段对齐的路径、最长优先）、
- * 与应用规则的优先级、分组、菜单里网站那一段。
+ * 与应用规则的优先级、「网站」卡的列表、换走时记不记、菜单里网站那一段。
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -74,17 +74,32 @@ test("sitePatternFor：已经命中一条就改那一条，否则用主机名", 
   assert.equal(model.sitePatternFor("chrome://newtab", sites), undefined);
 });
 
-test("groupRules：网站跟着输入法分组，停用的单独一组", () => {
+test("siteList：网站不进输入法分组，在自己的那张卡里按 pattern 排、停用的标出来（W-3）", () => {
   const sites = [
     { pattern: "yuque.com", source: PINYIN },
     { pattern: "github.com", source: ABC },
     { pattern: "old.com", source: "com.apple.keylayout.US" },
   ];
-  const groups = model.groupRules({}, sources, sites);
-  assert.deepEqual(groups.find((group) => group.key === `fixed:${ABC}`).sites.map((site) => site.pattern), ["github.com"]);
-  assert.deepEqual(groups.find((group) => group.key === `fixed:${PINYIN}`).sites.map((site) => site.pattern), ["yuque.com"]);
-  assert.deepEqual(groups.find((group) => group.key === "stale").sites.map((site) => site.pattern), ["old.com"]);
-  assert.equal(model.groupRules({}, sources).find((group) => group.key === "stale"), undefined, "没有停用的就没有那一组");
+  const list = model.siteList(sites, sources);
+  assert.deepEqual(list.map((entry) => entry.site.pattern), ["github.com", "old.com", "yuque.com"]);
+  assert.equal(list[0].source.id, ABC);
+  assert.equal(list[1].source, undefined, "输入法停用了");
+  assert.equal(list[2].source.id, PINYIN);
+  assert.equal("sites" in model.groupRules({}, sources)[0], false, "分组里不再有网站");
+  assert.equal(model.groupRules({}, sources).find((group) => group.key === "stale"), undefined, "只有网站指向停用的输入法时，没有「已停用」那一组");
+});
+
+test("learnsOnLeave：换走时记不记（W-2）——固定规则不记，命中网站规则的那一页不记，其余都记", () => {
+  const memory = {
+    rules: { "com.jetbrains.rider": { mode: "fixed", source: ABC, name: "Rider" }, "dev.warp.Warp-Stable": { mode: "remember", name: "Warp" } },
+    sites: [{ pattern: "github.com", source: ABC }],
+  };
+  assert.equal(model.learnsOnLeave("com.jetbrains.rider", memory), false);
+  assert.equal(model.learnsOnLeave("dev.warp.Warp-Stable", memory), true);
+  assert.equal(model.learnsOnLeave("com.apple.Notes", memory), true, "没有规则的也记");
+  assert.equal(model.learnsOnLeave(CHROME, memory, { bundleId: CHROME, url: "https://github.com/x" }), false, "输入法是网站规则定的");
+  assert.equal(model.learnsOnLeave(CHROME, memory, { bundleId: CHROME, url: "https://example.com/" }), true);
+  assert.equal(model.learnsOnLeave(CHROME, memory, { bundleId: "com.apple.Safari", url: "https://github.com/x" }), true, "别的浏览器的页不算");
 });
 
 test("menuModel：前台浏览器有页面时多一段「在 github.com 上用」", () => {

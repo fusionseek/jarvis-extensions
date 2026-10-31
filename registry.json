@@ -1,9 +1,9 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-30T16:13:27.742Z",
+  "generatedAt": "2026-10-31T00:19:02.035Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "b23f12392258e140f0a46a343391804b2efbdc64"
+    "commit": "9c4aaf6c60d15712c4f6f476fc4626960853b75a"
   },
   "extensions": [
     {
@@ -54,7 +54,7 @@
         "sha256": "c5715e34b999fd3f5770f12d9ca0a8ef896ba08c66e2d2219d712fa27080c909",
         "byteCount": 68164
       },
-      "updatedAt": "2026-10-30T21:29:28+08:00"
+      "updatedAt": "2026-10-31T00:15:14+08:00"
     },
     {
       "manifest": {
@@ -393,7 +393,7 @@
         "sha256": "dfd7f0bedcc7d512ba83899a60f3d250d2b0dc57e5fccf150f4a810bf9728ff9",
         "byteCount": 42480
       },
-      "updatedAt": "2026-10-30T21:29:28+08:00"
+      "updatedAt": "2026-10-31T00:15:14+08:00"
     },
     {
       "manifest": {
@@ -433,7 +433,7 @@
         "sha256": "ed0f9a20ad0c73bec4d2a21879080f9e2216266db4b7b8b22333aca76fb35946",
         "byteCount": 64705
       },
-      "updatedAt": "2026-10-30T21:29:28+08:00"
+      "updatedAt": "2026-10-31T00:15:14+08:00"
     },
     {
       "manifest": {
@@ -514,7 +514,7 @@
         "sha256": "34ea1304686b42f261a68060ce4522ac10f1b9eabd335174cbb80f7ec86ebae4",
         "byteCount": 96624
       },
-      "updatedAt": "2026-10-30T21:29:28+08:00"
+      "updatedAt": "2026-10-31T00:15:14+08:00"
     },
     {
       "manifest": {
@@ -655,7 +655,7 @@
         "sha256": "ae11cc96885ccb39b24951d90360e00770dde5b0084ab5b3673f8b226b49b99c",
         "byteCount": 128506
       },
-      "updatedAt": "2026-10-30T21:29:28+08:00"
+      "updatedAt": "2026-10-31T00:15:14+08:00"
     },
     {
       "manifest": {
@@ -823,10 +823,10 @@
       "path": "extensions/input-source",
       "bundle": {
         "path": "extensions/input-source/dist/extension.js",
-        "sha256": "5fc1ede45ecac96936dfe911a09335efdcfd13b253de7f61edfb08d45f4e40d4",
-        "byteCount": 98776
+        "sha256": "86aa6ed8a40fc00ce210a3d01acf03078116b869ced740cad18d86691826dc27",
+        "byteCount": 101531
       },
-      "updatedAt": "2026-10-30T21:29:28+08:00"
+      "updatedAt": "2026-10-31T00:15:14+08:00"
     },
     {
       "manifest": {
@@ -880,7 +880,7 @@
         "sha256": "c560807d740deed7a1e42e90fb7917bdadbe391f059536c2ae8d71d765c6bae9",
         "byteCount": 45736
       },
-      "updatedAt": "2026-10-30T21:29:28+08:00"
+      "updatedAt": "2026-10-31T00:15:14+08:00"
     },
     {
       "manifest": {
@@ -1059,7 +1059,7 @@
         "sha256": "9513109bed4271955df7ddc230166ef56be3e176a53ff1147fe879b0e518a820",
         "byteCount": 66145
       },
-      "updatedAt": "2026-10-30T21:29:28+08:00"
+      "updatedAt": "2026-10-31T00:15:14+08:00"
     },
     {
       "manifest": {
@@ -1183,7 +1183,7 @@
         "sha256": "b3c8cb9325da5d9da424084833a9a5a5b04d48cf099f60b6a3fa8746c2476ef3",
         "byteCount": 62555
       },
-      "updatedAt": "2026-10-30T21:29:28+08:00"
+      "updatedAt": "2026-10-31T00:15:14+08:00"
     },
     {
       "manifest": {
@@ -1543,7 +1543,7 @@
         "sha256": "e112f0fe30cbaccfc97908eaa24805672a4faee50e9fcf81b4085ca3dcf44586",
         "byteCount": 347078
       },
-      "updatedAt": "2026-10-30T21:29:28+08:00"
+      "updatedAt": "2026-10-31T00:15:14+08:00"
     },
     {
       "manifest": {
@@ -1635,7 +1635,7 @@
         "sha256": "164b86b268fd9abb42867a127a105125eda34ccf6f27a3ac47b010fa8c2479a2",
         "byteCount": 47543
       },
-      "updatedAt": "2026-10-30T21:29:28+08:00"
+      "updatedAt": "2026-10-31T00:15:14+08:00"
     },
     {
       "manifest": {
@@ -1874,7 +1874,7 @@
         "sha256": "158bb0e7f882cc566f20a21afd183ddc60aad0135ea89bece45a0c3a5986e563",
         "byteCount": 92772
       },
-      "updatedAt": "2026-10-30T21:29:28+08:00"
+      "updatedAt": "2026-10-31T00:15:14+08:00"
     }
   ]
 }

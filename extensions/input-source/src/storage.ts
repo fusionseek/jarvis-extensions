@@ -1,5 +1,5 @@
 /**
- * `jarvis.storage` 里的四样：规则、你在每个应用里手动用过的输入法、默认输入法、网站规则。读出来的东西一律验形状：
+ * `jarvis.storage` 里的四样：规则、你上次在每个应用里用的输入法、默认输入法、网站规则。读出来的东西一律验形状：
  * 存储是扩展自己的，但它活得比任何一个版本都久——上一版写坏的一条不该让这一版起不来。
  */
 import { jarvis } from "@fusionseek/jarvis-extension-sdk";
@@ -35,7 +35,7 @@ export async function readRules(): Promise<Rules> {
 }
 
 /**
- * 每个应用上次手动用的输入法。
+ * 每个应用上次用的输入法（手动换的、或换走时用着的）。
  * @returns bundle id → 输入法 id。
  */
 export async function readLastUsed(): Promise<Record<string, string>> {
