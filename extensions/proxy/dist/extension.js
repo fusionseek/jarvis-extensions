@@ -1,4 +1,4 @@
-// jarvis-extension bundle · proxy@1.0.3 · sdk 2.13.0 · 由 scripts/build-extension.mjs 生成，请勿手改
+// jarvis-extension bundle · proxy@1.0.3 · sdk 2.14.0 · 由 scripts/build-extension.mjs 生成，请勿手改
 "use strict";
 (() => {
   // sdk/src/capabilities.ts
@@ -124,7 +124,7 @@
   };
 
   // sdk/src/index.ts
-  var sdkVersion = "2.13.0";
+  var sdkVersion = "2.14.0";
   var Cancellation = class {
     constructor() {
       this.listeners = [];

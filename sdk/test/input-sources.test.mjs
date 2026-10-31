@@ -22,7 +22,7 @@ const host = createTestHost({
 const { jarvis, capabilityTiers, sdkVersion, JarvisError } = await import("../dist/index.js");
 
 test("SDK 2.13：四项新能力的档位", () => {
-  assert.equal(sdkVersion, "2.13.0");
+  assert.equal(sdkVersion, "2.14.0");
   assert.equal(capabilityTiers["inputSources.read"], "medium");
   assert.equal(capabilityTiers["inputSources.select"], "medium");
   assert.equal(capabilityTiers["system.activity"], "medium");

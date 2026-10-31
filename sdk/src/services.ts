@@ -689,11 +689,33 @@ export interface FileActionDescription {
   maximum?: number;
   /** 进不进长按转盘（默认 true）；右键菜单与「更多」里总是有。 */
   ring?: boolean;
+  /**
+   * SDK 2.14：属于哪一组（`groups` 里声明过的组 id）。同组的动作在长按转盘上合成一片，指着它时向外展开一圈
+   * （各自的过滤照算，对此刻选中用不了的不出；只剩一个时这一片就是那个动作本身）；右键菜单里是子菜单，功能区里是一枚下拉。
+   */
+  group?: string;
+  /** SDK 2.14：这个动作产出的文件扩展名（小写不带点）。Jarvis 拿它在条目上画「目标格式」的图标，不改产物处理。 */
+  produces?: string;
 }
 
-/** `describe` 的返回（≤ 16 个动作）。要快（15 秒）：可以看看工具在不在，按结果少报几个，但别跑转换。 */
+/** SDK 2.14：`describe` 里的一组（≤ 8 组）。 */
+export interface FileActionGroupDescription {
+  /** 小写字母、数字与连字符（≤ 40 字），动作的 `group` 写它。 */
+  id: string;
+  /** 1–24 字：转盘上那一片的名字（「格式转换」）。 */
+  title: string;
+  /** SF Symbol 名。 */
+  symbol: string;
+}
+
+/**
+ * `describe` 的返回（≤ 64 个动作，SDK 2.14 起；之前是 16）。要快（15 秒）：可以看看工具在不在，按结果少报几个，但别跑转换。
+ * 动作多时分组（`groups` + 动作的 `group`）：一组在转盘上只占一片。
+ */
 export interface FileActionsDescription {
   actions: FileActionDescription[];
+  /** SDK 2.14：组（≤ 8）。 */
+  groups?: FileActionGroupDescription[];
 }
 
 /** `run` 的一个入参文件。 */
@@ -735,6 +757,11 @@ export interface FileActionsResult {
 export interface FileActionsProgress {
   fraction?: number;
   message?: string;
+  /**
+   * SDK 2.14：逐个文件的进度——`index` 是 `request.files` 里的下标，`fraction` 0…1，到 1 = 这一项做完；同一次可以报几项。
+   * Jarvis 把它画在那一项上（列表里那一行的百分比、图标下面的百分比）；只报整体 `fraction` 时每一项都画整体比例。
+   */
+  files?: { index: number; fraction: number }[];
 }
 
 /** 文件动作的方法名（线缆上 `service` 事件的 `method`）。 */

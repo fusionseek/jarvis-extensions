@@ -313,12 +313,12 @@
         },
         "arguments": {
           "type": "array",
-          "description": "允许的参数组合（1–16 组）。一次调用的参数必须与其中某一组逐项相等——不支持通配，读 manifest 就知道它会跑什么。一个工具认好几种语法时（prettier 的 Markdown / JS / TS / CSS…）每种一组。SDK 2.13：声明了 files.actions 或 files.details 服务的扩展可以把一整项写成 \"{file}\"（调用时传 { file: 句柄 }，Jarvis 换成那个文件的路径）；声明了 files.actions 的还可以写 \"{output}\"（调用时传 { output: 产物名 }，Jarvis 换成暂存目录里的那个位置）。别的扩展写了按读不懂拒收：{file} 只在这两个服务颁的句柄上有意义，{output} 只在 files.actions 的暂存目录里有意义。",
+          "description": "允许的参数组合（1–64 组；SDK 2.14 起，原来 1–16；每组至多 32 项，原来 8）。一次调用的参数必须与其中某一组逐项相等——不支持通配，读 manifest 就知道它会跑什么。一个工具认好几种语法时（prettier 的 Markdown / JS / TS / CSS…）每种一组。SDK 2.13：声明了 files.actions 或 files.details 服务的扩展可以把一整项写成 \"{file}\"（调用时传 { file: 句柄 }，Jarvis 换成那个文件的路径）；声明了 files.actions 的还可以写 \"{output}\"（调用时传 { output: 产物名 }，Jarvis 换成暂存目录里的那个位置）。别的扩展写了按读不懂拒收：{file} 只在这两个服务颁的句柄上有意义，{output} 只在 files.actions 的暂存目录里有意义。",
           "minItems": 1,
-          "maxItems": 16,
+          "maxItems": 64,
           "items": {
             "type": "array",
-            "maxItems": 8,
+            "maxItems": 32,
             "items": {
               "type": "string",
               "minLength": 1,

@@ -1,0 +1,1271 @@
+{
+  "manifestVersion": 2,
+  "id": "file-convert",
+  "version": "1.0.0",
+  "name": "文件转换",
+  "symbol": "arrow.triangle.2.circlepath",
+  "description": "在 Jarvis「文件」里转换文件格式：长按图像、音频、视频、文本或办公文档，转盘上的「格式转换」向外展开一圈此刻转得了的格式，选一个就转，产物放回当前文件夹。用 macOS 自带的工具，装了 FFmpeg、ImageMagick、pandoc、LibreOffice 时转得更多。",
+  "author": {
+    "name": "fusionseek",
+    "github": "fusionseek"
+  },
+  "main": "dist/extension.js",
+  "sdk": "^2.14.0",
+  "minimumJarvisVersion": "3.3.3",
+  "capabilities": [
+    {
+      "id": "process.run",
+      "reason": "用系统自带的 sips、afconvert 与你装的 FFmpeg 等转换你选中的文件，产物写进暂存目录"
+    },
+    {
+      "id": "terminal.run",
+      "reason": "设置里点「在终端中安装」时，开终端用 Homebrew 装或更新工具"
+    }
+  ],
+  "process": {
+    "executables": [
+      {
+        "name": "sips",
+        "arguments": [
+          [
+            "-s",
+            "format",
+            "png",
+            "{file}",
+            "--out",
+            "{output}"
+          ],
+          [
+            "-s",
+            "format",
+            "png",
+            "{output}",
+            "--out",
+            "{output}"
+          ],
+          [
+            "-s",
+            "format",
+            "jpeg",
+            "{file}",
+            "--out",
+            "{output}"
+          ],
+          [
+            "-s",
+            "format",
+            "jpeg",
+            "{output}",
+            "--out",
+            "{output}"
+          ],
+          [
+            "-s",
+            "format",
+            "heic",
+            "{file}",
+            "--out",
+            "{output}"
+          ],
+          [
+            "-s",
+            "format",
+            "heic",
+            "{output}",
+            "--out",
+            "{output}"
+          ],
+          [
+            "-s",
+            "format",
+            "tiff",
+            "{file}",
+            "--out",
+            "{output}"
+          ],
+          [
+            "-s",
+            "format",
+            "tiff",
+            "{output}",
+            "--out",
+            "{output}"
+          ],
+          [
+            "-s",
+            "format",
+            "gif",
+            "{file}",
+            "--out",
+            "{output}"
+          ],
+          [
+            "-s",
+            "format",
+            "gif",
+            "{output}",
+            "--out",
+            "{output}"
+          ],
+          [
+            "-s",
+            "format",
+            "bmp",
+            "{file}",
+            "--out",
+            "{output}"
+          ],
+          [
+            "-s",
+            "format",
+            "bmp",
+            "{output}",
+            "--out",
+            "{output}"
+          ],
+          [
+            "-s",
+            "format",
+            "avif",
+            "{file}",
+            "--out",
+            "{output}"
+          ],
+          [
+            "-s",
+            "format",
+            "avif",
+            "{output}",
+            "--out",
+            "{output}"
+          ],
+          [
+            "-s",
+            "format",
+            "jp2",
+            "{file}",
+            "--out",
+            "{output}"
+          ],
+          [
+            "-s",
+            "format",
+            "jp2",
+            "{output}",
+            "--out",
+            "{output}"
+          ],
+          [
+            "-s",
+            "format",
+            "pdf",
+            "{file}",
+            "--out",
+            "{output}"
+          ],
+          [
+            "-s",
+            "format",
+            "pdf",
+            "{output}",
+            "--out",
+            "{output}"
+          ]
+        ]
+      },
+      {
+        "name": "afconvert",
+        "arguments": [
+          [
+            "-f",
+            "m4af",
+            "-d",
+            "aac",
+            "{file}",
+            "{output}"
+          ],
+          [
+            "-f",
+            "m4af",
+            "-d",
+            "aac",
+            "{output}",
+            "{output}"
+          ],
+          [
+            "-f",
+            "WAVE",
+            "-d",
+            "LEI16",
+            "{file}",
+            "{output}"
+          ],
+          [
+            "-f",
+            "WAVE",
+            "-d",
+            "LEI16",
+            "{output}",
+            "{output}"
+          ],
+          [
+            "-f",
+            "AIFF",
+            "-d",
+            "BEI16",
+            "{file}",
+            "{output}"
+          ],
+          [
+            "-f",
+            "AIFF",
+            "-d",
+            "BEI16",
+            "{output}",
+            "{output}"
+          ],
+          [
+            "-f",
+            "caff",
+            "-d",
+            "aac",
+            "{file}",
+            "{output}"
+          ],
+          [
+            "-f",
+            "caff",
+            "-d",
+            "aac",
+            "{output}",
+            "{output}"
+          ],
+          [
+            "-f",
+            "flac",
+            "-d",
+            "flac",
+            "{file}",
+            "{output}"
+          ],
+          [
+            "-f",
+            "flac",
+            "-d",
+            "flac",
+            "{output}",
+            "{output}"
+          ]
+        ]
+      },
+      {
+        "name": "avconvert",
+        "arguments": [
+          [
+            "--source",
+            "{file}",
+            "--preset",
+            "PresetHighestQuality",
+            "--output",
+            "{output}",
+            "--progress",
+            "--replace"
+          ],
+          [
+            "--source",
+            "{output}",
+            "--preset",
+            "PresetHighestQuality",
+            "--output",
+            "{output}",
+            "--progress",
+            "--replace"
+          ],
+          [
+            "--source",
+            "{file}",
+            "--preset",
+            "PresetAppleM4A",
+            "--output",
+            "{output}",
+            "--progress",
+            "--replace"
+          ],
+          [
+            "--source",
+            "{output}",
+            "--preset",
+            "PresetAppleM4A",
+            "--output",
+            "{output}",
+            "--progress",
+            "--replace"
+          ]
+        ]
+      },
+      {
+        "name": "textutil",
+        "arguments": [
+          [
+            "-convert",
+            "txt",
+            "{file}",
+            "-output",
+            "{output}"
+          ],
+          [
+            "-convert",
+            "txt",
+            "{output}",
+            "-output",
+            "{output}"
+          ],
+          [
+            "-convert",
+            "html",
+            "{file}",
+            "-output",
+            "{output}"
+          ],
+          [
+            "-convert",
+            "html",
+            "{output}",
+            "-output",
+            "{output}"
+          ],
+          [
+            "-convert",
+            "rtf",
+            "{file}",
+            "-output",
+            "{output}"
+          ],
+          [
+            "-convert",
+            "rtf",
+            "{output}",
+            "-output",
+            "{output}"
+          ],
+          [
+            "-convert",
+            "doc",
+            "{file}",
+            "-output",
+            "{output}"
+          ],
+          [
+            "-convert",
+            "doc",
+            "{output}",
+            "-output",
+            "{output}"
+          ],
+          [
+            "-convert",
+            "docx",
+            "{file}",
+            "-output",
+            "{output}"
+          ],
+          [
+            "-convert",
+            "docx",
+            "{output}",
+            "-output",
+            "{output}"
+          ],
+          [
+            "-convert",
+            "odt",
+            "{file}",
+            "-output",
+            "{output}"
+          ],
+          [
+            "-convert",
+            "odt",
+            "{output}",
+            "-output",
+            "{output}"
+          ]
+        ]
+      },
+      {
+        "name": "plutil",
+        "arguments": [
+          [
+            "-convert",
+            "json",
+            "-o",
+            "{output}",
+            "{file}"
+          ],
+          [
+            "-convert",
+            "json",
+            "-o",
+            "{output}",
+            "{output}"
+          ],
+          [
+            "-convert",
+            "xml1",
+            "-o",
+            "{output}",
+            "{file}"
+          ],
+          [
+            "-convert",
+            "xml1",
+            "-o",
+            "{output}",
+            "{output}"
+          ]
+        ]
+      },
+      {
+        "name": "ffmpeg",
+        "arguments": [
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{file}",
+            "-c:v",
+            "libwebp",
+            "-quality",
+            "85",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ],
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{output}",
+            "-c:v",
+            "libwebp",
+            "-quality",
+            "85",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ],
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{file}",
+            "-vn",
+            "-c:a",
+            "libmp3lame",
+            "-q:a",
+            "2",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ],
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{output}",
+            "-vn",
+            "-c:a",
+            "libmp3lame",
+            "-q:a",
+            "2",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ],
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{file}",
+            "-vn",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ],
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{output}",
+            "-vn",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ],
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{file}",
+            "-vn",
+            "-c:a",
+            "pcm_s16le",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ],
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{output}",
+            "-vn",
+            "-c:a",
+            "pcm_s16le",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ],
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{file}",
+            "-vn",
+            "-c:a",
+            "pcm_s16be",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ],
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{output}",
+            "-vn",
+            "-c:a",
+            "pcm_s16be",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ],
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{file}",
+            "-vn",
+            "-c:a",
+            "flac",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ],
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{output}",
+            "-vn",
+            "-c:a",
+            "flac",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ],
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{file}",
+            "-vn",
+            "-c:a",
+            "libvorbis",
+            "-q:a",
+            "5",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ],
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{output}",
+            "-vn",
+            "-c:a",
+            "libvorbis",
+            "-q:a",
+            "5",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ],
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{file}",
+            "-vn",
+            "-c:a",
+            "libopus",
+            "-b:a",
+            "128k",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ],
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{output}",
+            "-vn",
+            "-c:a",
+            "libopus",
+            "-b:a",
+            "128k",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ],
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{file}",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-crf",
+            "23",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-movflags",
+            "+faststart",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ],
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{output}",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-crf",
+            "23",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-movflags",
+            "+faststart",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ],
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{file}",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-crf",
+            "20",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ],
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{output}",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-crf",
+            "20",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ],
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{file}",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-crf",
+            "22",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ],
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{output}",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-crf",
+            "22",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ],
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{file}",
+            "-c:v",
+            "libvpx-vp9",
+            "-crf",
+            "32",
+            "-b:v",
+            "0",
+            "-c:a",
+            "libopus",
+            "-b:a",
+            "128k",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ],
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{output}",
+            "-c:v",
+            "libvpx-vp9",
+            "-crf",
+            "32",
+            "-b:v",
+            "0",
+            "-c:a",
+            "libopus",
+            "-b:a",
+            "128k",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ],
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{file}",
+            "-vf",
+            "fps=12,scale=480:-1:flags=lanczos",
+            "-loop",
+            "0",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ],
+          [
+            "-hide_banner",
+            "-nostdin",
+            "-y",
+            "-i",
+            "{output}",
+            "-vf",
+            "fps=12,scale=480:-1:flags=lanczos",
+            "-loop",
+            "0",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            "{output}"
+          ]
+        ]
+      },
+      {
+        "name": "ffprobe",
+        "arguments": [
+          [
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            "{file}"
+          ],
+          [
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            "{output}"
+          ]
+        ]
+      },
+      {
+        "name": "magick",
+        "arguments": [
+          [
+            "{file}",
+            "{output}"
+          ],
+          [
+            "{output}",
+            "{output}"
+          ],
+          [
+            "{file}",
+            "-define",
+            "icon:auto-resize=256,128,64,48,32,16",
+            "{output}"
+          ],
+          [
+            "{output}",
+            "-define",
+            "icon:auto-resize=256,128,64,48,32,16",
+            "{output}"
+          ]
+        ]
+      },
+      {
+        "name": "pandoc",
+        "arguments": [
+          [
+            "{file}",
+            "-t",
+            "gfm",
+            "-o",
+            "{output}"
+          ],
+          [
+            "{output}",
+            "-t",
+            "gfm",
+            "-o",
+            "{output}"
+          ],
+          [
+            "{file}",
+            "-t",
+            "plain",
+            "-o",
+            "{output}"
+          ],
+          [
+            "{output}",
+            "-t",
+            "plain",
+            "-o",
+            "{output}"
+          ],
+          [
+            "{file}",
+            "-s",
+            "-o",
+            "{output}"
+          ],
+          [
+            "{output}",
+            "-s",
+            "-o",
+            "{output}"
+          ]
+        ]
+      },
+      {
+        "name": "soffice",
+        "arguments": [
+          [
+            "--headless",
+            "--convert-to",
+            "pdf",
+            "{file}"
+          ],
+          [
+            "--headless",
+            "--convert-to",
+            "pdf",
+            "{output}"
+          ],
+          [
+            "--headless",
+            "--convert-to",
+            "docx",
+            "{file}"
+          ],
+          [
+            "--headless",
+            "--convert-to",
+            "docx",
+            "{output}"
+          ],
+          [
+            "--headless",
+            "--convert-to",
+            "odt",
+            "{file}"
+          ],
+          [
+            "--headless",
+            "--convert-to",
+            "odt",
+            "{output}"
+          ],
+          [
+            "--headless",
+            "--convert-to",
+            "xlsx",
+            "{file}"
+          ],
+          [
+            "--headless",
+            "--convert-to",
+            "xlsx",
+            "{output}"
+          ],
+          [
+            "--headless",
+            "--convert-to",
+            "ods",
+            "{file}"
+          ],
+          [
+            "--headless",
+            "--convert-to",
+            "ods",
+            "{output}"
+          ],
+          [
+            "--headless",
+            "--convert-to",
+            "csv:Text-CSV:44,34,76,1",
+            "{file}"
+          ],
+          [
+            "--headless",
+            "--convert-to",
+            "csv:Text-CSV:44,34,76,1",
+            "{output}"
+          ],
+          [
+            "--headless",
+            "--convert-to",
+            "pptx",
+            "{file}"
+          ],
+          [
+            "--headless",
+            "--convert-to",
+            "pptx",
+            "{output}"
+          ],
+          [
+            "--headless",
+            "--convert-to",
+            "odp",
+            "{file}"
+          ],
+          [
+            "--headless",
+            "--convert-to",
+            "odp",
+            "{output}"
+          ]
+        ]
+      }
+    ],
+    "terminal": [
+      {
+        "id": "install-ffmpeg",
+        "title": "安装或修复 FFmpeg",
+        "script": [
+          "# Generated by Jarvis to install or repair ffmpeg for the file-convert extension. Safe to delete.",
+          "export PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\"",
+          "printf '\\n=== Jarvis · 安装或修复 FFmpeg（「文件转换」用它转更多格式）===\\n\\n'",
+          "if command -v brew >/dev/null 2>&1; then",
+          "    if brew list --formula ffmpeg >/dev/null 2>&1; then",
+          "        printf '已经装过，用 Homebrew 更新到最新版（它依赖的库被升级换掉、起不来时，更新它就会重新链上）：\\n  $ %s\\n\\n' 'brew upgrade ffmpeg'",
+          "        brew upgrade ffmpeg",
+          "        status=$?",
+          "    else",
+          "        printf '用 Homebrew 安装：\\n  $ %s\\n\\n' 'brew install ffmpeg'",
+          "        brew install ffmpeg",
+          "        status=$?",
+          "    fi",
+          "else",
+          "    printf '这台 Mac 上没有 Homebrew（brew 命令），没法替你装。先装 Homebrew（会要管理员密码），在终端里运行：\\n     %s\\n装好之后回到 Jarvis「设置 · 文件」，再点一次「在终端中安装」。\\n' '/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"'",
+          "    status=1",
+          "fi",
+          "printf '\\n'",
+          "if [ \"$status\" -eq 0 ]; then",
+          "    printf '已装好：%s\\n回到 Jarvis，「设置 · 文件」里这一行会自己变成「已就绪」。\\n' \"$(command -v ffmpeg)\"",
+          "else",
+          "    printf '没有装上（退出码 %s）。上面是原始输出。\\n' \"$status\"",
+          "fi",
+          "printf '\\n按回车关闭。'",
+          "read -r _",
+          "exit \"$status\""
+        ]
+      },
+      {
+        "id": "install-imagemagick",
+        "title": "安装 ImageMagick",
+        "script": [
+          "# Generated by Jarvis to install or repair magick for the file-convert extension. Safe to delete.",
+          "export PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\"",
+          "printf '\\n=== Jarvis · 安装或修复 ImageMagick（「文件转换」用它转更多格式）===\\n\\n'",
+          "if command -v brew >/dev/null 2>&1; then",
+          "    if brew list --formula imagemagick >/dev/null 2>&1; then",
+          "        printf '已经装过，用 Homebrew 更新到最新版（它依赖的库被升级换掉、起不来时，更新它就会重新链上）：\\n  $ %s\\n\\n' 'brew upgrade imagemagick'",
+          "        brew upgrade imagemagick",
+          "        status=$?",
+          "    else",
+          "        printf '用 Homebrew 安装：\\n  $ %s\\n\\n' 'brew install imagemagick'",
+          "        brew install imagemagick",
+          "        status=$?",
+          "    fi",
+          "else",
+          "    printf '这台 Mac 上没有 Homebrew（brew 命令），没法替你装。先装 Homebrew（会要管理员密码），在终端里运行：\\n     %s\\n装好之后回到 Jarvis「设置 · 文件」，再点一次「在终端中安装」。\\n' '/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"'",
+          "    status=1",
+          "fi",
+          "printf '\\n'",
+          "if [ \"$status\" -eq 0 ]; then",
+          "    printf '已装好：%s\\n回到 Jarvis，「设置 · 文件」里这一行会自己变成「已就绪」。\\n' \"$(command -v magick)\"",
+          "else",
+          "    printf '没有装上（退出码 %s）。上面是原始输出。\\n' \"$status\"",
+          "fi",
+          "printf '\\n按回车关闭。'",
+          "read -r _",
+          "exit \"$status\""
+        ]
+      },
+      {
+        "id": "install-pandoc",
+        "title": "安装或修复 pandoc",
+        "script": [
+          "# Generated by Jarvis to install or repair pandoc for the file-convert extension. Safe to delete.",
+          "export PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\"",
+          "printf '\\n=== Jarvis · 安装或修复 pandoc（「文件转换」用它转更多格式）===\\n\\n'",
+          "if command -v brew >/dev/null 2>&1; then",
+          "    if brew list --formula pandoc >/dev/null 2>&1; then",
+          "        printf '已经装过，用 Homebrew 更新到最新版（它依赖的库被升级换掉、起不来时，更新它就会重新链上）：\\n  $ %s\\n\\n' 'brew upgrade pandoc'",
+          "        brew upgrade pandoc",
+          "        status=$?",
+          "    else",
+          "        printf '用 Homebrew 安装：\\n  $ %s\\n\\n' 'brew install pandoc'",
+          "        brew install pandoc",
+          "        status=$?",
+          "    fi",
+          "else",
+          "    printf '这台 Mac 上没有 Homebrew（brew 命令），没法替你装。先装 Homebrew（会要管理员密码），在终端里运行：\\n     %s\\n装好之后回到 Jarvis「设置 · 文件」，再点一次「在终端中安装」。\\n' '/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"'",
+          "    status=1",
+          "fi",
+          "printf '\\n'",
+          "if [ \"$status\" -eq 0 ]; then",
+          "    printf '已装好：%s\\n回到 Jarvis，「设置 · 文件」里这一行会自己变成「已就绪」。\\n' \"$(command -v pandoc)\"",
+          "else",
+          "    printf '没有装上（退出码 %s）。上面是原始输出。\\n' \"$status\"",
+          "fi",
+          "printf '\\n按回车关闭。'",
+          "read -r _",
+          "exit \"$status\""
+        ]
+      },
+      {
+        "id": "install-libreoffice",
+        "title": "安装 LibreOffice",
+        "script": [
+          "# Generated by Jarvis to install or repair soffice for the file-convert extension. Safe to delete.",
+          "export PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\"",
+          "printf '\\n=== Jarvis · 安装或修复 LibreOffice（「文件转换」用它转更多格式）===\\n\\n'",
+          "if command -v brew >/dev/null 2>&1; then",
+          "    if brew list --cask libreoffice >/dev/null 2>&1; then",
+          "        printf '已经装过，用 Homebrew 更新到最新版（它依赖的库被升级换掉、起不来时，更新它就会重新链上）：\\n  $ %s\\n\\n' 'brew upgrade --cask libreoffice'",
+          "        brew upgrade --cask libreoffice",
+          "        status=$?",
+          "    else",
+          "        printf '用 Homebrew 安装：\\n  $ %s\\n\\n' 'brew install --cask libreoffice'",
+          "        brew install --cask libreoffice",
+          "        status=$?",
+          "    fi",
+          "else",
+          "    printf '这台 Mac 上没有 Homebrew（brew 命令），没法替你装。先装 Homebrew（会要管理员密码），在终端里运行：\\n     %s\\n装好之后回到 Jarvis「设置 · 文件」，再点一次「在终端中安装」。\\n' '/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"'",
+          "    status=1",
+          "fi",
+          "printf '\\n'",
+          "if [ \"$status\" -eq 0 ]; then",
+          "    printf '已装好：%s\\n回到 Jarvis，「设置 · 文件」里这一行会自己变成「已就绪」。\\n' \"$(command -v soffice)\"",
+          "else",
+          "    printf '没有装上（退出码 %s）。上面是原始输出。\\n' \"$status\"",
+          "fi",
+          "printf '\\n按回车关闭。'",
+          "read -r _",
+          "exit \"$status\""
+        ]
+      }
+    ]
+  },
+  "contributes": {
+    "services": [
+      {
+        "point": "files.actions",
+        "id": "convert",
+        "title": "文件转换",
+        "subtitle": "图像、音频、视频、文本与办公文档的格式转换",
+        "notes": [
+          "长按选中的文件 → 转盘上的「格式转换」→ 向外展开的一圈里选一个格式",
+          "产物与原文件同名、换扩展名，放在当前文件夹；原文件不动，⌘Z 把产物移到废纸篓",
+          "系统自带的工具就能转常见的图像、音频、MOV / MP4 与 Word / RTF / HTML",
+          "装上 FFmpeg、ImageMagick、pandoc、LibreOffice 能转 MP3、WebP、Markdown、PDF 等更多格式",
+          "工具在 Jarvis 里运行，继承 Jarvis 的完全磁盘访问权限"
+        ],
+        "preferences": [
+          {
+            "key": "ffmpegPath",
+            "type": "executable",
+            "title": "FFmpeg（ffmpeg）",
+            "description": "视频与音频：MP3、OGG、MKV、WebM、GIF 动图、取音轨。默认自动找；也可以「选择」一份（文件名必须是 ffmpeg）",
+            "executable": "ffmpeg",
+            "install": "install-ffmpeg"
+          },
+          {
+            "key": "ffprobePath",
+            "type": "executable",
+            "title": "ffprobe（FFmpeg）",
+            "description": "读影音的时长，转换时才写得出百分比。随 FFmpeg 一起装",
+            "executable": "ffprobe",
+            "install": "install-ffmpeg"
+          },
+          {
+            "key": "magickPath",
+            "type": "executable",
+            "title": "ImageMagick（magick）",
+            "description": "图像：WebP、ICO，与系统读不了的图像格式",
+            "executable": "magick",
+            "install": "install-imagemagick"
+          },
+          {
+            "key": "pandocPath",
+            "type": "executable",
+            "title": "pandoc",
+            "description": "Markdown 的读写与 EPUB",
+            "executable": "pandoc",
+            "install": "install-pandoc"
+          },
+          {
+            "key": "sofficePath",
+            "type": "executable",
+            "title": "LibreOffice（soffice）",
+            "description": "办公文档转 PDF，表格（Excel / CSV / ODS）与演示（PowerPoint / ODP）互转。转换时先关掉开着的 LibreOffice 窗口",
+            "executable": "soffice",
+            "install": "install-libreoffice"
+          }
+        ]
+      }
+    ]
+  },
+  "inbox": false
+}

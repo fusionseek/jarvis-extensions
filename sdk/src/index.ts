@@ -98,7 +98,7 @@ export type {
 export { bridgeProtocolVersion } from "./bridge.js";
 
 /** SDK 版本。主版本必须与宿主运行时一致。 */
-export const sdkVersion = "2.13.0";
+export const sdkVersion = "2.14.0";
 
 /** 一面的实现：工具箱页面、原地弹窗或窗口标签。 */
 export interface PageDefinition {

@@ -110,7 +110,7 @@ export interface CommandContext {
  * `project.engine` 的方法是 `describe` / `listProjects` / `readSchema` / `readItems` / `applyEdit` / `createField` / `createOption` / `createIteration` / `createItem`，
  * 入参放在 `params.request`（`describe` 不带；2.6 起 `readItems` 可只带 `itemIds`，见 `ProjectItemsRequest`）；`launcher.apps`（SDK 2.5）只有 `catalog`，不带入参；
  * `code.format`（SDK 2.7）是 `describe`（不带入参）与 `format`（入参 `CodeFormatRequest`）；`code.highlight`（SDK 2.8）是 `describe` 与 `highlight`（入参 `CodeHighlightRequest`）；
- * `files.actions`（SDK 2.13）是 `describe` 与 `run`（入参 `FileActionsRequest`，进度经 `service.progress`）；
+ * `files.actions`（SDK 2.13）是 `describe` 与 `run`（入参 `FileActionsRequest`，进度经 `service.progress`；SDK 2.14 起 describe 可以分组、进度可以逐个文件）；
  * `files.details`（SDK 2.13）是 `describe`（不带入参）与 `inspect`（入参 `FileDetailsRequest`；用户换了选中时宿主发 `serviceCancel`）。
  */
 export interface ServiceCall {
