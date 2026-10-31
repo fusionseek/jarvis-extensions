@@ -47,6 +47,15 @@ const GIT_CAPABILITIES = ["git.repository.read", "git.hosting.read", "git.hostin
  */
 const DAEMON_PLACEHOLDERS = ["{config}", "{workdir}"];
 /**
+ * `process.executables[].arguments` 里认的文件占位符（SDK 2.13，与宿主 `ExtensionManifestValidation` 同一份）与准许写它的服务点：
+ * `{file}` 只在 `files.actions · run` / `files.details · inspect` 颁的句柄上有意义，`{output}` 只在 `files.actions` 的暂存目录里有意义——
+ * 没声明那个服务，占位符永远换不成路径，宿主按读不懂整份拒收。
+ */
+const FILE_PLACEHOLDER_POINTS = new Map([
+  ["{file}", ["files.actions", "files.details"]],
+  ["{output}", ["files.actions"]],
+]);
+/**
  * 不能当常驻进程的解释器（与宿主 `ExtensionDaemonDeclaration.interpreters` 同一份）：扩展决定配置正文，
  * 而这些程序会把一个文件当程序跑——`sh {config}` 等于让扩展执行任意脚本。带版本号的写法（python3.12）一并拦下。
  */
@@ -295,6 +304,18 @@ export function checkExtension(dir) {
   if (dupKeys.length) problem(dir, `偏好的 key 重复（设置与服务共用一个命名空间）：${dupKeys.join("、")}`);
   checkPreferences(dir, contributes.settings?.preferences ?? [], "preference");
   for (const service of services) checkPreferences(dir, service.preferences ?? [], `服务「${service.id}」的 preference`);
+
+  // 文件占位符（SDK 2.13）：只给声明了对应服务的扩展写（见 FILE_PLACEHOLDER_POINTS）。
+  const servicePoints = new Set(services.map((s) => s.point));
+  for (const executable of executables) {
+    const used = new Set(executable.arguments.flat().filter((arg) => FILE_PLACEHOLDER_POINTS.has(arg)));
+    for (const placeholder of used) {
+      const points = FILE_PLACEHOLDER_POINTS.get(placeholder);
+      if (!points.some((point) => servicePoints.has(point))) {
+        problem(dir, `可执行文件「${executable.name}」的参数里有 ${placeholder}：它只给声明了 ${points.join(" 或 ")} 服务的扩展用`);
+      }
+    }
+  }
 
   // executable 偏好（Jarvis 3.2.8）只替声明过的外部程序找路径、只跑声明过的终端脚本：宿主拿这两个名字去定位、开终端，
   // 点名一个没声明的程序或脚本，设置页那一行就成了绕过受限执行声明的口子。

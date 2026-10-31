@@ -8,8 +8,9 @@
  * 宿主经 `service` 事件调用，扩展经 `service.resolve` / `service.progress` 回话——这些都由 SDK 代劳，
  * 扩展只需要在 `defineExtension({ services: { <id>: 实现 } })` 里交出一个对象。
  *
- * 现有五个扩展点：`junkClean.engine`（清理引擎）、`project.engine`（项目引擎）、`launcher.apps`（全局搜索的应用目录，SDK 2.5）、
- * `code.format`（Git 的代码格式化，SDK 2.7）、`code.highlight`（Git 的代码高亮，SDK 2.8）与 `files.actions`（文件管理器的文件动作，SDK 2.13）。
+ * 现有七个扩展点：`junkClean.engine`（清理引擎）、`project.engine`（项目引擎）、`launcher.apps`（全局搜索的应用目录，SDK 2.5）、
+ * `code.format`（Git 的代码格式化，SDK 2.7）、`code.highlight`（Git 的代码高亮，SDK 2.8）、`files.actions`（文件管理器的文件动作，SDK 2.13）
+ * 与 `files.details`（文件管理器详情面板的属性扩展，SDK 2.13）。
  */
 
 /** 宿主每次调服务时带来的东西。 */
@@ -749,6 +750,106 @@ export interface FileActionsEngine {
   run(request: FileActionsRequest, context: ServiceContext, progress: (progress: FileActionsProgress) => void, signal: CancelSignal): Promise<FileActionsResult>;
 }
 
+// ---------------------------------------------------------------------------
+// files.details：文件管理器详情面板的属性扩展（SDK 2.13，jarvis-mac specs/20261031-192049-files-details-media-info-type-select M-1）
+// ---------------------------------------------------------------------------
+//
+// 形状真源是 jarvis-mac `contracts/schemas/extensions/bridge.v2.schema.json` 的 `$defs.fileDetails*`，这里是它的投影。
+// 你只认领一类文件、读一个文件的事实交回文本；画在哪、缓存、授权、选中一换就取消，都是 Jarvis 的事。
+// 这是一个通用点：名字与字段里没有任何媒体概念——照片 EXIF、字体信息、APK 信息、代码行数、文件哈希都插在这里。
+// 文件经句柄交过来，你看不到路径：把句柄交给 `jarvis.process.run` 的 `{ file }`。详情不产出文件，所以没有暂存目录、不能用 `{ output }`。
+
+/**
+ * `files.details · describe` 的返回：这个服务认领哪些文件。`categories` 与 `extensions` 是「或」——命中任何一个就算；
+ * 两样都不写 = 一切文件。要快（15 秒），不需要授权：只报认领范围，别跑工具。
+ */
+export interface FileDetailsDescription {
+  /** 认哪些类别（1–12 个、不重复）。 */
+  categories?: FileCategory[];
+  /**
+   * 认哪些扩展名（1–128 个、不重复；小写、不带点，`^[a-z0-9][a-z0-9+_-]{0,15}$`）。
+   * 写系统 UTType 认不出类别的那些（`mkv`、`flac`……）：它们在宿主那里多半落在 `other`，只报类别就永远轮不到你。
+   */
+  extensions?: string[];
+  /** 文件夹交不交给你（默认 `false`）。 */
+  folders?: boolean;
+}
+
+/** `files.details · inspect` 的入参文件：与 `files.actions · run` 的一项同形（句柄、名字、扩展名、类别、大小、是否文件夹）。 */
+export type FileDetailsFile = FileActionFile;
+
+/** `files.details · inspect` 的入参。 */
+export interface FileDetailsRequest {
+  /**
+   * 详情面板此刻显示的那一个文件——**恰好一项**。句柄（`file-` + 32 位十六进制）只在这一次调用里有效：交给 `jarvis.process.run` 的 `{ file }`。
+   * 写成数组是为了与 `files.actions` 同形，宿主以后放开多选时不换形状。
+   */
+  files: [FileDetailsFile];
+}
+
+/** 一行「标签 · 值」。纯文本：不带颜色、不带控件。 */
+export interface FileDetailsRow {
+  /** 1–40 字。宿主右对齐、次要色画在左列。 */
+  label: string;
+  /** 1–500 字。宿主可选中、至多画 3 行，超出截断。 */
+  value: string;
+}
+
+/** 一段：一张小卡（标题 + 行）。 */
+export interface FileDetailsSection {
+  /** 1–32 字。 */
+  title: string;
+  /** 1–80 行。一行都没有的段不要交——宿主按契约整份拒收。 */
+  rows: FileDetailsRow[];
+}
+
+/** `files.details · inspect` 的返回。超出任何一条上限，宿主整份拒收、那一块写「读不出来」。 */
+export interface FileDetailsResult {
+  /** 至多 16 段，按你给的顺序画在详情面板里这个扩展那一组下面。 */
+  sections: FileDetailsSection[];
+  /** 一句补充（≤ 200 字），画在那一组末尾，例如「装上某某能读出更多」。 */
+  notice?: string;
+}
+
+/**
+ * `files.details · inspect` 返回的上限（与 bridge schema 的 `$defs.fileDetailsResult` 同一份），外加 `describe` 里扩展名的个数。
+ * 宿主对越界的结果整份拒收，而不是替你截断——截在哪里只有你知道；照这几个数自己截好再交。
+ */
+export const fileDetailsLimits = {
+  /** 段数。 */
+  sections: 16,
+  /** 每段的行数。 */
+  rows: 80,
+  /** 段标题的字数。 */
+  title: 32,
+  /** 标签的字数。 */
+  label: 40,
+  /** 值的字数。 */
+  value: 500,
+  /** `notice` 的字数。 */
+  notice: 200,
+  /** `describe` 里扩展名的个数。 */
+  extensions: 128,
+} as const;
+
+/** 文件详情的方法名（线缆上 `service` 事件的 `method`）。 */
+export type FileDetailsMethod = "describe" | "inspect";
+
+/**
+ * 文件管理器详情面板的属性扩展（`files.details`）。
+ *
+ * - `describe`：Jarvis 在已装清单变化、换了偏好、打开「文件」时问（15 秒，**不需要授权**，30 秒内不重复问）。
+ * - `inspect`：详情面板显示一个落在你认领范围里的文件时调（20 秒）。**第一次之前要用户在详情面板里点「允许」**——
+ *   宿主不在选中时自动弹授权屏（选中一个文件就弹一张授权屏不合理），没授权就不调。用户换了选中，宿主发 `serviceCancel`：
+ *   `signal` 触发，把进行中的进程 `cancel()` 掉、收尾即可（这一次交回什么宿主都不再看）。
+ * - 结果宿主按（扩展、路径、修改时刻、大小）在内存里缓存 64 份：同一个文件没变就不再问你。
+ * - 读不出来就抛错，`message` 写给用户看（宿主在那一块写这一句，不挡别的段）。
+ */
+export interface FileDetailsEngine {
+  describe(context: ServiceContext): FileDetailsDescription | Promise<FileDetailsDescription>;
+  inspect(request: FileDetailsRequest, context: ServiceContext, signal: CancelSignal): FileDetailsResult | Promise<FileDetailsResult>;
+}
+
 /** 某个扩展点的实现。按 manifest `contributes.services[].point` 对上。 */
 export interface ServiceImplementations {
   "junkClean.engine": JunkCleanEngine;
@@ -757,6 +858,7 @@ export interface ServiceImplementations {
   "code.format": CodeFormatEngine;
   "code.highlight": CodeHighlightEngine;
   "files.actions": FileActionsEngine;
+  "files.details": FileDetailsEngine;
 }
 
 /** 任一扩展点的实现。 */

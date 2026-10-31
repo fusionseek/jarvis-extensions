@@ -1,0 +1,10 @@
+{
+"creatingLibrary":{"name":"MediaInfoLib","version":"26.10","url":"https://mediaarea.net/MediaInfo"},
+"media":{"@ref":"empty.mov","track":[{"@type":"General","FileExtension":"mov",
+"FileSize":"0",
+"StreamSize":"0",
+"File_Created_Date":"2026-10-31 11:36:57 UTC",
+"File_Created_Date_Local":"2026-10-31 19:36:57",
+"File_Modified_Date":"2026-10-31 11:36:57 UTC",
+"File_Modified_Date_Local":"2026-10-31 19:36:57"}]}
+}

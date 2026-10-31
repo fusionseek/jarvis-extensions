@@ -1,9 +1,9 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-31T00:37:42.787Z",
+  "generatedAt": "2026-10-31T11:56:54.368Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "e579a8a7c6e7254cdac9a5c5209c38c126fa1c4e"
+    "commit": "0de2d4c3a79cf3888f96992523969fa8689b8b45"
   },
   "extensions": [
     {
@@ -51,8 +51,8 @@
       "path": "extensions/android-apps",
       "bundle": {
         "path": "extensions/android-apps/dist/extension.js",
-        "sha256": "b5ac1461bec1170c3ed7e0def169dd623ee0fcc82ed566a8c827639d2ac1add8",
-        "byteCount": 68768
+        "sha256": "cc2b257363478785a3121fa25ea7d3727b63ec3e4c253f33d15f13706bf7607f",
+        "byteCount": 69094
       },
       "updatedAt": "2026-10-31T08:37:28+08:00"
     },
@@ -390,8 +390,8 @@
       "path": "extensions/code-format",
       "bundle": {
         "path": "extensions/code-format/dist/extension.js",
-        "sha256": "1eefe6867bfbb5a0f998f28973e259828d04bc5be21b859f75aabf96fcbdd9ca",
-        "byteCount": 43084
+        "sha256": "06b81a5ddd232d2297aecb3cf3809942426f6fc9a8f869517e09d2aba5cd488d",
+        "byteCount": 43410
       },
       "updatedAt": "2026-10-31T08:37:28+08:00"
     },
@@ -430,8 +430,8 @@
       "path": "extensions/code-highlight",
       "bundle": {
         "path": "extensions/code-highlight/dist/extension.js",
-        "sha256": "7c0d60c7ccdc7f2234fef467d024f08ac68ed8e5e24b40c567652f548e738b9b",
-        "byteCount": 65312
+        "sha256": "4847638337739f156248769219a46111ebe4da676fff2b4581be243b57d15b76",
+        "byteCount": 65641
       },
       "updatedAt": "2026-10-31T08:37:28+08:00"
     },
@@ -511,8 +511,8 @@
       "path": "extensions/github-project",
       "bundle": {
         "path": "extensions/github-project/dist/extension.js",
-        "sha256": "24beb4d01aa0ecc1eb6d35bb9763babd0d2b28f12451e0f6ec5b2cfeb8250843",
-        "byteCount": 97228
+        "sha256": "b36520f9ad43be612ecf51b5fa9a7e1304b722b6ffc016089d4079d135a9b8ff",
+        "byteCount": 97554
       },
       "updatedAt": "2026-10-31T08:37:28+08:00"
     },
@@ -652,8 +652,8 @@
       "path": "extensions/http-status",
       "bundle": {
         "path": "extensions/http-status/dist/extension.js",
-        "sha256": "5fce44f59e8f6cb22074cc68af15a8652c02ff8c89bd1c7fd643fc490c36f174",
-        "byteCount": 129110
+        "sha256": "b60b3e4a5e0311d06936f5d6678e9e773685245d3e5e564ae2bcf6aedc3b7718",
+        "byteCount": 129436
       },
       "updatedAt": "2026-10-31T08:37:28+08:00"
     },
@@ -782,15 +782,15 @@
                 "type": "select",
                 "title": "提示的位置",
                 "description": "「悬浮球旁」把输入法的图标放进悬浮球、名字贴在球下，停 2 秒；悬浮球展开或贴边藏起时改在屏幕中间偏下",
-                "default": "screen",
+                "default": "orb",
                 "options": [
-                  {
-                    "value": "screen",
-                    "title": "屏幕中间偏下"
-                  },
                   {
                     "value": "orb",
                     "title": "悬浮球旁（粘连闪现）"
+                  },
+                  {
+                    "value": "screen",
+                    "title": "屏幕中间偏下"
                   }
                 ]
               },
@@ -823,10 +823,10 @@
       "path": "extensions/input-source",
       "bundle": {
         "path": "extensions/input-source/dist/extension.js",
-        "sha256": "550ca1ff4aeb90a159264aa84bbd3b094a25511c16d78c59672b9cce5bf77f56",
-        "byteCount": 102135
+        "sha256": "e56735ab671321161e0342c402ba531b8d18ff461b65ca16394cd0f43aa5ecea",
+        "byteCount": 102618
       },
-      "updatedAt": "2026-10-31T08:37:28+08:00"
+      "updatedAt": "2026-10-31T17:03:35+08:00"
     },
     {
       "manifest": {
@@ -877,10 +877,85 @@
       "path": "extensions/mac-apps",
       "bundle": {
         "path": "extensions/mac-apps/dist/extension.js",
-        "sha256": "a8553da986572a1138d24653e28d858416d9e25ab3d6a2ef5980697aebb409bd",
-        "byteCount": 46340
+        "sha256": "ac611900c066cfbeb44c64e02b632cbe7570a7dbbdf1824bd6f2e39a818baafc",
+        "byteCount": 46666
       },
       "updatedAt": "2026-10-31T08:37:28+08:00"
+    },
+    {
+      "manifest": {
+        "manifestVersion": 2,
+        "id": "media-info",
+        "version": "1.0.0",
+        "name": "媒体信息",
+        "symbol": "film",
+        "description": "在 Jarvis「文件」的详情里读出影音文件的技术信息：容器与编码、码率、分辨率、帧率、HDR、声道与采样率、字幕与章节，排法照 MediaInfo。用你装好的 MediaInfo 命令行读，没装时用 ffprobe。",
+        "author": {
+          "name": "fusionseek",
+          "github": "fusionseek"
+        },
+        "main": "dist/extension.js",
+        "sdk": "^2.13.0",
+        "minimumJarvisVersion": "3.3.2",
+        "capabilities": [
+          {
+            "id": "process.run",
+            "reason": "用你装好的 mediainfo 或 ffprobe 读取你在「文件」里此刻选中的那一个影音文件"
+          }
+        ],
+        "process": {
+          "executables": [
+            {
+              "name": "mediainfo",
+              "arguments": [
+                [
+                  "--Output=JSON",
+                  "{file}"
+                ]
+              ]
+            },
+            {
+              "name": "ffprobe",
+              "arguments": [
+                [
+                  "-v",
+                  "error",
+                  "-print_format",
+                  "json",
+                  "-show_format",
+                  "-show_streams",
+                  "-show_chapters",
+                  "{file}"
+                ]
+              ]
+            }
+          ]
+        },
+        "contributes": {
+          "services": [
+            {
+              "point": "files.details",
+              "id": "media",
+              "title": "媒体信息",
+              "subtitle": "读出影音文件的容器、编码、码率、分辨率、HDR、声道、字幕与章节",
+              "notes": [
+                "用你装好的 MediaInfo 命令行读（brew install media-info），没装时用 ffprobe（brew install ffmpeg）",
+                "App Store 版 MediaInfo.app 没有命令行入口，扩展调不动它",
+                "只读你此刻选中的那一个文件：不改它、不联网",
+                "命令在 Jarvis 里运行，继承 Jarvis 的完全磁盘访问权限"
+              ]
+            }
+          ]
+        },
+        "inbox": false
+      },
+      "path": "extensions/media-info",
+      "bundle": {
+        "path": "extensions/media-info/dist/extension.js",
+        "sha256": "677efca9dd9bfdc292f4981ad6c4e1ac354392d5bc6535e5aca5ca5ce97f95e9",
+        "byteCount": 82664
+      },
+      "updatedAt": "2026-10-31T11:56:54.273Z"
     },
     {
       "manifest": {
@@ -1056,8 +1131,8 @@
       "path": "extensions/menubar",
       "bundle": {
         "path": "extensions/menubar/dist/extension.js",
-        "sha256": "9165d531ce950d11c6ae5ed7385514a99f288a8e36f1224b464453a68c587579",
-        "byteCount": 66749
+        "sha256": "710b2099af46dd91177d007cb7b7604b20c0a04481d1748a92d9a660c59402c1",
+        "byteCount": 67075
       },
       "updatedAt": "2026-10-31T08:37:28+08:00"
     },
@@ -1180,8 +1255,8 @@
       "path": "extensions/mole-clean",
       "bundle": {
         "path": "extensions/mole-clean/dist/extension.js",
-        "sha256": "27597c090c8dfd02776b2e33804de52b70de05ad54087fda88d9d4c4aa9feec7",
-        "byteCount": 63159
+        "sha256": "e0576298bfe0a8480636f0e5204757cd13ecbed9d93619b2596e673142584b2b",
+        "byteCount": 63485
       },
       "updatedAt": "2026-10-31T08:37:28+08:00"
     },
@@ -1540,8 +1615,8 @@
       "path": "extensions/proxy",
       "bundle": {
         "path": "extensions/proxy/dist/extension.js",
-        "sha256": "bca0b4ab6da36474b08c35f80048c147d8d0a19206e6222700d59a816ab858c8",
-        "byteCount": 347682
+        "sha256": "dcbd2dcd28510283eb455e50b9cefd5c571b08b9dd9e600dfaaaa8dbb110da52",
+        "byteCount": 348008
       },
       "updatedAt": "2026-10-31T08:37:28+08:00"
     },
@@ -1632,8 +1707,8 @@
       "path": "extensions/send-to-phone",
       "bundle": {
         "path": "extensions/send-to-phone/dist/extension.js",
-        "sha256": "58364dbbc6f55e78be220b691baa5c8c96c89289e37489c7f9e439af700a2da3",
-        "byteCount": 48147
+        "sha256": "d5a06d10d1eff330059671d020e8d15b4397fb270be006ca3f75c8a4c153df5a",
+        "byteCount": 48473
       },
       "updatedAt": "2026-10-31T08:37:28+08:00"
     },
@@ -1871,8 +1946,8 @@
       "path": "extensions/translation",
       "bundle": {
         "path": "extensions/translation/dist/extension.js",
-        "sha256": "7cab5e185c82ca65adfb3554776f39c60486f055486e215ec8280ab87e024b1f",
-        "byteCount": 93376
+        "sha256": "22ed14ece5362050bbb29456f09c732bb455ab1d5bd5779b736045ab056c43ed",
+        "byteCount": 93702
       },
       "updatedAt": "2026-10-31T08:37:28+08:00"
     }

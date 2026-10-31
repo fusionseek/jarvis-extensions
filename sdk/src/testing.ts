@@ -52,7 +52,7 @@ import type {
 import type { AndroidApp, AndroidAppDetail, AndroidAppScope, AndroidDevice, AndroidTool, JarvisErrorShape } from "./capabilities.js";
 import { maximumAndroidAppDetailsPerCall } from "./capabilities.js";
 import type { ServicePoint } from "./manifest.js";
-import type { CodeFormatRequest, CodeHighlightRequest, FileActionsRequest, ProjectEngineRequest } from "./services.js";
+import type { CodeFormatRequest, CodeHighlightRequest, FileActionsRequest, FileDetailsRequest, ProjectEngineRequest } from "./services.js";
 
 /** 异步桩。第二个参数可以往订阅 token 上推事件（`process.run` 推输出行就靠它）。 */
 export type AsyncStub = (params: unknown, host: TestHost) => Promise<unknown> | unknown;
@@ -135,7 +135,7 @@ export interface TestHost {
     preferences?: Record<string, unknown>;
     granted?: string[];
     actionId?: string;
-    request?: ProjectEngineRequest | CodeFormatRequest | CodeHighlightRequest | FileActionsRequest;
+    request?: ProjectEngineRequest | CodeFormatRequest | CodeHighlightRequest | FileActionsRequest | FileDetailsRequest;
   }): Promise<ServiceOutcome>;
   /** 取消一次进行中的服务调用（发 `serviceCancel`）。`callService` 之前先拿 `nextCallId`。 */
   cancelService(callId: number): void;

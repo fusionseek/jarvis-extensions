@@ -26,7 +26,7 @@ import type { EnvironmentInfo, HostInfo, Jarvis, ProcessHandle, ProcessResult, P
 import { JarvisError } from "./capabilities.js";
 import type { ActivationContext, CommandContext, HostEvent, InvokeResult, HostBridge, CommandSummary, MenuBarEvent, MenuBarExtrasPressResult, MenuBarMenuState, MenuBarModifier, NetworkStatus, ScreenInfo, ServiceCall, Surface } from "./bridge.js";
 import { bridgeProtocolVersion, countNodes, serialize } from "./bridge.js";
-import type { CancelSignal, CodeFormatEngine, CodeFormatRequest, CodeHighlightEngine, CodeHighlightRequest, FileActionsEngine, FileActionsRequest, ServiceContext, ServiceImplementation, JunkCleanEngine, LauncherAppsEngine, ProjectEngine, ProjectEngineRequest } from "./services.js";
+import type { CancelSignal, CodeFormatEngine, CodeFormatRequest, CodeHighlightEngine, CodeHighlightRequest, FileActionsEngine, FileActionsRequest, FileDetailsEngine, FileDetailsRequest, ServiceContext, ServiceImplementation, JunkCleanEngine, LauncherAppsEngine, ProjectEngine, ProjectEngineRequest } from "./services.js";
 import type { UINode } from "./ui.js";
 import { maximumNodesPerRender, ui } from "./ui.js";
 import { ocr } from "./ocr.js";
@@ -483,6 +483,14 @@ class Runtime {
               signal,
             );
           }
+          break;
+        }
+        case "files.details": {
+          // 文件详情的属性扩展（SDK 2.13）：describe 不带入参，inspect 的入参在 params.request；
+          // 用户换了选中时宿主发 serviceCancel，经同一个 signal 交给实现。
+          const engine = implementation as FileDetailsEngine;
+          if (call.method === "describe") return Promise.resolve(engine.describe(context));
+          if (call.method === "inspect") return Promise.resolve(engine.inspect(call.params.request as FileDetailsRequest, context, signal));
           break;
         }
       }

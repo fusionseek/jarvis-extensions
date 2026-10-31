@@ -143,6 +143,36 @@ Jarvis「文件」（内置文件管理器）的**文件动作**：扩展在 `de
 
 参考实现：模板 `templates/file-actions-sample`（系统自带的 sips 把图片转成 PNG / JPEG / HEIC）。
 
+### 设置 › 文件 · 文件详情（`files.details`，SDK 2.13）
+
+Jarvis「文件」详情（窗口里右侧那一列、工具箱面板里的「详情」阶段，⌘I）的**属性扩展**：扩展在 `describe` 里认领一类文件（类别、扩展名、要不要文件夹），
+详情显示其中一个时宿主把它的文件句柄交给 `inspect`，扩展经 `process.run` 的 `{ file }` 交给外部工具、读出事实，交回几段「标签 · 值」；
+宿主把它们画在一般信息下面、组头「‹服务标题› · 扩展」。**画、缓存、授权、选中一换就取消都是宿主的事**，扩展只交文本。
+（jarvis-mac `specs/20261031-192049-files-details-media-info-type-select` M。）
+
+这是一个通用点，名字与字段里没有任何媒体概念：照片 EXIF / GPS 深读、字体信息、APK 信息、代码行数统计、文件哈希都插在这里。
+
+| 规则 | 值 | 为什么 |
+| --- | --- | --- |
+| 有没有它 | 没有启用着的 `files.details` 时详情只有内置的几段（一般信息、图像 / PDF / 影音的基础几项） | 宿主只用系统框架读、不碰进程；深读交给扩展 |
+| 认领 | `describe`：`categories`（1–12）与 `extensions`（1–128，小写不带点）是「或」，两样都不写 = 一切文件；`folders` 默认 `false`。15 秒，30 秒内不重复问；装了 / 换了偏好 / 打开「文件」时问 | 系统 UTType 认不出的扩展名（mkv、flac……）在宿主那里落在 `other`，只报类别就永远轮不到它 |
+| 几个 | 每个命中的服务一组，按安装顺序；一组至多 16 段、每段 1–80 行，标题 ≤ 32、标签 ≤ 40、值 ≤ 500，`notice` ≤ 200 | 详情是一列侧栏；越界的结果**整份拒收**（宿主不替你截：截在哪里只有扩展知道），SDK 导出 `fileDetailsLimits` 照着截 |
+| 授权 | `describe` 不要授权。**选中文件时不自动弹授权屏**：没授权时那一组只写一行「‹扩展名› 要运行 ‹工具› 读取这个文件」和一颗「允许」，点了才走与文件动作同一张授权屏（面板里盖住内容区的一页、窗口里是 sheet）；第一次 `inspect` 只在授权之后 | 选中一个文件就弹一张授权屏不合理——选中是浏览，不是同意 |
+| 路径 | 扩展看不到：`request.files` 恰好一项，句柄只在这一次调用里有效；`{ output }` 与暂存目录不给（详情不产出文件） | 扩展只能碰此刻显示的那一个文件 |
+| 时限与取消 | `inspect` 20 秒；用户换了选中，宿主发 `serviceCancel`，SDK 经 `signal` 交给实现，扩展 `cancel()` 掉进行中的进程 | 快速翻文件时不让旧的那次占着进程 |
+| 失败 | 抛错（`message` 写给用户），宿主在那一组写这一句，不挡别的段 | 工具没装、读不懂是常态，不是事故 |
+| 缓存 | 宿主按（扩展、路径、修改时刻、大小）在内存里留最近 64 份；文件变了就重读 | 在几个文件之间来回点，不该每次都起进程 |
+| 设置画在哪 | 设置 › 文件 ·「文件详情」：每个提供方一行——名字、认哪些、授权状态与「允许」「重新检测」；一个都没装时写去扩展商店装 | 工具多半在终端里装，切回来重问 |
+
+**方法**（形状真源是 jarvis-mac `contracts/schemas/extensions/bridge.v2.schema.json` 的 `$defs.fileDetails*`）：
+
+| 方法 | 入参 | 返回 | 超时 |
+| --- | --- | --- | --- |
+| `describe` | — | `{ categories?, extensions?, folders? }` | 15 秒 |
+| `inspect` | `{ files: [{ file（句柄）, name, extension, category, size?, folder }] }`（恰好一项，与 `files.actions · run` 的一项同形） | `{ sections: [{ title, rows: [{ label, value }] }], notice? }`；全是纯文本，不带颜色、不画控件；读不出来就抛错 | 20 秒，选中一换就取消 |
+
+参考实现：[`extensions/media-info`](../extensions/media-info)「媒体信息」（mediainfo，没有时 ffprobe）。
+
 ### 设置 › Git · 代码高亮（`code.highlight`，SDK 2.8）
 
 Git 文件 diff 页（File View / Diff View）与 Blame 的**语法高亮**：宿主按文件名认出语言，把左右两份文本交给实现了 `code.highlight` 的扩展，

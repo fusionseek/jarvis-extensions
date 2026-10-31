@@ -354,15 +354,24 @@ v1 的卡片动作与 `dismiss` 已删除（[11](11-inbox.md)）。
 | 方法 | 说明 |
 | --- | --- |
 | `locate(executable)` | 按名字在固定位置里找：`/opt/homebrew/bin`、`/usr/local/bin`、`~/.local/bin`、`~/bin`、`~/.nix-profile/bin`、`/run/current-system/sw/bin`，以及语言工具链自带的 `~/.cargo/bin`、`~/.dotnet/tools`、`/usr/local/go/bin`（SDK 2.7 的宿主起；不 fork shell 去 `which`：从 Finder 起的应用只有一份最小 PATH）。带 `/` 或 `~` 的当作用户填的路径——**坏了就报坏，不悄悄回落到自动探测**。返回 `{ path, source: custom/discovered }` 或 `{ path: null, problem: notFound/missing/notExecutable }` |
-| `run({ executable, arguments, onLine, stdin?, directory?, output? })` → `{ result, cancel() }` | 跑一个声明过的可执行文件；参数必须与声明的某一组**逐项相等**。标准输出逐行交给 `onLine`（宿主按 100ms 合批推过来，**全部输出先于结果到达**）；`result` 兑现为 `{ exitCode, stderr, stdout? }`（stderr 末尾 4 KB）；`cancel()` 发 SIGINT，`result` 以 `cancelled` 拒绝。SDK 2.7 的三个选项见下 |
+| `run({ executable, arguments, onLine, stdin?, directory?, output? })` → `{ result, cancel() }` | 跑一个声明过的可执行文件；参数必须与声明的某一组**逐项相等**。标准输出逐行交给 `onLine`（宿主按 100ms 合批推过来，**全部输出先于结果到达**）；`result` 兑现为 `{ exitCode, stderr, stdout? }`（stderr 末尾 4 KB）；`cancel()` 发 SIGINT，`result` 以 `cancelled` 拒绝。SDK 2.7 的三个选项、SDK 2.13 的文件参数见下 |
 
 SDK 2.7 的三个选项（给格式化工具这一类「读一份文本、吐一份文本」的工具用）：
 
 | 选项 | 规则 | 为什么 |
 | --- | --- | --- |
 | `stdin` | 写进标准输入的文字，≤ 1 MiB。**只对 manifest 里声明了 `"stdin": true` 的可执行文件放行**，否则 `capability.undeclared` | 格式化工具从 stdin 读源码是本职；同一个开关放到解释器身上就等于把参数当脚本——所以写在声明上、授权屏逐个念出来，审核逐个看 |
-| `directory` | 工作目录的**句柄**，只认宿主在这一次服务调用里给的那一个（`code.format · format` 的 `request.directory`），别的一律 `capability.undeclared` | 工具按文件所在目录找 `.clang-format` / `.editorconfig` / `pyproject.toml`；扩展看不到本机路径，也造不出一个目录来跑 |
+| `directory` | 工作目录的**句柄**，只认宿主在这一次服务调用里给的那一个（`code.format · format`、`files.actions · run` 的 `request.directory`），别的一律 `capability.undeclared` | 工具按文件所在目录找 `.clang-format` / `.editorconfig` / `pyproject.toml`；扩展看不到本机路径，也造不出一个目录来跑 |
 | `output: "text"` | 不逐行推；进程结束后结果里多一个 `stdout`（整份，按 UTF-8 解码，≤ 4 MiB，超过以 `host.failure` 拒绝） | 逐行推会吞掉空行，交回一份源码必须是整份 |
+
+SDK 2.13 的两种文件参数（给文件管理器的两个扩展点用，`arguments` 里的一项可以不是字符串）：
+
+| 参数 | 规则 | 为什么 |
+| --- | --- | --- |
+| `{ file: 句柄 }` | 填 manifest 参数组里写成 `"{file}"` 的那一项，宿主换成那个文件的路径。句柄（`file-` + 32 位十六进制）只认这一次 `files.actions · run` 或 `files.details · inspect` 颁的；只有声明了这两个服务之一的扩展能在参数组里写 `"{file}"` | 扩展看不到本机路径，也就碰不到用户没选中的文件；参数组里其余各项仍逐字写死，读 manifest 就知道它会对那个文件跑什么 |
+| `{ output: 名字 }` | 填写成 `"{output}"` 的那一项，同时要带 `directory`（`files.actions · run` 的暂存目录），宿主换成「那个目录 / 名字」。只给声明了 `files.actions` 的扩展 | 产物只能落进宿主给的空暂存目录；`files.details` 不产出文件，没有暂存目录可写 |
+
+一个字面量字符串写成 `"{file}"` 对不上占位符（宿主分得清扩展传的是字符串还是句柄对象），反过来句柄对象也只能落在写了占位符的那一位。
 
 放行规则（`ExtensionProcessPolicy`）：名字或路径的**文件名**必须等于 manifest `process.executables[].name`——
 用户在偏好里填 `/opt/tools/mo` 可以，填 `/bin/rm` 不行（`capability.undeclared`）。

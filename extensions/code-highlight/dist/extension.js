@@ -389,6 +389,12 @@
             }
             break;
           }
+          case "files.details": {
+            const engine2 = implementation;
+            if (call2.method === "describe") return Promise.resolve(engine2.describe(context));
+            if (call2.method === "inspect") return Promise.resolve(engine2.inspect(call2.params.request, context, signal));
+            break;
+          }
         }
         return Promise.reject(new JarvisError({ code: "capability.unknown", message: `\u4E0D\u8BA4\u8BC6\u7684\u670D\u52A1\u65B9\u6CD5 ${call2.point}.${call2.method}` }));
       };

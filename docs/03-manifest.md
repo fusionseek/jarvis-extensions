@@ -193,7 +193,7 @@ v2 按**域**组织（[01](01-overview.md)）：身份与能力在顶层，入�
 | `capabilities[]` | ≤ 16 项，`{ id, reason }`，`reason` 4–60 字，id 不重复 | `reason` 是授权屏那一行的第二句，写给用户看 |
 | `network.hosts` | 与 `network.preferenceHosts` 至少一项（声明了 `network.https` 时）：1–8 个主机名 | 宿主只放行这几个主机（完全相等，不认后缀）；授权屏逐条列给用户看 |
 | `network.preferenceHosts` | SDK 2.9：1–4 个本扩展 `urlList` 偏好的 key | 订阅地址这一类，作者写 manifest 时不知道在哪个主机：用户在那几项里填的地址，主机在**请求那一刻**放行（删掉一条，下一次请求就拦）。只认 `urlList`：它的控件由宿主画、值只可能来自用户亲手输入；页面里的输入框扩展自己就能填，宿主分不出是谁写的。授权屏写「以及你在「‹偏好标题›」里填的地址所在的主机」 |
-| `process.executables[]` | 声明了 `process.run` 时必填：1–16 项 `{ name, arguments: [[…], …], stdin? }`，`name` 不带路径；1–16 组参数（SDK 2.7 起，原来 1–8），每组 ≤ 8 个，每个参数 1–64 字、**不带空白与 `; & \| \` $ < >`**；`stdin: true`（SDK 2.7）允许经标准输入交给它一段文字 | 一次调用的参数必须与其中某一组**逐项相等**——不支持通配，读 manifest 就知道它会跑什么。16 项是给格式化扩展这种「一整套工具链」留的；`stdin` 只给本职就是读 stdin 的工具，解释器不得声明。SDK 2.13：声明了 `files.actions` 服务的扩展可以把一整项写成 `"{file}"`（调用时传 `{ file: 句柄 }`，Jarvis 换成那个文件的路径）或 `"{output}"`（传 `{ output: 名字 }` 并带 `directory`，Jarvis 换成暂存目录里那个位置）；句柄只认这一次 `files.actions · run` 颁的 |
+| `process.executables[]` | 声明了 `process.run` 时必填：1–16 项 `{ name, arguments: [[…], …], stdin? }`，`name` 不带路径；1–16 组参数（SDK 2.7 起，原来 1–8），每组 ≤ 8 个，每个参数 1–64 字、**不带空白与 `; & \| \` $ < >`**；`stdin: true`（SDK 2.7）允许经标准输入交给它一段文字 | 一次调用的参数必须与其中某一组**逐项相等**——不支持通配，读 manifest 就知道它会跑什么。16 项是给格式化扩展这种「一整套工具链」留的；`stdin` 只给本职就是读 stdin 的工具，解释器不得声明。SDK 2.13：声明了 `files.actions` 或 `files.details` 服务的扩展可以把一整项写成 `"{file}"`（调用时传 `{ file: 句柄 }`，Jarvis 换成那个文件的路径），句柄只认这一次 `files.actions · run` / `files.details · inspect` 颁的；声明了 `files.actions` 的还可以写 `"{output}"`（传 `{ output: 名字 }` 并带 `directory`，Jarvis 换成暂存目录里那个位置）——详情不产出文件，没有暂存目录。没声明对应服务的扩展写了，宿主与校验脚本按读不懂拒收：占位符永远换不成路径 |
 | `process.terminal[]` | 声明了 `terminal.run` 时必填：`{ id, title ≤ 16, script: [行…] }`，1–80 行、每行 ≤ 240 字 | 扩展只能按 id 点名，不能传脚本内容；宿主在前面补 `#!/bin/sh` 与「执行完删掉自己」那一行 |
 | `files.read[]` | 声明了 `files.read` 时必填：1–8 个绝对路径或 `~` 开头的**文件**，不能有通配与 `..` | 宿主展开 `~`、规整之后逐字比；目录读不了 |
 | `process.daemons[]` | SDK 2.9，声明了 `process.daemon` 时必填：1–2 项 `{ id, executable, arguments, config? }`。`id` `^[a-z][a-z0-9-]{0,31}$`；`executable` 规则同 `process.executables[].name`；`arguments` 是**一组** 1–16 个参数，每个 1–64 字、不带空白与 `; & \| \` $ < >`；只认 `{config}`（宿主写下的配置文件绝对路径）与 `{workdir}`（它的工作目录）两个占位符，**必须独占一个参数**、至少用一个；`config: { fileName }` 声明了就必须在参数里用 `{config}`，反之亦然 | 运行时扩展一个参数都传不进来，它能决定的只有配置文件的内容——所以读 manifest 就知道这个进程会以什么命令行常驻。占位符独占一个参数，是因为宿主按整参数替换；至少一个，是因为 Jarvis 崩溃之后宿主靠参数里的工作目录路径认出自己留下的孤儿进程。授权屏逐字念：「会在后台常驻运行：sing-box run -c ‹配置文件› -D ‹工作目录›」 |
@@ -317,12 +317,12 @@ todo 待办 memo note 速记 记 find 查找 diff compare 对比 比较 gitdiff 
 
 | 字段 | 规则 | 为什么 |
 | --- | --- | --- |
-| `point` | 宿主开放的扩展点：`junkClean.engine`（清理引擎）、`project.engine`（项目引擎）、`launcher.apps`（全局搜索的应用目录，SDK 2.5）、`code.format`（Git 的代码格式化，SDK 2.7）、`code.highlight`（Git 的代码高亮，SDK 2.8）、`files.actions`（文件管理器的文件动作，SDK 2.13） | **扩展点是宿主定的**：方法、载荷、设置画在哪都写死在宿主与 SDK 里 |
+| `point` | 宿主开放的扩展点：`junkClean.engine`（清理引擎）、`project.engine`（项目引擎）、`launcher.apps`（全局搜索的应用目录，SDK 2.5）、`code.format`（Git 的代码格式化，SDK 2.7）、`code.highlight`（Git 的代码高亮，SDK 2.8）、`files.actions`（文件管理器的文件动作，SDK 2.13）、`files.details`（文件管理器详情的属性扩展，SDK 2.13） | **扩展点是宿主定的**：方法、载荷、设置画在哪都写死在宿主与 SDK 里 |
 | `id` | 与扩展 id 同一套规则，扩展内唯一 | 引擎 id = `<扩展 id>/<服务 id>`；`defineExtension({ services })` 按它对上实现 |
 | `title` | 1–16 字 | 在那个内置能力里的名字，例如「深度清理（Mole）」——设置 · 清理 里那一行开关的标题；项目引擎的是 Git 设置与「项目」里引擎的名字 |
 | `subtitle` | 1–80 字 | 一句话说它比内置的多做了什么 |
 | `notes` | ≤ 6 条，每条 1–80 字 | 须知：画在设置区段与清理工具的范围说明里 |
-| `preferences` | ≤ 8 项，形状同设置域 | **画在扩展点指定的那个内置区段里**（`junkClean.engine` → 设置 · 清理，`project.engine` / `code.format` / `code.highlight` → 设置 · Git，`launcher.apps` → 设置 · 全局搜索，`files.actions` → 设置 · 文件），不在「扩展」区段 |
+| `preferences` | ≤ 8 项，形状同设置域 | **画在扩展点指定的那个内置区段里**（`junkClean.engine` → 设置 · 清理，`project.engine` / `code.format` / `code.highlight` → 设置 · Git，`launcher.apps` → 设置 · 全局搜索，`files.actions` / `files.details` → 设置 · 文件），不在「扩展」区段 |
 
 偏好的 key 在设置域与全部服务之间**共用一个命名空间**，不能重。
 
@@ -379,7 +379,7 @@ node scripts/validate.mjs extensions/foo  # 校验一个
 - 用了 `jarvis.apps`（`apps.read`）或实现 `launcher.apps` 的扩展写 `"sdk": "^2.5.0"`。
 - 实现 `code.format`、或用了 `process.run` 的 `stdin` / `directory` / `output` 的扩展写 `"sdk": "^2.7.0"`。
 - 实现 `code.highlight` 的扩展写 `"sdk": "^2.8.0"`。
-- 实现 `files.actions`、或在 `process.executables[].arguments` 里写 `"{file}"` / `"{output}"` 占位符的扩展写 `"sdk": "^2.13.0"` 与 `"minimumJarvisVersion": "3.3.2"`：更早的 Jarvis 不认识这个扩展点，也不会替换占位符。
+- 实现 `files.actions` / `files.details`、或在 `process.executables[].arguments` 里写 `"{file}"` / `"{output}"` 占位符的扩展写 `"sdk": "^2.13.0"` 与 `"minimumJarvisVersion": "3.3.2"`：更早的 Jarvis 不认识这两个扩展点，也不会替换占位符。
 - 入驻菜单栏域、用了 `jarvis.daemon` / `jarvis.systemProxy`、`urlList` 偏好或 `network.preferenceHosts` 的扩展写 `"sdk": "^2.9.0"`。
 - 用了 `executable` 偏好的扩展写 `"minimumJarvisVersion": "3.2.8"` 以上：更早的 Jarvis 不认识这个类型，整份 manifest 读不出来。它只是 manifest 里的一种类型、SDK 运行时没变，`sdk` 照旧写 `^2.10.0`。
 - 常驻进程的 `executable` 不得是解释器（`sh`、`bash`、`zsh`、`python3`、`node`、`osascript`）：`sh {config}` 等于把配置文件当脚本跑，

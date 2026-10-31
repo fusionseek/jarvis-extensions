@@ -1,0 +1,54 @@
+{
+  "manifestVersion": 2,
+  "id": "media-info",
+  "version": "1.0.0",
+  "name": "媒体信息",
+  "symbol": "film",
+  "description": "在 Jarvis「文件」的详情里读出影音文件的技术信息：容器与编码、码率、分辨率、帧率、HDR、声道与采样率、字幕与章节，排法照 MediaInfo。用你装好的 MediaInfo 命令行读，没装时用 ffprobe。",
+  "author": {
+    "name": "fusionseek",
+    "github": "fusionseek"
+  },
+  "main": "dist/extension.js",
+  "sdk": "^2.13.0",
+  "minimumJarvisVersion": "3.3.2",
+  "capabilities": [
+    {
+      "id": "process.run",
+      "reason": "用你装好的 mediainfo 或 ffprobe 读取你在「文件」里此刻选中的那一个影音文件"
+    }
+  ],
+  "process": {
+    "executables": [
+      {
+        "name": "mediainfo",
+        "arguments": [
+          ["--Output=JSON", "{file}"]
+        ]
+      },
+      {
+        "name": "ffprobe",
+        "arguments": [
+          ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", "-show_chapters", "{file}"]
+        ]
+      }
+    ]
+  },
+  "contributes": {
+    "services": [
+      {
+        "point": "files.details",
+        "id": "media",
+        "title": "媒体信息",
+        "subtitle": "读出影音文件的容器、编码、码率、分辨率、HDR、声道、字幕与章节",
+        "notes": [
+          "用你装好的 MediaInfo 命令行读（brew install media-info），没装时用 ffprobe（brew install ffmpeg）",
+          "App Store 版 MediaInfo.app 没有命令行入口，扩展调不动它",
+          "只读你此刻选中的那一个文件：不改它、不联网",
+          "命令在 Jarvis 里运行，继承 Jarvis 的完全磁盘访问权限"
+        ]
+      }
+    ]
+  },
+  "inbox": false
+}

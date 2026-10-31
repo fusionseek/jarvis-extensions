@@ -537,8 +537,8 @@ export interface ProcessResult {
 
 /**
  * `process.run` 的一个参数（SDK 2.13）：字符串逐字比对 manifest 声明的参数组；manifest 里写 `"{file}"` 的那一位传 `{ file: 句柄 }`
- * （`files.actions · run` 入参里的文件句柄），写 `"{output}"` 的那一位传 `{ output: 产物名 }`（同时要带 `directory`，Jarvis 换成「那个目录 / 名字」）。
- * 只有声明了 `files.actions` 服务的扩展能在参数组里写这两个占位符。
+ * （`files.actions · run` 或 `files.details · inspect` 入参里的文件句柄），写 `"{output}"` 的那一位传 `{ output: 产物名 }`（同时要带 `directory`，Jarvis 换成「那个目录 / 名字」）。
+ * `{file}` 只给声明了 `files.actions` 或 `files.details` 服务的扩展写，`{output}` 只给声明了 `files.actions` 的——详情不产出文件，没有暂存目录可写。
  */
 export type ProcessArgument = string | { file: string } | { output: string };
 

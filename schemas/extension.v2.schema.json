@@ -313,7 +313,7 @@
         },
         "arguments": {
           "type": "array",
-          "description": "允许的参数组合（1–16 组）。一次调用的参数必须与其中某一组逐项相等——不支持通配，读 manifest 就知道它会跑什么。一个工具认好几种语法时（prettier 的 Markdown / JS / TS / CSS…）每种一组。SDK 2.13：声明了 files.actions 服务的扩展可以把一整项写成 \"{file}\"（调用时传 { file: 句柄 }，Jarvis 换成那个文件的路径）或 \"{output}\"（调用时传 { output: 产物名 }，Jarvis 换成暂存目录里的那个位置）；别的扩展写了按读不懂拒收。",
+          "description": "允许的参数组合（1–16 组）。一次调用的参数必须与其中某一组逐项相等——不支持通配，读 manifest 就知道它会跑什么。一个工具认好几种语法时（prettier 的 Markdown / JS / TS / CSS…）每种一组。SDK 2.13：声明了 files.actions 或 files.details 服务的扩展可以把一整项写成 \"{file}\"（调用时传 { file: 句柄 }，Jarvis 换成那个文件的路径）；声明了 files.actions 的还可以写 \"{output}\"（调用时传 { output: 产物名 }，Jarvis 换成暂存目录里的那个位置）。别的扩展写了按读不懂拒收：{file} 只在这两个服务颁的句柄上有意义，{output} 只在 files.actions 的暂存目录里有意义。",
           "minItems": 1,
           "maxItems": 16,
           "items": {
@@ -665,9 +665,10 @@
             "launcher.apps",
             "code.format",
             "code.highlight",
-            "files.actions"
+            "files.actions",
+            "files.details"
           ],
-          "description": "扩展点。junkClean.engine = 清理引擎：设置「清理」里出现它的开关与设置，开着时晃球、/clean 与工具箱清理都走它。project.engine = 项目引擎：Jarvis「项目」（需求 / 迭代 / 缺陷）的数据来源，设置画在「Git」里；它的托管服务读写要配 Git 域与 Git 操作域的能力。launcher.apps = 全局搜索的应用目录：装了它，全局搜索的结果里才有本机应用、输入 app 空格才进应用网格；它交出怎么分组、组里先后、搜索结果里出不出与出几条（方法 catalog），网格由 Jarvis 画；设置画在「全局搜索」里，读应用要声明 apps.read。code.format（SDK 2.7）= Git 的代码格式化：Jarvis 按文件名认出语言，文件 diff 页里工作区那一份文件出「格式化」；方法 describe 报认得哪几种语言、此刻能不能用，format 交回格式化之后的全文，预览与写回由 Jarvis 做、由用户点；设置画在「Git」里。code.highlight（SDK 2.8）= Git 的代码高亮：Jarvis 按文件名认出语言，文件 diff 页与 Blame 的代码交给它切记号（方法 describe 报认得哪几种语言，highlight 交回记号的起点、长度与种类），颜色由 Jarvis 按种类定；设置画在「Git」里。files.actions（SDK 2.13）= 文件管理器的文件动作：方法 describe 报动作（名字、符号、认哪些类别 / 扩展名、几项），按选中的类型出现在长按转盘、右键菜单与「更多」里；run 拿到文件句柄与一个空暂存目录，经 process.run 的 {file} / {output} 把产物写进暂存目录，Jarvis 把产物移进当前文件夹、选中、可撤销；设置画在「文件」里。"
+          "description": "扩展点。junkClean.engine = 清理引擎：设置「清理」里出现它的开关与设置，开着时晃球、/clean 与工具箱清理都走它。project.engine = 项目引擎：Jarvis「项目」（需求 / 迭代 / 缺陷）的数据来源，设置画在「Git」里；它的托管服务读写要配 Git 域与 Git 操作域的能力。launcher.apps = 全局搜索的应用目录：装了它，全局搜索的结果里才有本机应用、输入 app 空格才进应用网格；它交出怎么分组、组里先后、搜索结果里出不出与出几条（方法 catalog），网格由 Jarvis 画；设置画在「全局搜索」里，读应用要声明 apps.read。code.format（SDK 2.7）= Git 的代码格式化：Jarvis 按文件名认出语言，文件 diff 页里工作区那一份文件出「格式化」；方法 describe 报认得哪几种语言、此刻能不能用，format 交回格式化之后的全文，预览与写回由 Jarvis 做、由用户点；设置画在「Git」里。code.highlight（SDK 2.8）= Git 的代码高亮：Jarvis 按文件名认出语言，文件 diff 页与 Blame 的代码交给它切记号（方法 describe 报认得哪几种语言，highlight 交回记号的起点、长度与种类），颜色由 Jarvis 按种类定；设置画在「Git」里。files.actions（SDK 2.13）= 文件管理器的文件动作：方法 describe 报动作（名字、符号、认哪些类别 / 扩展名、几项），按选中的类型出现在长按转盘、右键菜单与「更多」里；run 拿到文件句柄与一个空暂存目录，经 process.run 的 {file} / {output} 把产物写进暂存目录，Jarvis 把产物移进当前文件夹、选中、可撤销；设置画在「文件」里。files.details（SDK 2.13）= 文件管理器详情面板的属性扩展：方法 describe 报认领哪些文件（类别、扩展名、要不要文件夹），详情面板显示其中一个时调 inspect，拿到那个文件的句柄（经 process.run 的 {file} 交给工具），交回几段「标签 · 值」与一句 notice；画、缓存、取消由 Jarvis 做，授权等用户在详情面板里点「允许」（选中时不自动弹）；设置画在「文件」里。"
         },
         "id": {
           "$ref": "#/$defs/identifier"
