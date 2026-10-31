@@ -110,10 +110,10 @@ test("菜单：暂停时图标换一枚、短字可以关掉；没有前台应�
   assert.equal(menu.items[0].checked, true);
 });
 
-test("readSettings：不认识的值退回默认；提示位置只剩屏幕与悬浮球两档，旧的三档读作默认", () => {
-  assert.equal(model.defaultSettings.hudAnchor, "screen");
-  assert.deepEqual(model.readSettings({ others: "weird", hud: "yes", hudAnchor: "orb" }), { ...model.defaultSettings, hudAnchor: "orb" });
-  for (const old of ["caret", "window", "pointer"]) assert.equal(model.readSettings({ hudAnchor: old }).hudAnchor, "screen", old);
+test("readSettings：不认识的值退回默认；提示位置只剩悬浮球与屏幕两档（默认悬浮球），旧的三档读作默认", () => {
+  assert.equal(model.defaultSettings.hudAnchor, "orb");
+  assert.deepEqual(model.readSettings({ others: "weird", hud: "yes", hudAnchor: "screen" }), { ...model.defaultSettings, hudAnchor: "screen" });
+  for (const old of ["caret", "window", "pointer"]) assert.equal(model.readSettings({ hudAnchor: old }).hudAnchor, "orb", old);
 });
 
 const day = 24 * 60 * 60 * 1000;

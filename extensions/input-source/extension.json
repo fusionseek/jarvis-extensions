@@ -122,15 +122,15 @@
           "type": "select",
           "title": "提示的位置",
           "description": "「悬浮球旁」把输入法的图标放进悬浮球、名字贴在球下，停 2 秒；悬浮球展开或贴边藏起时改在屏幕中间偏下",
-          "default": "screen",
+          "default": "orb",
           "options": [
-            {
-              "value": "screen",
-              "title": "屏幕中间偏下"
-            },
             {
               "value": "orb",
               "title": "悬浮球旁（粘连闪现）"
+            },
+            {
+              "value": "screen",
+              "title": "屏幕中间偏下"
             }
           ]
         },

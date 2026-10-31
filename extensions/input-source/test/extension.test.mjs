@@ -82,7 +82,7 @@ test("菜单里给 Xcode 选 ABC：存规则、当场换过去、闪一枚带图
   await host.menuBarEvent("select", { itemId: "fixed:0", granted, preferences });
   assert.deepEqual(storage.get("rules"), { "com.apple.dt.Xcode": { mode: "fixed", source: ABC, name: "Xcode" } });
   assert.deepEqual(selects, [ABC]);
-  assert.deepEqual(huds.at(-1), { text: "ABC", anchor: "screen", monogram: "A" }, "默认屏幕中间偏下、宿主默认停留；系统自带的 ABC 画字标键帽「A」");
+  assert.deepEqual(huds.at(-1), { text: "ABC", anchor: "orb", duration: 2000, monogram: "A" }, "默认粘连悬浮球、停 2 秒；系统自带的 ABC 画字标键帽「A」");
   await selected(ABC, true);
 });
 

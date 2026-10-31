@@ -20,7 +20,7 @@ export type Rules = Record<string, Rule>;
 /** 无规则的应用怎么办。 */
 export type Others = "keep" | "remember" | "default";
 
-/** 提示在哪（C-8）：屏幕中间偏下（固定）/ 悬浮球旁粘连闪现（图标进球心，球看不见时宿主退回屏幕）。 */
+/** 提示在哪（C-8）：悬浮球旁粘连闪现（默认；图标进球心，球看不见时宿主退回屏幕）/ 屏幕中间偏下（固定）。 */
 export type HUDAnchor = "screen" | "orb";
 
 /** 偏好（manifest `contributes.settings`）。 */
@@ -36,7 +36,8 @@ export interface Settings {
 export const defaultSettings: Settings = {
   others: "keep",
   hud: true,
-  hudAnchor: "screen",
+  // 默认粘连悬浮球，屏幕中间偏下是次选（仓库主人 2026-10-31：「默认改为悬浮窗粘连，主屏中下显示当成次选」）。
+  hudAnchor: "orb",
   hudOnManual: false,
   menuBarLabel: true,
   paused: false,
@@ -55,7 +56,7 @@ export function readSettings(preferences: Record<string, unknown>): Settings {
     others: pick(preferences.others, ["keep", "remember", "default"] as const, defaultSettings.others),
     hud: flag(preferences.hud, defaultSettings.hud),
     // 原来的 caret / window / pointer 三档去掉了（仓库主人要固定的位置）：存着它们的读作默认。
-    hudAnchor: pick(preferences.hudAnchor, ["screen", "orb"] as const, defaultSettings.hudAnchor),
+    hudAnchor: pick(preferences.hudAnchor, ["orb", "screen"] as const, defaultSettings.hudAnchor),
     hudOnManual: flag(preferences.hudOnManual, defaultSettings.hudOnManual),
     menuBarLabel: flag(preferences.menuBarLabel, defaultSettings.menuBarLabel),
     paused: flag(preferences.paused, defaultSettings.paused),

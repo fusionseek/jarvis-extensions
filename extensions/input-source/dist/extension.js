@@ -853,7 +853,8 @@
   var defaultSettings = {
     others: "keep",
     hud: true,
-    hudAnchor: "screen",
+    // 默认粘连悬浮球，屏幕中间偏下是次选（仓库主人 2026-10-31：「默认改为悬浮窗粘连，主屏中下显示当成次选」）。
+    hudAnchor: "orb",
     hudOnManual: false,
     menuBarLabel: true,
     paused: false
@@ -865,7 +866,7 @@
       others: pick(preferences.others, ["keep", "remember", "default"], defaultSettings.others),
       hud: flag(preferences.hud, defaultSettings.hud),
       // 原来的 caret / window / pointer 三档去掉了（仓库主人要固定的位置）：存着它们的读作默认。
-      hudAnchor: pick(preferences.hudAnchor, ["screen", "orb"], defaultSettings.hudAnchor),
+      hudAnchor: pick(preferences.hudAnchor, ["orb", "screen"], defaultSettings.hudAnchor),
       hudOnManual: flag(preferences.hudOnManual, defaultSettings.hudOnManual),
       menuBarLabel: flag(preferences.menuBarLabel, defaultSettings.menuBarLabel),
       paused: flag(preferences.paused, defaultSettings.paused)
