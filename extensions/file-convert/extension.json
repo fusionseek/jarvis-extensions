@@ -11,7 +11,7 @@
   },
   "main": "dist/extension.js",
   "sdk": "^2.14.0",
-  "minimumJarvisVersion": "3.3.3",
+  "minimumJarvisVersion": "3.3.2",
   "capabilities": [
     {
       "id": "process.run",

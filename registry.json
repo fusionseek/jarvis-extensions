@@ -1,9 +1,9 @@
 {
   "registryVersion": 2,
-  "generatedAt": "2026-10-31T15:15:23.351Z",
+  "generatedAt": "2026-10-31T15:42:49.528Z",
   "source": {
     "repository": "https://github.com/fusionseek/jarvis-extensions",
-    "commit": "0a6370bfc204d2d71a672b274a3ac68f28f17062"
+    "commit": "2a20baf9298540d0b9a236d08feff0641a651905"
   },
   "extensions": [
     {
@@ -54,7 +54,7 @@
         "sha256": "ddb41fc02f9921f7a941356b1a44a2531d04b088548a16a89001f4d50388353f",
         "byteCount": 69094
       },
-      "updatedAt": "2026-10-31T20:06:17+08:00"
+      "updatedAt": "2026-10-31T23:38:15+08:00"
     },
     {
       "manifest": {
@@ -393,7 +393,7 @@
         "sha256": "5581a25861d2b6e30cf83dbb18b164cd5a7ab603e0e698791656d2e55498691c",
         "byteCount": 43410
       },
-      "updatedAt": "2026-10-31T20:06:17+08:00"
+      "updatedAt": "2026-10-31T23:38:15+08:00"
     },
     {
       "manifest": {
@@ -433,7 +433,7 @@
         "sha256": "685d51e9f215163849dc1d9f617a117fa751260ed074d1888a736a2c366c2f73",
         "byteCount": 65641
       },
-      "updatedAt": "2026-10-31T20:06:17+08:00"
+      "updatedAt": "2026-10-31T23:38:15+08:00"
     },
     {
       "manifest": {
@@ -449,7 +449,7 @@
         },
         "main": "dist/extension.js",
         "sdk": "^2.14.0",
-        "minimumJarvisVersion": "3.3.3",
+        "minimumJarvisVersion": "3.3.2",
         "capabilities": [
           {
             "id": "process.run",
@@ -1713,7 +1713,7 @@
         "sha256": "1231fd9550bd98cbe8e1542ef728e99d9abd982f4ac54768a0832a1bec99a29c",
         "byteCount": 58207
       },
-      "updatedAt": "2026-10-31T15:15:21.804Z"
+      "updatedAt": "2026-10-31T23:38:15+08:00"
     },
     {
       "manifest": {
@@ -1794,7 +1794,7 @@
         "sha256": "e59a79549dbc4245a4ed16f46cc4288934d8d6e9b369cdbd4d2e11edd9c685ec",
         "byteCount": 97554
       },
-      "updatedAt": "2026-10-31T20:06:17+08:00"
+      "updatedAt": "2026-10-31T23:38:15+08:00"
     },
     {
       "manifest": {
@@ -1935,7 +1935,7 @@
         "sha256": "b992ddea3683f86dec3ec5c15d2d11c7c2378dfbfb8a54a2dcb6e5810b4c4eb0",
         "byteCount": 129436
       },
-      "updatedAt": "2026-10-31T20:06:17+08:00"
+      "updatedAt": "2026-10-31T23:38:15+08:00"
     },
     {
       "manifest": {
@@ -2106,7 +2106,7 @@
         "sha256": "aa5ae7def069b8eeb0a0a4437648828844c561bb81e71b8dc970507559cb69f7",
         "byteCount": 102618
       },
-      "updatedAt": "2026-10-31T20:06:17+08:00"
+      "updatedAt": "2026-10-31T23:38:15+08:00"
     },
     {
       "manifest": {
@@ -2160,7 +2160,7 @@
         "sha256": "37f515b1353f35a91d6fff2f2ee3b83f863eeb3a7a732af17d3c6b80fc976bbf",
         "byteCount": 46666
       },
-      "updatedAt": "2026-10-31T20:06:17+08:00"
+      "updatedAt": "2026-10-31T23:38:15+08:00"
     },
     {
       "manifest": {
@@ -2337,7 +2337,7 @@
         "sha256": "1956df8350c7825d7adf24dc8b02b620e46102daec40aa3ce84a5bf7c8c8f888",
         "byteCount": 83356
       },
-      "updatedAt": "2026-10-31T20:47:11+08:00"
+      "updatedAt": "2026-10-31T23:38:15+08:00"
     },
     {
       "manifest": {
@@ -2516,7 +2516,7 @@
         "sha256": "5a7dee02214f2a50f752107a0073adb8edecb8cce5cff2c099916b5d163d6fa1",
         "byteCount": 67075
       },
-      "updatedAt": "2026-10-31T20:06:17+08:00"
+      "updatedAt": "2026-10-31T23:38:15+08:00"
     },
     {
       "manifest": {
@@ -2640,7 +2640,7 @@
         "sha256": "8576dab175071c8aa67e61a00dd5dd8452e40a3fb2d0e556d24b74545f14e818",
         "byteCount": 63485
       },
-      "updatedAt": "2026-10-31T20:06:17+08:00"
+      "updatedAt": "2026-10-31T23:38:15+08:00"
     },
     {
       "manifest": {
@@ -3000,7 +3000,7 @@
         "sha256": "944ca9b8758204c0c5f721a9e91549b1038a8b746998443e2fceef957273c40c",
         "byteCount": 348008
       },
-      "updatedAt": "2026-10-31T20:06:17+08:00"
+      "updatedAt": "2026-10-31T23:38:15+08:00"
     },
     {
       "manifest": {
@@ -3092,7 +3092,7 @@
         "sha256": "38876c6cd21db9df64fab1293e2a45fab8852a0609379351b9fb6af0f9a8c8bd",
         "byteCount": 48473
       },
-      "updatedAt": "2026-10-31T20:06:17+08:00"
+      "updatedAt": "2026-10-31T23:38:15+08:00"
     },
     {
       "manifest": {
@@ -3331,7 +3331,7 @@
         "sha256": "628eca9a75b09145e06eb605837db64a6dd5cee5054844d225e5a486f21ce565",
         "byteCount": 93702
       },
-      "updatedAt": "2026-10-31T20:06:17+08:00"
+      "updatedAt": "2026-10-31T23:38:15+08:00"
     }
   ]
 }
