@@ -262,7 +262,7 @@ export interface PreferenceOption {
  * 只认这种偏好，是因为它的控件由宿主画、值只可能来自用户亲手输入；页面里的输入框扩展自己就能填，宿主分不出是谁写的。没有默认值。
  *
  * `executable`（Jarvis 3.2.8 起；SDK 运行时不变，只是类型）是一个外部程序的位置，设置页画成与宿主内置工具路径同构的一行：生效路径与来源（自动发现 / 自定义路径）、
- * 状态徽标、「选择」「清除」，没找到时「在终端中安装」（跑 `install` 点名的 `process.terminal` 脚本）。`executable` 必须是本扩展
+ * 状态徽标、「选择」「清除」，没找到时「在终端中安装」、装了但起不来（链接的动态库不在了）时「在终端中修复」（都跑 `install` 点名的 `process.terminal` 脚本）。`executable` 必须是本扩展
  * `process.executables` / `daemons` / `tunnel` 里声明过的名字。读回来是字符串：空串 = 自动查找，绝对路径 = 用户选的那一份——
  * 原样交给 `daemon.start` / `tunnel.start` 的 `executable` 即可。没有默认值（隐式空串）。
  */

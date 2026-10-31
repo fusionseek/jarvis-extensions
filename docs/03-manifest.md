@@ -307,7 +307,7 @@ todo 待办 memo note 速记 记 find 查找 diff compare 对比 比较 gitdiff 
 | `secret` | 遮罩输入框 + 「已保存」徽标 + 「清除」 | 无默认；`placeholder`。进**钥匙串**、不进库、不进日志、`preferences.all()` 里没有它 |
 | `directory` | 「选择…」+ 路径 | 无默认 |
 | `urlList`（SDK 2.9） | 一行一条 + 删除 + 「添加一行」；宿主逐条校验，填错的那一行标红不存 | 无默认；`maxItems`（1–20，省略 = 10）、`placeholder`、`secret`（省略 = `true`：整列进钥匙串——订阅地址里的 token 就是密码）。每条必须是带主机名的 `https://` 地址。被 `network.preferenceHosts` 点名时，它们的主机放行给 `net.fetch` |
-| `executable`（Jarvis 3.2.8） | 与宿主内置工具路径同构的一行：生效路径 · 来源（自动发现 / 自定义路径）、状态徽标、「选择」「清除」；没找到时「在终端中安装」 | `executable`（必填：本扩展 `process.executables[].name` / `daemons[].executable` / `tunnel.executable` 之一）、`install`（可选：`process.terminal[].id`）。无默认（隐式空串 = 自动查找）、无占位：路径只能经「选择」挑，文件名必须等于 `executable` |
+| `executable`（Jarvis 3.2.8） | 与宿主内置工具路径同构的一行：生效路径 · 来源（自动发现 / 自定义路径）、状态徽标、「选择」「清除」；没找到时「在终端中安装」，装了但链接的动态库不在了时「起不来」+「在终端中修复」（同一段脚本，Jarvis 3.3.2） | `executable`（必填：本扩展 `process.executables[].name` / `daemons[].executable` / `tunnel.executable` 之一）、`install`（可选：`process.terminal[].id`）。无默认（隐式空串 = 自动查找）、无占位：路径只能经「选择」挑，文件名必须等于 `executable` |
 
 `key` `^[a-z][a-zA-Z0-9]*$`，≤ 32；`title` ≤ 24 字；`description` ≤ 120 字。
 

@@ -24,6 +24,8 @@ export interface MediaTool {
   name: "mediainfo" | "ffprobe";
   /** Homebrew 的包名（装 / 升级的那一句话里用）。 */
   formula: string;
+  /** 设置里那一项 `executable` 偏好的 key：选过路径就用选的那一份（`extension.json` 的 `preferences`）。 */
+  preference: string;
   /** 这一次的参数（`{ file }` 填 manifest 里的 `"{file}"`）。 */
   arguments(handle: string): ProcessArgument[];
   /** 解析它的标准输出。 */
@@ -33,6 +35,7 @@ export interface MediaTool {
 export const mediainfoTool: MediaTool = {
   name: "mediainfo",
   formula: "media-info",
+  preference: "mediainfoPath",
   arguments: (handle) => ["--Output=JSON", { file: handle }],
   parse: (output) => parseMediaInfo(output),
 };
@@ -40,6 +43,7 @@ export const mediainfoTool: MediaTool = {
 export const ffprobeTool: MediaTool = {
   name: "ffprobe",
   formula: "ffmpeg",
+  preference: "ffprobePath",
   arguments: (handle) => ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", "-show_chapters", { file: handle }],
   parse: (output, extension) => parseFFprobe(output, extension),
 };
@@ -47,8 +51,8 @@ export const ffprobeTool: MediaTool = {
 /** 先 mediainfo 后 ffprobe：MediaInfo 读得更全（HDR、编码设置、商业名），ffprobe 是后备。 */
 export const mediaTools: MediaTool[] = [mediainfoTool, ffprobeTool];
 
-/** 两样都没装。 */
-export const missingToolsMessage = "需要 mediainfo（brew install media-info）或 ffprobe（brew install ffmpeg）";
+/** 两样都没装。去路在设置里：那里扫了本机、给了「在终端中安装」。 */
+export const missingToolsMessage = "没找到 mediainfo 或 ffprobe：在「设置 · 文件 · 文件详情」里装一个（brew install media-info 或 brew install ffmpeg）";
 
 /** 没装 mediainfo、用 ffprobe 读出来的那一次，画在段下面的一句。 */
 export const ffprobeNotice = "用的是 ffprobe；装上 MediaInfo 命令行（brew install media-info）能读出更多。";
@@ -150,19 +154,32 @@ function finalMessage(failures: ToolFailure[]): string {
  * @param request 详情面板此刻显示的那一个文件。
  * @param signal 用户换了选中时触发。
  * @param tools 依次试的工具（测试换顺序用；默认先 mediainfo 后 ffprobe）。
+ * @param preferences 此刻的偏好：`mediainfoPath` / `ffprobePath` 是设置里选的路径（空 = 自动找）。
  * @returns 按契约截好的段。
  * @throws {JarvisError} 都没装 / 都没读出来（`host.failure`，`message` 写给用户）；取消（`cancelled`）。
  */
-export async function inspectFile(request: FileDetailsRequest, signal: CancelSignal, tools: MediaTool[] = mediaTools): Promise<FileDetailsResult> {
+export async function inspectFile(
+  request: FileDetailsRequest,
+  signal: CancelSignal,
+  tools: MediaTool[] = mediaTools,
+  preferences: Record<string, unknown> = {},
+): Promise<FileDetailsResult> {
   const file = request.files[0];
   if (!file) throw new JarvisError({ code: "invalid.argument", message: "没有要读的文件" });
   if (file.folder) throw new JarvisError({ code: "invalid.argument", message: "媒体信息不读文件夹" });
   const failures: ToolFailure[] = [];
   for (const tool of tools) {
     if (signal.cancelled) throw cancelledError();
-    const where = await jarvis.process.locate(tool.name);
+    // 设置里选过路径就用选的那一份；坏了就报坏、不悄悄换成自动找到的另一份（与「代理」的 sing-box 同一个规矩）。
+    const chosen = typeof preferences[tool.preference] === "string" ? (preferences[tool.preference] as string).trim() : "";
+    const where = await jarvis.process.locate(chosen || tool.name);
     if (signal.cancelled) throw cancelledError();
-    if (where.path === null) continue;
+    if (where.path === null) {
+      if (chosen) {
+        failures.push(new ToolFailure(tool, "failed", `设置里选的 ${tool.name} 不可用：${chosen}。在「设置 · 文件」里清除或重新选择。`, "选的路径不可用"));
+      }
+      continue;
+    }
     try {
       const report = await read(tool, where.path, file.file, file.extension, signal);
       const sections = buildSections(report);
@@ -190,7 +207,7 @@ export const mediaEngine: FileDetailsEngine = {
   describe() {
     return describeClaims();
   },
-  inspect(request, _context, signal) {
-    return inspectFile(request, signal);
+  inspect(request, context, signal) {
+    return inspectFile(request, signal, mediaTools, context.preferences);
   },
 };

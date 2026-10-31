@@ -14,14 +14,20 @@ const here = dirname(fileURLToPath(import.meta.url));
 const manifest = JSON.parse(readFileSync(join(here, "..", "extension.json"), "utf8"));
 
 let installed;
+let chosen;
+let located;
 let runs;
 let cancels;
 let reply;
 
 const host = createTestHost({
   async: {
-    "process.locate": async ({ executable }) =>
-      installed.has(executable) ? { path: `/opt/homebrew/bin/${executable}`, source: "discovered" } : { path: null, problem: "notFound" },
+    "process.locate": async ({ executable }) => {
+      located.push(executable);
+      // 带 / 的是设置里选的路径：在就照原样交回（custom），不在就报坏——宿主就是这样答的。
+      if (executable.includes("/")) return chosen.has(executable) ? { path: executable, source: "custom" } : { path: null, problem: "missing" };
+      return installed.has(executable) ? { path: `/opt/homebrew/bin/${executable}`, source: "discovered" } : { path: null, problem: "notFound" };
+    },
     "process.run": async (params) => {
       runs.push(params);
       return reply(params);
@@ -36,14 +42,16 @@ await import(join(here, "..", "dist", "extension.js"));
 
 const handle = "file-0123456789abcdef0123456789abcdef";
 const fileOf = (name, extension, category = "video") => ({ file: handle, name, extension, category, size: 2411583, folder: false });
-const inspect = (file = fileOf("rich.mkv", "mkv")) =>
-  host.callService({ point: "files.details", service: "media", method: "inspect", granted: ["process.run"], request: { files: [file] } });
+const inspect = (file = fileOf("rich.mkv", "mkv"), preferences = {}) =>
+  host.callService({ point: "files.details", service: "media", method: "inspect", preferences, granted: ["process.run"], request: { files: [file] } });
 
 /** 工具名 → 这一次回放的输出。 */
 let outputs;
 
 beforeEach(() => {
   installed = new Set();
+  chosen = new Set();
+  located = [];
   runs = [];
   cancels = [];
   outputs = {};
@@ -106,7 +114,7 @@ test("inspect：两样都没装，交回给用户看的那一句（host.failure�
   const outcome = await inspect();
   assert.equal(outcome.result.ok, false);
   assert.equal(outcome.result.error.code, "host.failure");
-  assert.equal(outcome.result.error.message, "需要 mediainfo（brew install media-info）或 ffprobe（brew install ffmpeg）");
+  assert.equal(outcome.result.error.message, "没找到 mediainfo 或 ffprobe：在「设置 · 文件 · 文件详情」里装一个（brew install media-info 或 brew install ffmpeg）");
   assert.equal(runs.length, 0);
 });
 
@@ -208,6 +216,46 @@ test("manifest：每个工具只声明代码里真的会跑的那一组参数，
       ["ffprobe", [["-v", "error", "-print_format", "json", "-show_format", "-show_streams", "-show_chapters", "{file}"]]],
     ],
   );
-  assert.deepEqual(manifest.capabilities.map((capability) => capability.id), ["process.run"]);
+  assert.deepEqual(manifest.capabilities.map((capability) => capability.id), ["process.run", "terminal.run"]);
   assert.deepEqual(manifest.contributes.services.map((service) => [service.point, service.id]), [["files.details", "media"]]);
+});
+
+test("manifest：两个工具各一项 executable 偏好，「在终端中安装 / 修复」指向声明过的脚本，脚本装过就更新、没装就安装", () => {
+  const preferences = manifest.contributes.services[0].preferences;
+  assert.deepEqual(preferences.map((item) => [item.key, item.type, item.executable, item.install]), [
+    ["mediainfoPath", "executable", "mediainfo", "install-media-info"],
+    ["ffprobePath", "executable", "ffprobe", "install-ffmpeg"],
+  ]);
+  const scripts = Object.fromEntries(manifest.process.terminal.map((item) => [item.id, item.script.join("\n")]));
+  for (const [id, formula] of [["install-media-info", "media-info"], ["install-ffmpeg", "ffmpeg"]]) {
+    assert.ok(scripts[id], `${id} 没声明`);
+    assert.match(scripts[id], new RegExp(`brew list --formula ${formula}`));
+    assert.match(scripts[id], new RegExp(`brew upgrade ${formula}`), "装过就更新（起不来时就是这一步修好）");
+    assert.match(scripts[id], new RegExp(`brew install ${formula}`));
+    assert.match(scripts[id], /read -r _/, "跑完停住，让人看清结果");
+  }
+});
+
+test("inspect：设置里选过路径就用选的那一份，不再自动找", async () => {
+  installed = new Set(["mediainfo"]);
+  chosen = new Set(["/Users/me/bin/mediainfo"]);
+  outputs.mediainfo = fixture("mediainfo-matroska.json");
+  const outcome = await inspect(undefined, { mediainfoPath: "/Users/me/bin/mediainfo" });
+  assert.equal(outcome.result.ok, true, JSON.stringify(outcome.result.error));
+  assert.equal(located[0], "/Users/me/bin/mediainfo");
+  assert.equal(runs[0].executable, "/Users/me/bin/mediainfo");
+});
+
+test("inspect：选的路径坏了就报坏、不悄悄换成自动找到的那一份；另一个工具照常能用", async () => {
+  installed = new Set(["mediainfo"]);
+  const broken = await inspect(undefined, { mediainfoPath: "/Users/me/bin/mediainfo" });
+  assert.equal(broken.result.ok, false);
+  assert.match(broken.result.error.message, /设置里选的 mediainfo 不可用：\/Users\/me\/bin\/mediainfo/);
+  assert.equal(runs.length, 0, "没有退回 /opt/homebrew/bin/mediainfo");
+
+  installed = new Set(["ffprobe"]);
+  outputs.ffprobe = fixture("ffprobe-mp4.json");
+  const fallback = await inspect(fileOf("clip.mp4", "mp4"), { mediainfoPath: "/Users/me/bin/mediainfo" });
+  assert.equal(fallback.result.ok, true, JSON.stringify(fallback.result.error));
+  assert.match(fallback.result.value.notice, /mediainfo 没读出来（选的路径不可用）/);
 });

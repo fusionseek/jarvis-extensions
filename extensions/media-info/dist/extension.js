@@ -1925,17 +1925,19 @@
   var mediainfoTool = {
     name: "mediainfo",
     formula: "media-info",
+    preference: "mediainfoPath",
     arguments: (handle) => ["--Output=JSON", { file: handle }],
     parse: (output) => parseMediaInfo(output)
   };
   var ffprobeTool = {
     name: "ffprobe",
     formula: "ffmpeg",
+    preference: "ffprobePath",
     arguments: (handle) => ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", "-show_chapters", { file: handle }],
     parse: (output, extension) => parseFFprobe(output, extension)
   };
   var mediaTools = [mediainfoTool, ffprobeTool];
-  var missingToolsMessage = "\u9700\u8981 mediainfo\uFF08brew install media-info\uFF09\u6216 ffprobe\uFF08brew install ffmpeg\uFF09";
+  var missingToolsMessage = "\u6CA1\u627E\u5230 mediainfo \u6216 ffprobe\uFF1A\u5728\u300C\u8BBE\u7F6E \xB7 \u6587\u4EF6 \xB7 \u6587\u4EF6\u8BE6\u60C5\u300D\u91CC\u88C5\u4E00\u4E2A\uFF08brew install media-info \u6216 brew install ffmpeg\uFF09";
   var ffprobeNotice = "\u7528\u7684\u662F ffprobe\uFF1B\u88C5\u4E0A MediaInfo \u547D\u4EE4\u884C\uFF08brew install media-info\uFF09\u80FD\u8BFB\u51FA\u66F4\u591A\u3002";
   var ToolFailure = class extends Error {
     constructor(tool, kind, message, reason) {
@@ -2007,16 +2009,22 @@
     }
     return failures[0].message;
   }
-  async function inspectFile(request, signal, tools = mediaTools) {
+  async function inspectFile(request, signal, tools = mediaTools, preferences = {}) {
     const file = request.files[0];
     if (!file) throw new JarvisError({ code: "invalid.argument", message: "\u6CA1\u6709\u8981\u8BFB\u7684\u6587\u4EF6" });
     if (file.folder) throw new JarvisError({ code: "invalid.argument", message: "\u5A92\u4F53\u4FE1\u606F\u4E0D\u8BFB\u6587\u4EF6\u5939" });
     const failures = [];
     for (const tool of tools) {
       if (signal.cancelled) throw cancelledError();
-      const where = await jarvis.process.locate(tool.name);
+      const chosen = typeof preferences[tool.preference] === "string" ? preferences[tool.preference].trim() : "";
+      const where = await jarvis.process.locate(chosen || tool.name);
       if (signal.cancelled) throw cancelledError();
-      if (where.path === null) continue;
+      if (where.path === null) {
+        if (chosen) {
+          failures.push(new ToolFailure(tool, "failed", `\u8BBE\u7F6E\u91CC\u9009\u7684 ${tool.name} \u4E0D\u53EF\u7528\uFF1A${chosen}\u3002\u5728\u300C\u8BBE\u7F6E \xB7 \u6587\u4EF6\u300D\u91CC\u6E05\u9664\u6216\u91CD\u65B0\u9009\u62E9\u3002`, "\u9009\u7684\u8DEF\u5F84\u4E0D\u53EF\u7528"));
+        }
+        continue;
+      }
       try {
         const report = await read(tool, where.path, file.file, file.extension, signal);
         const sections = buildSections(report);
@@ -2038,8 +2046,8 @@
     describe() {
       return describeClaims();
     },
-    inspect(request, _context, signal) {
-      return inspectFile(request, signal);
+    inspect(request, context, signal) {
+      return inspectFile(request, signal, mediaTools, context.preferences);
     }
   };
 
