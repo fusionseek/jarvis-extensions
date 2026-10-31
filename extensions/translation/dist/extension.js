@@ -503,6 +503,22 @@
             if (call2.method === "highlight") return Promise.resolve(engine.highlight(call2.params.request, context, signal));
             break;
           }
+          case "files.actions": {
+            const engine = implementation;
+            if (call2.method === "describe") return Promise.resolve(engine.describe(context));
+            if (call2.method === "run") {
+              return engine.run(
+                call2.params.request,
+                context,
+                (progress) => {
+                  if (signal.cancelled) return;
+                  this.invoke("service", "progress", { callId: call2.callId, progress }).catch(() => void 0);
+                },
+                signal
+              );
+            }
+            break;
+          }
         }
         return Promise.reject(new JarvisError({ code: "capability.unknown", message: `\u4E0D\u8BA4\u8BC6\u7684\u670D\u52A1\u65B9\u6CD5 ${call2.point}.${call2.method}` }));
       };

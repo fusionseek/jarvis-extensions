@@ -1,0 +1,49 @@
+{
+  "manifestVersion": 2,
+  "id": "file-actions-sample",
+  "version": "0.1.0",
+  "name": "图片转换（示例）",
+  "symbol": "arrow.triangle.2.circlepath",
+  "description": "files.actions 的脚手架示例：在 Jarvis「文件」里长按一张或几张图片，转盘上多出「转为 PNG / JPEG / HEIC」，用系统自带的 sips 转，产物放回当前文件夹并选中。演示 describe、run、进度、取消与 process.run 的 {file} / {output} 占位符。",
+  "author": {
+    "name": "fusionseek",
+    "github": "fusionseek"
+  },
+  "main": "dist/extension.js",
+  "sdk": "^2.13.0",
+  "minimumJarvisVersion": "3.3.2",
+  "capabilities": [
+    {
+      "id": "process.run",
+      "reason": "用系统自带的 sips 转换你选中的图片；它只读你选中的那几个文件，产物写进 Jarvis 给的暂存目录"
+    }
+  ],
+  "process": {
+    "executables": [
+      {
+        "name": "sips",
+        "arguments": [
+          ["-s", "format", "png", "{file}", "--out", "{output}"],
+          ["-s", "format", "jpeg", "{file}", "--out", "{output}"],
+          ["-s", "format", "heic", "{file}", "--out", "{output}"]
+        ]
+      }
+    ]
+  },
+  "contributes": {
+    "services": [
+      {
+        "point": "files.actions",
+        "id": "convert",
+        "title": "图片转换",
+        "subtitle": "用系统自带的 sips 把图片转成 PNG、JPEG 或 HEIC",
+        "notes": [
+          "产物与原图同名、换扩展名，放在当前文件夹；重名时 Jarvis 自动加「 2」",
+          "原图不动；⌘Z 把产物移到废纸篓",
+          "sips 在 Jarvis 里运行，继承 Jarvis 的完全磁盘访问权限"
+        ]
+      }
+    ]
+  },
+  "inbox": false
+}

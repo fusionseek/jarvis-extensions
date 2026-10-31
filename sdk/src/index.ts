@@ -26,7 +26,7 @@ import type { EnvironmentInfo, HostInfo, Jarvis, ProcessHandle, ProcessResult, P
 import { JarvisError } from "./capabilities.js";
 import type { ActivationContext, CommandContext, HostEvent, InvokeResult, HostBridge, CommandSummary, MenuBarEvent, MenuBarExtrasPressResult, MenuBarMenuState, MenuBarModifier, NetworkStatus, ScreenInfo, ServiceCall, Surface } from "./bridge.js";
 import { bridgeProtocolVersion, countNodes, serialize } from "./bridge.js";
-import type { CancelSignal, CodeFormatEngine, CodeFormatRequest, CodeHighlightEngine, CodeHighlightRequest, ServiceContext, ServiceImplementation, JunkCleanEngine, LauncherAppsEngine, ProjectEngine, ProjectEngineRequest } from "./services.js";
+import type { CancelSignal, CodeFormatEngine, CodeFormatRequest, CodeHighlightEngine, CodeHighlightRequest, FileActionsEngine, FileActionsRequest, ServiceContext, ServiceImplementation, JunkCleanEngine, LauncherAppsEngine, ProjectEngine, ProjectEngineRequest } from "./services.js";
 import type { UINode } from "./ui.js";
 import { maximumNodesPerRender, ui } from "./ui.js";
 import { ocr } from "./ocr.js";
@@ -466,6 +466,23 @@ class Runtime {
           const engine = implementation as CodeHighlightEngine;
           if (call.method === "describe") return Promise.resolve(engine.describe(context));
           if (call.method === "highlight") return Promise.resolve(engine.highlight(call.params.request as CodeHighlightRequest, context, signal));
+          break;
+        }
+        case "files.actions": {
+          // 文件管理器的文件动作（SDK 2.13）：describe 不带入参，run 的入参在 params.request，进度经 service.progress。
+          const engine = implementation as FileActionsEngine;
+          if (call.method === "describe") return Promise.resolve(engine.describe(context));
+          if (call.method === "run") {
+            return engine.run(
+              call.params.request as FileActionsRequest,
+              context,
+              (progress) => {
+                if (signal.cancelled) return;
+                this.invoke("service", "progress", { callId: call.callId, progress }).catch(() => undefined);
+              },
+              signal,
+            );
+          }
           break;
         }
       }

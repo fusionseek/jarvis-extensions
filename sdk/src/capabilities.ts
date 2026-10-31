@@ -535,10 +535,17 @@ export interface ProcessResult {
   stdout?: string;
 }
 
+/**
+ * `process.run` 的一个参数（SDK 2.13）：字符串逐字比对 manifest 声明的参数组；manifest 里写 `"{file}"` 的那一位传 `{ file: 句柄 }`
+ * （`files.actions · run` 入参里的文件句柄），写 `"{output}"` 的那一位传 `{ output: 产物名 }`（同时要带 `directory`，Jarvis 换成「那个目录 / 名字」）。
+ * 只有声明了 `files.actions` 服务的扩展能在参数组里写这两个占位符。
+ */
+export type ProcessArgument = string | { file: string } | { output: string };
+
 /** `process.run` 的选项。 */
 export interface ProcessRunOptions {
   executable: string;
-  arguments: string[];
+  arguments: ProcessArgument[];
   /** 逐行推送的标准输出（不收整份时）。 */
   onLine?: (line: string) => void;
   /**
@@ -547,7 +554,7 @@ export interface ProcessRunOptions {
    */
   stdin?: string;
   /**
-   * SDK 2.7：工作目录的句柄——只认宿主在这一次服务调用里给的那一个（`code.format · format` 的 `request.directory`），
+   * SDK 2.7：工作目录的句柄——只认宿主在这一次服务调用里给的那一个（`code.format · format`、`files.actions · run` 的 `request.directory`），
    * 别的一律 `capability.undeclared`。格式化工具据此按文件所在目录找 `.clang-format` / `.editorconfig` / `pyproject.toml`。
    * 省略时工作目录是主目录。
    */
@@ -581,7 +588,7 @@ export type ExecutableLocation =
 /** 受限执行（指令域）。 */
 export interface ProcessAPI {
   /**
-   * `process.run`。按名字（manifest `process.executables[].name`）在 Homebrew、`~/.local/bin`、`~/bin` 与 Nix 的固定位置里找；
+   * `process.run`。按名字（manifest `process.executables[].name`）在 Homebrew、`~/.local/bin`、`~/bin` 与 Nix 的固定位置里找，最后是系统自带的 `/usr/bin`、`/bin`（Jarvis 3.3.2 起：`sips`、`textutil` 这类只在那里）；
    * 带 `/` 或 `~` 的当作用户填的路径——**坏了就报坏，不悄悄回落到自动探测**。路径的文件名必须等于声明的名字，
    * 否则以 `capability.undeclared` 拒绝。
    */

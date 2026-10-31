@@ -9,7 +9,7 @@
  * 扩展只需要在 `defineExtension({ services: { <id>: 实现 } })` 里交出一个对象。
  *
  * 现有五个扩展点：`junkClean.engine`（清理引擎）、`project.engine`（项目引擎）、`launcher.apps`（全局搜索的应用目录，SDK 2.5）、
- * `code.format`（Git 的代码格式化，SDK 2.7）与 `code.highlight`（Git 的代码高亮，SDK 2.8）。
+ * `code.format`（Git 的代码格式化，SDK 2.7）、`code.highlight`（Git 的代码高亮，SDK 2.8）与 `files.actions`（文件管理器的文件动作，SDK 2.13）。
  */
 
 /** 宿主每次调服务时带来的东西。 */
@@ -656,6 +656,99 @@ export interface CodeHighlightEngine {
   highlight(request: CodeHighlightRequest, context: ServiceContext, signal: CancelSignal): CodeHighlightResult | Promise<CodeHighlightResult>;
 }
 
+// ---------------------------------------------------------------------------
+// files.actions：文件管理器的文件动作（SDK 2.13，jarvis-mac specs/20261031-080031-file-manager-p2-actions-ring）
+// ---------------------------------------------------------------------------
+//
+// 形状真源是 jarvis-mac `contracts/schemas/extensions/bridge.v2.schema.json` 的 `$defs.fileActions*`，这里是它的投影。
+// 你只声明动作、执行一次；「选中 → 执行 → 产物放进当前文件夹 → 选中产物 → ⌘Z 撤销」由 Jarvis 拼。
+// 文件经句柄交过来，你看不到路径：把句柄交给 `jarvis.process.run` 的 `{ file }`，产物写进入参里的暂存目录（`directory` + `{ output }`）。
+
+/** 宿主的文件类别（与文件管理器图标颜色同一套）。 */
+export type FileCategory =
+  | "folder" | "image" | "video" | "audio" | "pdf" | "archive" | "code" | "text" | "table" | "application" | "installer" | "other";
+
+/** `describe` 里的一个动作。 */
+export interface FileActionDescription {
+  /** 服务内唯一：小写字母、数字与连字符（≤ 40 字）。 */
+  id: string;
+  /** 1–24 字。转盘扇面放不下时截尾，中心读数写全名。 */
+  title: string;
+  /** SF Symbol 名；Jarvis 认不出时换成 `puzzlepiece.extension`。 */
+  symbol: string;
+  /** 认哪些类别；与 `extensions` 是「或」。两样都不写 = 什么都认。 */
+  categories?: FileCategory[];
+  /** 认哪些扩展名（小写不带点，≤ 64 个）。 */
+  extensions?: string[];
+  /** 选中里能不能有文件（默认 true）/ 文件夹（默认 false）。 */
+  files?: boolean;
+  folders?: boolean;
+  /** 至少 / 至多几项（默认 1 / 不限，≤ 200）。 */
+  minimum?: number;
+  maximum?: number;
+  /** 进不进长按转盘（默认 true）；右键菜单与「更多」里总是有。 */
+  ring?: boolean;
+}
+
+/** `describe` 的返回（≤ 16 个动作）。要快（15 秒）：可以看看工具在不在，按结果少报几个，但别跑转换。 */
+export interface FileActionsDescription {
+  actions: FileActionDescription[];
+}
+
+/** `run` 的一个入参文件。 */
+export interface FileActionFile {
+  /** 文件句柄（`file-` + 32 位十六进制），只在这一次调用里有效：交给 `jarvis.process.run` 的 `{ file }`。 */
+  file: string;
+  /** 文件名（不含目录）。 */
+  name: string;
+  /** 小写扩展名，没有为空串。 */
+  extension: string;
+  category: FileCategory;
+  /** 字节数；文件夹没有。 */
+  size?: number;
+  folder: boolean;
+}
+
+/** `run` 的入参。 */
+export interface FileActionsRequest {
+  /** 用户点的是哪个动作（`describe` 里的 id）。 */
+  action: string;
+  /** 选中的文件（1–200 个），按用户看到的顺序。 */
+  files: FileActionFile[];
+  /**
+   * 一个空的暂存目录的句柄（`dir-` + 32 位十六进制）：交给 `jarvis.process.run({ directory })`，产物名用 `{ output: "名字" }` 写进去。
+   * 调用结束后 Jarvis 把你交回的产物移进当前文件夹，暂存目录随即删掉。
+   */
+  directory: string;
+}
+
+/** `run` 的返回。 */
+export interface FileActionsResult {
+  /** 暂存目录里的产物名（直接子项、不带路径、不以点开头、不重复，≤ 200 个）。 */
+  outputs: string[];
+  /** 一句话（≤ 200 字）；一个产物都没有时 Jarvis 把它写给用户。 */
+  message?: string;
+}
+
+/** `run` 期间的进度（`progress` 回调）：比例与 / 或一句说明（≤ 80 字）。 */
+export interface FileActionsProgress {
+  fraction?: number;
+  message?: string;
+}
+
+/** 文件动作的方法名（线缆上 `service` 事件的 `method`）。 */
+export type FileActionsMethod = "describe" | "run";
+
+/**
+ * 文件管理器的文件动作（`files.actions`）。Jarvis 在已装清单变化、打开文件、切回应用时问 `describe`（15 秒，**不需要授权**）；
+ * 用户在长按转盘 / 右键菜单里点了你的动作时调 `run`（不限时、可取消：用户点队列上的 ✕ 时 `signal` 触发，收尾后照常交回）。
+ * 第一次 `run` 之前 Jarvis 会请用户授权你声明的能力。失败就抛错，`message` 写给用户看。
+ */
+export interface FileActionsEngine {
+  describe(context: ServiceContext): FileActionsDescription | Promise<FileActionsDescription>;
+  run(request: FileActionsRequest, context: ServiceContext, progress: (progress: FileActionsProgress) => void, signal: CancelSignal): Promise<FileActionsResult>;
+}
+
 /** 某个扩展点的实现。按 manifest `contributes.services[].point` 对上。 */
 export interface ServiceImplementations {
   "junkClean.engine": JunkCleanEngine;
@@ -663,6 +756,7 @@ export interface ServiceImplementations {
   "launcher.apps": LauncherAppsEngine;
   "code.format": CodeFormatEngine;
   "code.highlight": CodeHighlightEngine;
+  "files.actions": FileActionsEngine;
 }
 
 /** 任一扩展点的实现。 */

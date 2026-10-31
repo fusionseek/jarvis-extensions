@@ -290,9 +290,11 @@ export interface SettingsContribution {
  * - `project.engine`：项目引擎，Jarvis「项目」（需求 / 迭代 / 缺陷）的数据来源，设置画在「Git」；
  * - `launcher.apps`（SDK 2.5）：全局搜索的应用目录——分组、组里先后、搜索结果里出不出与出几条；网格由 Jarvis 画，设置画在「全局搜索」；
  * - `code.format`（SDK 2.7）：Git 的代码格式化——认得哪几种语言、把一份文本格式化好交回；预览与写回由 Jarvis 做、由用户点，设置画在「Git」；
- * - `code.highlight`（SDK 2.8）：Git 的代码高亮——把代码切成记号（关键字、字符串、注释……）交回，颜色由 Jarvis 按种类定，设置画在「Git」。
+ * - `code.highlight`（SDK 2.8）：Git 的代码高亮——把代码切成记号（关键字、字符串、注释……）交回，颜色由 Jarvis 按种类定，设置画在「Git」；
+ * - `files.actions`（SDK 2.13）：文件管理器的文件动作——按选中的类型出现在长按转盘、右键菜单与「更多」里；执行时拿到文件句柄与一个暂存目录，
+ *   产物由 Jarvis 放进当前文件夹、选中、可撤销；设置画在「文件」。`process.executables[].arguments` 里的 `"{file}"` / `"{output}"` 占位符只给它用。
  */
-export type ServicePoint = "junkClean.engine" | "project.engine" | "launcher.apps" | "code.format" | "code.highlight";
+export type ServicePoint = "junkClean.engine" | "project.engine" | "launcher.apps" | "code.format" | "code.highlight" | "files.actions";
 
 /**
  * 服务域：实现宿主开放的一个扩展点。**没有独立界面**——它体现在它扩展的那个内置能力里，

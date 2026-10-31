@@ -16,7 +16,7 @@
 import type { FileHandle, UINode } from "./ui.js";
 import type { JarvisErrorShape } from "./capabilities.js";
 import type { CommandPresentation, ServicePoint } from "./manifest.js";
-import type { CodeFormatMethod, CodeFormatRequest, CodeHighlightMethod, CodeHighlightRequest, JunkCleanMethod, LauncherAppsMethod, ProjectEngineMethod, ProjectEngineRequest } from "./services.js";
+import type { CodeFormatMethod, CodeFormatRequest, CodeHighlightMethod, CodeHighlightRequest, FileActionsMethod, FileActionsRequest, JunkCleanMethod, LauncherAppsMethod, ProjectEngineMethod, ProjectEngineRequest } from "./services.js";
 
 /** 线缆协议版本。宿主与 SDK 主版本不同时，宿主拒绝加载并在扩展页面说明。 */
 export const bridgeProtocolVersion = 2 as const;
@@ -109,15 +109,16 @@ export interface CommandContext {
  * `junkClean.engine` 的方法是 `status` / `run` / `action`（`action` 带 `actionId`）；
  * `project.engine` 的方法是 `describe` / `listProjects` / `readSchema` / `readItems` / `applyEdit` / `createField` / `createOption` / `createIteration` / `createItem`，
  * 入参放在 `params.request`（`describe` 不带；2.6 起 `readItems` 可只带 `itemIds`，见 `ProjectItemsRequest`）；`launcher.apps`（SDK 2.5）只有 `catalog`，不带入参；
- * `code.format`（SDK 2.7）是 `describe`（不带入参）与 `format`（入参 `CodeFormatRequest`）；`code.highlight`（SDK 2.8）是 `describe` 与 `highlight`（入参 `CodeHighlightRequest`）。
+ * `code.format`（SDK 2.7）是 `describe`（不带入参）与 `format`（入参 `CodeFormatRequest`）；`code.highlight`（SDK 2.8）是 `describe` 与 `highlight`（入参 `CodeHighlightRequest`）；
+ * `files.actions`（SDK 2.13）是 `describe` 与 `run`（入参 `FileActionsRequest`，进度经 `service.progress`）。
  */
 export interface ServiceCall {
   callId: number;
   point: ServicePoint;
   /** manifest `contributes.services[].id`。 */
   service: string;
-  method: JunkCleanMethod | ProjectEngineMethod | LauncherAppsMethod | CodeFormatMethod | CodeHighlightMethod;
-  params: { preferences: Record<string, unknown>; granted: string[]; actionId?: string; request?: ProjectEngineRequest | CodeFormatRequest | CodeHighlightRequest };
+  method: JunkCleanMethod | ProjectEngineMethod | LauncherAppsMethod | CodeFormatMethod | CodeHighlightMethod | FileActionsMethod;
+  params: { preferences: Record<string, unknown>; granted: string[]; actionId?: string; request?: ProjectEngineRequest | CodeFormatRequest | CodeHighlightRequest | FileActionsRequest };
 }
 
 // ---------------------------------------------------------------------------
